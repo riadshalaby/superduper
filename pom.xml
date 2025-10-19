@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>net.rsworld</groupId>
+  <artifactId>superduper-parent</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <modules>
+    <module>worker-jdbc-pg</module>
+    <module>worker-reactive-r2dbc-pg</module>
+    <module>consumer-kafka</module>
+    <module>consumer-kafka-reactor-r2dbc</module>
+    <module>starter-autoselect</module>
+    <module>examples/app-jdbc</module>
+    <module>examples/app-reactive</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
+    <spring-boot.version>3.5.6</spring-boot.version>
+    <reactor-kafka.version>1.3.24</reactor-kafka.version>
+    <r2dbc-postgres.version>1.1.0.RELEASE</r2dbc-postgres.version>
+    <shedlock.version>5.10.0</shedlock.version>
+    <lombok.version>1.18.42</lombok.version>
+    <junit.version>6.0.0</junit.version>
+    <mockito.version>5.20.0</mockito.version>
+    <assertj.version>4.0.0-M1</assertj.version>
+    <byte-buddy.version>1.17.7</byte-buddy.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>${junit.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.assertj</groupId>
+        <artifactId>assertj-core</artifactId>
+        <version>${assertj.version}</version>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>com.diffplug.spotless</groupId>
+          <artifactId>spotless-maven-plugin</artifactId>
+          <version>3.0.0</version>
+          <configuration>
+            <java>
+              <!-- Palantir Java Format: schlanke, configfreie Formatierung -->
+              <palantirJavaFormat>
+                <!-- Nimm eine aktuelle Version; Stand heute: 2.78.0 -->
+                <version>2.78.0</version>
+                <formatJavadoc>true</formatJavadoc>
+              </palantirJavaFormat>
+
+              <!-- optionale, sichere Zusatzschritte -->
+              <removeUnusedImports/>
+              <trimTrailingWhitespace/>
+              <endWithNewline/>
+              <formatAnnotations/>
+            </java>
+            <pom>
+              <sortPom/>
+            </pom>
+          </configuration>
+          <executions>
+            <!-- In CI wollen wir failen, wenn Format nicht passt -->
+            <execution>
+              <id>spotless-check</id>
+              <goals>
+                <goal>check</goal>
+              </goals>
+              <phase>verify</phase>
+            </execution>
+            <!-- lokales Auto-Fix optional als eigenes Execution/Profil -->
+            <!-- mvn -Pspotless-apply verify -->
+          </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.14.1</version>
+          <configuration>
+            <source>${java.version}</source>
+            <target>${java.version}</target>
+            <parameters>true</parameters>
+            <annotationProcessorPaths>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+              </path>
+            </annotationProcessorPaths>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.5.4</version>
+          <configuration>
+            <useModulePath>false</useModulePath>
+            <argLine>-javaagent:${settings.localRepository}/net/bytebuddy/byte-buddy-agent/${byte-buddy.version}/byte-buddy-agent-${byte-buddy.version}.jar
+              -XX:+EnableDynamicAgentLoading</argLine>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <id>enforce-versions</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <phase>compile</phase>
+            <configuration>
+              <rules>
+                <!-- Mindest-Maven-Version -->
+                <requireMavenVersion>
+                  <version>[3.9,)</version>
+                </requireMavenVersion>
+                <!-- optional, sehr sinnvoll: Mindest-Java-Version -->
+                <requireJavaVersion>
+                  <version>[21,)</version>
+                </requireJavaVersion>
+                <!-- since even testcontainer 2.x still needs junit4, we cant disallow it
+                newer version might finally fix this. See https://github.com/testcontainers/testcontainers-java/issues/970
+                as of now even the 2.0.1 version still needs junit4 -->
+                <!--
+                <bannedDependencies>
+                  <excludes>
+                    <exclude>junit:junit</exclude>
+                    <exclude>org.junit.vintage:junit-vintage-engine</exclude>
+                  </excludes>
+                  <searchTransitive>true</searchTransitive>
+                </bannedDependencies>
+                -->
+              </rules>
+              <fail>true</fail>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

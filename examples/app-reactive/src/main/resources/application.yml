@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: superduper-example-reactive
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/superduper
+    username: superduper
+    password: superduper
+
+superduper:
+  consumer:
+    type: reactor
+  kafka:
+    bootstrap-servers: localhost:9092
+    group-id: example-reactive
+    topic: superduper.example
+
+logging:
+  level:
+    root: INFO
