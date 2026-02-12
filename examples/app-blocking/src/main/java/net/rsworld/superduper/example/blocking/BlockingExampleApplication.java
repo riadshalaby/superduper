@@ -1,0 +1,11 @@
+package net.rsworld.superduper.example.blocking;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class BlockingExampleApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(BlockingExampleApplication.class, args);
+    }
+}

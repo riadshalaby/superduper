@@ -17,7 +17,7 @@ When multiple containers consume messages concurrently and persist them for late
 - **Retries & cut-off**: Failed messages are retried up to a maximum (default `5`) and then marked as `STOPPED`.
 - **Resilience**: Crashing containers leave **no** stuck work; **orphaned** `PROCESSING` rows are recovered.
 - **Observability**: Heartbeats detect dead containers; status fields show lifecycle progress.
-- **Flexibility**: Use **Spring Kafka + JDBC** or **Reactor Kafka + R2DBC** with the same algorithm and schema.
+- **Flexibility**: Use **Spring Kafka + JDBC** or **Spring Kafka + R2DBC (reactive processing chain)** with the same algorithm and schema on PostgreSQL or MariaDB.
 
 ---
 
@@ -31,12 +31,12 @@ graph LR
 
   subgraph Apps
     C1[Consumer (Spring-Kafka)]
-    C2[Consumer (Reactor-Kafka)]
+    C2[Consumer (Spring-Kafka)]
     W1[Worker JDBC]
     W2[Worker Reactive]
   end
 
-  subgraph DB[(PostgreSQL/MariaDB)]
+  subgraph DB[(PostgreSQL / MariaDB)]
     M[(messages)]
     H[(container_heartbeats)]
     L[(shedlock)]
@@ -79,59 +79,44 @@ id               BIGINT AUTO_INCREMENT / SERIAL PRIMARY KEY
 uuid             VARCHAR(36) UNIQUE NOT NULL
 key              VARCHAR(255) NOT NULL
 content          TEXT
-status           ENUM('READY','PROCESSING','PROCESSED','FAILED','STOPPED') -- MariaDB: VARCHAR + CHECK
+status           VARCHAR(32) NOT NULL CHECK (status IN ('READY','PROCESSING','PROCESSED','FAILED','STOPPED'))
 retry_count      INT DEFAULT 0
 container_id     VARCHAR(255) NULL
-timestamp        TIMESTAMP NULL       -- original send-ts (optional)
+occurred_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- event time from source header, fallback Kafka record timestamp
+received_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- ingest time (consumer write time)
+processed_at     TIMESTAMP NULL       -- set when a worker marks message as PROCESSED
 last_updated     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 
 -- heartbeat
 container_heartbeats(container_id PRIMARY KEY, last_heartbeat TIMESTAMP)
 
--- ShedLock (if JDBC workflow)
+-- ShedLock (JDBC and reactive worker claim coordination)
 shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), locked_by VARCHAR(255))
 ```
 
-**Indexes:** `messages(key, id)` keeps **per-key ordering by `id`** (auto-increment).
+**Indexes:** `messages(key, id)` is the baseline for per-key order checks. For production workloads, add the claim/fetch/reclaim indexes shown in the example Liquibase files (`002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`).
 
 ---
 
 ## The Algorithm (Step-by-step)
 
 1. **Ingest (Consumer) → Persist**
-   - Spring-Kafka (JDBC) or Reactor-Kafka (R2DBC) **inserts** each consumed record into `messages` as `READY`.
-   - The row gets an **auto-increment `id`**, **`uuid`**, **`key`**, **payload**, and timestamps.
+   - Spring-Kafka (JDBC) or Spring-Kafka (R2DBC variant) **inserts** each consumed record into `messages` as `READY`.
+   - `occurred_at` is resolved from header `occurred_at`; if missing/invalid, fallback is Kafka record timestamp.
+   - `received_at` is set to ingest time (`NOW()`).
+   - The row gets an **auto-increment `id`**, **`uuid`**, **`key`**, and payload.
 
 2. **Claim Batch (Worker)**
-   - A single worker instance (JDBC worker protected by **ShedLock**) or each reactive worker **claims** a batch of candidate rows:
-     - Only rows with `status IN ('READY') OR ('FAILED' AND retry_count < max)`.
-     - **No per-key conflict**: We only claim a row if **no earlier row** for the same key is still `READY|FAILED|PROCESSING`.
-     - Each claimed row is atomically set to `PROCESSING` with `container_id = current_worker`.
+   - Worker claim is coordinated by **ShedLock** (both JDBC and reactive worker variants).
+   - Claiming is done with **one SQL statement per dialect** (candidate selection + update in a single DB roundtrip).
+   - Candidate filter rules:
+     - Only `READY` or retry-eligible `FAILED` rows (`retry_count < maxRetries`).
+     - No per-key conflict: only the oldest pending row per key can pass.
+     - Rows already being processed for the same key are excluded.
+   - The `claimBatch` API returns only the **number of updated rows** (for metrics/logging), not a list of ids.
+   - Important: the status/retry eligibility predicate is only in the candidate selection; the update phase joins by candidate id.
 
-   **JDBC (PostgreSQL/MariaDB) — JOIN-based claim (no subquery LIMITs):**
-   ```sql
-   WITH candidate AS (
-     SELECT m1.id
-     FROM messages m1
-     LEFT JOIN messages p
-       ON p.`key` = m1.`key` AND p.status = 'PROCESSING'
-     WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries))
-       AND p.id IS NULL
-       AND NOT EXISTS (
-           SELECT 1 FROM messages prev
-           WHERE prev.`key` = m1.`key`
-             AND prev.id   < m1.id
-             AND prev.status IN ('READY','FAILED','PROCESSING')
-       )
-     ORDER BY m1.id
-     LIMIT :batch
-   )
-   UPDATE messages m
-      JOIN candidate c ON c.id = m.id
-      SET m.status='PROCESSING', m.container_id=:cid, m.last_updated=CURRENT_TIMESTAMP;
-   ```
-
-   **PostgreSQL flavor:**
+   **PostgreSQL claim SQL (JDBC and R2DBC variants):**
    ```sql
    WITH candidate AS (
      SELECT m1.id
@@ -141,28 +126,62 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
      WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries))
        AND p.id IS NULL
        AND NOT EXISTS (
-           SELECT 1 FROM messages prev
-           WHERE prev.key = m1.key
-             AND prev.id  < m1.id
-             AND prev.status IN ('READY','FAILED','PROCESSING')
+         SELECT 1
+         FROM messages prev
+         WHERE prev.key = m1.key
+           AND prev.id < m1.id
+           AND prev.status IN ('READY','FAILED','PROCESSING')
        )
      ORDER BY m1.id
      LIMIT :batch
+     FOR UPDATE OF m1 SKIP LOCKED
    )
    UPDATE messages m
-      SET status='PROCESSING', container_id=:cid, last_updated=NOW()
-     FROM candidate c
-    WHERE m.id = c.id
-   RETURNING m.id;
+   SET status='PROCESSING', container_id=:cid, last_updated=NOW()
+   FROM candidate c
+   WHERE m.id = c.id;
    ```
 
-3. **Process (Business Logic)**
-   - Worker fetches the claimed rows and **invokes your business function**:
-     - **JDBC:** `MessageHandler` → returns `SUCCESS` or `RETRY`.
-     - **Reactive:** `ReactiveMessageHandler` → `Mono<SUCCESS|RETRY>`.
+   **MariaDB claim SQL (JDBC and R2DBC variants):**
+   ```sql
+   UPDATE messages m
+   JOIN (
+     SELECT id FROM (
+       SELECT m1.id
+       FROM messages m1
+       LEFT JOIN messages p
+         ON p.`key` = m1.`key` AND p.status = 'PROCESSING'
+       WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries))
+         AND p.id IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+           FROM messages prev
+           WHERE prev.`key` = m1.`key`
+             AND prev.id < m1.id
+             AND prev.status IN ('READY','FAILED','PROCESSING')
+         )
+       ORDER BY m1.id
+       LIMIT :batch
+       FOR UPDATE SKIP LOCKED
+     ) candidate_ids
+   ) c ON c.id = m.id
+   SET m.status='PROCESSING', m.container_id=:cid, m.last_updated=NOW();
+   ```
+
+3. **Fetch + Process (Business Logic)**
+   - After claiming, each worker fetches all rows currently marked for its own `workerId`:
+   ```sql
+   SELECT id, key AS message_key, content, retry_count, container_id
+   FROM messages
+   WHERE status='PROCESSING' AND container_id=:cid
+   ORDER BY key, id;
+   ```
+   - Then it invokes your business function:
+     - **JDBC:** `MessageHandler` -> returns `SUCCESS` or `RETRY`.
+     - **Reactive:** `ReactiveMessageHandler` -> `Mono<SUCCESS|RETRY>`.
 
 4. **On Success or Failure**
-   - `SUCCESS` → `status='PROCESSED'`.
+   - `SUCCESS` → `status='PROCESSED'`, `processed_at=NOW()`.
    - `RETRY` → `retry_count = retry_count + 1`.
      - If `retry_count < max` → `status='READY'` (will be retried later; **per-key ordering** is preserved).
      - Else → `status='STOPPED'` (manual intervention required).
@@ -177,7 +196,7 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
    - Guarantees **no stuck** messages when a container dies or loses heartbeats.
 
 7. **Ordering Guarantee**
-   - Using **auto-increment `id`** as the **order marker** per key (not `timestamp`), combined with the **candidate filter** that blocks later rows while an earlier row is pending.
+   - Using **auto-increment `id`** as the **order marker** per key (not `occurred_at`/`received_at`), combined with the **candidate filter** that blocks later rows while an earlier row is pending.
 
 ---
 
@@ -194,13 +213,13 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
 <!-- Select one of the consumer modules -->
 <dependency>
   <groupId>net.rsworld</groupId>
-  <artifactId>superduper-consumer-kafka</artifactId> <!-- classic Spring-Kafka + JDBC -->
+  <artifactId>superduper-consumer-kafka-blocking</artifactId> <!-- classic Spring-Kafka + JDBC -->
   <version>1.0.0-SNAPSHOT</version>
 </dependency>
 
 <dependency>
   <groupId>net.rsworld</groupId>
-  <artifactId>superduper-consumer-kafka-reactor-r2dbc</artifactId> <!-- Reactor-Kafka + R2DBC -->
+  <artifactId>superduper-consumer-kafka-reactive</artifactId> <!-- Spring-Kafka + R2DBC (reactive chain) -->
   <version>1.0.0-SNAPSHOT</version>
 </dependency>
 ```
@@ -214,7 +233,17 @@ superduper:
   kafka:
     bootstrap-servers: localhost:9092
     group-id: my-group
-    topic: my-topic
+    topic: my-topic # backward compatible single topic
+    # or multi-topic subscription (CSV):
+    # topics: topic-a,topic-b,topic-c
+  db:
+    tables:
+      messages: messages
+      heartbeats: container_heartbeats
+  worker:
+    shedlock:
+      table-name: shedlock
+      claim-lock-name: superduper-claim-batch
 ```
 
 ### Provide your business logic
@@ -242,9 +271,93 @@ ReactiveMessageHandler superduperWorkerReactive() {
 ```
 
 The starter:
-- Autowires **JDBC Worker + ShedLock** when `type=spring`.
-- Autowires **Reactive Worker** when `type=reactor`.
+- Autowires **JDBC Worker + ShedLock + Heartbeat + Orphan Reclaimer** when `type=spring`.
+- Autowires **Reactive Worker + ShedLock + Reactive Heartbeat + Reactive Orphan Reclaimer** when `type=reactor`.
 - Consumers persist Kafka records into `messages` automatically.
+
+### Observability configuration
+
+Observability is configurable per component, signal, and output backend.
+
+Default behavior:
+- logging enabled
+- metrics disabled
+- all components and signals enabled
+
+```yaml
+superduper:
+  observability:
+    enabled: true
+    components:
+      consumer: true
+      worker: true
+      maintenance: true
+    signals:
+      lifecycle: true
+      success: true
+      failure: true
+      retry: true
+      timing: true
+    outputs:
+      log:
+        enabled: true
+      metrics:
+        enabled: false
+    metrics:
+      tags:
+        topic: true
+        exception-tag: true
+```
+
+Available knobs:
+
+- `superduper.observability.enabled`:
+  Master switch. `false` disables all observer actions.
+- `superduper.observability.components.consumer`:
+  Enable/disable consumer events.
+- `superduper.observability.components.worker`:
+  Enable/disable worker claim/process/retry/stop/failure events.
+- `superduper.observability.components.maintenance`:
+  Enable/disable heartbeat/orphan reclaim events.
+- `superduper.observability.signals.lifecycle`:
+  Enable lifecycle events (`consumer.received`, `worker.claimed`, maintenance success).
+- `superduper.observability.signals.success`:
+  Enable success events (`consumer.persisted`, `worker.processed`).
+- `superduper.observability.signals.failure`:
+  Enable failure events (`consumer.failed`, `worker.failed`, `worker.stopped`, maintenance failures).
+- `superduper.observability.signals.retry`:
+  Enable retry events (`worker.retry`).
+- `superduper.observability.signals.timing`:
+  Enable duration tracking in logs and timers.
+- `superduper.observability.outputs.log.enabled`:
+  Emit structured logs.
+- `superduper.observability.outputs.metrics.enabled`:
+  Emit Micrometer metrics. If a `MeterRegistry` is present, the metrics observer is used.
+- `superduper.observability.metrics.tags.topic`:
+  Include Kafka `topic` metric tag for consumer metrics.
+- `superduper.observability.metrics.tags.exception-tag`:
+  Include exception class metric tag on failure counters.
+
+Backends:
+- Logging observer: logs only.
+- Metrics observer: logs + Micrometer metrics.
+- If metrics are enabled but no `MeterRegistry` is available, it falls back to logging (if log output is enabled).
+
+Metrics emitted (when enabled):
+- `superduper.consumer.received.total`
+- `superduper.consumer.persisted.total`
+- `superduper.consumer.failed.total`
+- `superduper.worker.claim.total`
+- `superduper.worker.processed.total`
+- `superduper.worker.retried.total`
+- `superduper.worker.stopped.total`
+- `superduper.worker.failed.total`
+- `superduper.maintenance.total`
+- timers:
+  - `superduper.consumer.persist.duration`
+  - `superduper.worker.claim.duration`
+  - `superduper.worker.process.duration`
+  - `superduper.maintenance.duration`
 
 ---
 
@@ -256,7 +369,7 @@ The starter:
    ```
 2. Run **JDBC example app**:
    ```bash
-   mvn -pl examples/app-jdbc -am spring-boot:run
+   mvn -pl examples/app-blocking -am spring-boot:run
    ```
 3. Or run **Reactive example app**:
    ```bash
@@ -270,6 +383,54 @@ The starter:
    ```sql
    SELECT id, key, content, status, retry_count FROM messages ORDER BY key, id;
    ```
+
+---
+
+## Simple Use Case (1000 Messages Demo)
+
+Use this to clearly observe consumer ingest + worker processing behavior.
+
+1. Start infra:
+   ```bash
+   docker compose up -d
+   ```
+2. Run one example app with built-in load seeding enabled:
+   ```bash
+   mvn -pl examples/app-blocking -am spring-boot:run \
+     -Dspring-boot.run.jvmArguments="-Dsuperduper.example.seed.enabled=true"
+   # or
+   mvn -pl examples/app-reactive -am spring-boot:run \
+     -Dspring-boot.run.jvmArguments="-Dsuperduper.example.seed.enabled=true"
+   ```
+   This publishes 1000 records to `superduper.example` across 20 keys:
+   - every 10th message: `retry-once #N`
+   - every 40th message: `always-fail #N`
+   - all others: `ok #N`
+   In the reactive example, startup also waits (up to `superduper.example.seed.await-timeout-seconds`) until the
+   `ReactiveMessageHandler` has seen all seeded message ids, and logs completion.
+3. Verify **consumer function** (Kafka -> messages table):
+   ```sql
+   SELECT COUNT(*) AS total_ingested FROM messages;
+   ```
+   Expected: `1000` rows ingested.
+4. Verify **worker function** (READY/PROCESSING -> PROCESSED/STOPPED):
+   ```sql
+   SELECT status, COUNT(*) AS c
+   FROM messages
+   GROUP BY status
+   ORDER BY status;
+   ```
+   Expected with example config (`max-retries=3`):
+   - most rows in `PROCESSED`
+   - `always-fail` rows in `STOPPED`
+5. Verify per-key ordering for one key:
+   ```sql
+   SELECT id, key, content, status, retry_count
+   FROM messages
+   WHERE key='order-7'
+   ORDER BY id;
+   ```
+   Rows for the same key are handled in id order; later rows wait when an earlier row is retrying.
 
 ---
 
@@ -290,19 +451,34 @@ mvn -T 1C test
 
 - **Batch size** (`superduper.worker.batch-size`): Larger batches claim more keys at once; keep moderate to reduce lock contention.
 - **Claim interval** (`superduper.worker.claim-interval-ms`): Shorter interval → faster throughput, more DB load.
+- **Initial delays**:
+  - claim loop: `superduper.worker.claim-initial-delay-ms`
+  - heartbeat loop: `superduper.worker.heartbeat-initial-delay-ms`
+  - orphan reclaimer loop: `superduper.worker.orphan-initial-delay-ms`
+- **Kafka topics**:
+  - single topic: `superduper.kafka.topic`
+  - multiple topics (CSV): `superduper.kafka.topics` (falls back to `topic`)
+- **Repository tables**:
+  - message queue table: `superduper.db.tables.messages`
+  - heartbeat table: `superduper.db.tables.heartbeats`
 - **Heartbeat interval** & **orphan timeout**: Tune to your SLO for failover speed.
+- **ShedLock claim settings**:
+  - table: `superduper.worker.shedlock.table-name`
+  - claim lock name: `superduper.worker.shedlock.claim-lock-name`
+  - lock windows: `superduper.worker.shedlock.lock-at-most-for-ms`, `superduper.worker.shedlock.lock-at-least-for-ms`
 - **Max retries**: After `STOPPED`, set up alerting; operator can **manually fix** and requeue (`status='READY', retry_count=retry_count-1` or reset to 0).
-- **Indexes**: Ensure `messages(key, id)` exists; consider partitioning for very large tables.
-- **Idempotency**: Use `uuid` to avoid duplicate inserts from at-least-once Kafka delivery.
+- **Indexes**: Keep `messages(key, id)` as baseline and add claim/fetch/reclaim indexes from the example Liquibase SQL (`002-worker-claim-indexes-postgres.sql`, `003-worker-claim-indexes-mariadb.sql`). Consider partitioning for very large tables.
+- **Idempotency**: `uuid` is deterministic from Kafka `topic:partition:offset` so redeliveries upsert instead of inserting duplicates.
 
 ---
 
 ## Security & Consistency Notes
 
-- The **claim UPDATE** runs in a transaction (JDBC) or atomically (reactive SQL) to avoid race conditions.
+- Claiming is a **single SQL statement per dialect** (selection + mark to PROCESSING) to minimize race windows.
 - Only the **oldest** pending row per key can be claimed, preserving ordering.
-- ShedLock ensures only **one JDBC worker** does the claim at a time (you can still run multiple workers; the critical section is short).
-- The reactive variant avoids ShedLock and relies on **SQL invariants** + periodic claiming (and can be scaled horizontally).
+- ShedLock ensures only **one worker claim section** runs at a time (JDBC and reactive worker variants; critical section stays short).
+- In Kubernetes, this singleton-claim behavior is cluster-wide as long as all pods share the same database and same `superduper.worker.shedlock.claim-lock-name`.
+- Reactive processing still scales horizontally; lock coordination only guards claim entry.
 
 ---
 
@@ -310,8 +486,8 @@ mvn -T 1C test
 
 Two runnable apps are included:
 
-- `examples/app-jdbc` — classic, blocking JDBC + Spring Kafka.
-- `examples/app-reactive` — fully reactive with Reactor Kafka + R2DBC.
+- `examples/app-blocking` — classic, blocking JDBC + Spring Kafka.
+- `examples/app-reactive` — reactive processing with Spring Kafka + R2DBC.
 
 See each module’s `application.yml` and the root `docker-compose.yml` for local setup.
 

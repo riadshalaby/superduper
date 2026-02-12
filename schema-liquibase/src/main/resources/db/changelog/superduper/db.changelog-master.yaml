@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-init-schema-postgres
+      author: codex
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-schema-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 002-init-schema-mariadb
+      author: codex
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-schema-mariadb.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 003-worker-claim-indexes-postgres
+      author: codex
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/002-worker-claim-indexes-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 004-worker-claim-indexes-mariadb
+      author: codex
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/003-worker-claim-indexes-mariadb.sql
+            relativeToChangelogFile: false

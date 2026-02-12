@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: superduper-example-blocking
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcInitializationAutoConfiguration
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcTransactionManagerAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcRepositoriesAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/superduper
+    username: superduper
+    password: superduper
+  liquibase:
+    change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
+
+superduper:
+  consumer:
+    type: spring
+  kafka:
+    bootstrap-servers: localhost:9092
+    group-id: example-blocking
+    topic: superduper.example
+  worker:
+    max-retries: 3
+    claim-interval-ms: 2000
+  example:
+    seed:
+      enabled: true
+      count: 1000
+      keys: 20
+      await-timeout-seconds: 180
+      readiness-timeout-seconds: 30
+
+logging:
+  level:
+    root: INFO

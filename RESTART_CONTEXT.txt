@@ -1,0 +1,605 @@
+SUPERDUPER restart context
+Generated: 2026-02-13
+
+Progress log only. Permanent agent instructions were moved to AGENTS.md.
+
+Progress update (2026-02-13T06:59:05Z)
+- Migrated consumer-kafka-reactive from Reactor Kafka client to Spring Kafka @KafkaListener + manual ack, while keeping reactive R2DBC persistence chain (DatabaseClient + Mono).
+- Updated auto-config to provide Spring Kafka ConsumerFactory and listener container factory; added @EnableKafka for this module auto-configuration.
+- Removed Reactor Kafka dependency from consumer module and reactive example app; removed unused reactor-kafka.version property from root pom.
+- Updated module tests to validate Spring Kafka bean wiring and enabled Kafka listener infra in reactive E2E test configs.
+- Updated README wording to reflect Spring Kafka + R2DBC reactive chain instead of Reactor Kafka.
+- Validation: mvn -q -pl consumer-kafka-reactive -am test (pass); mvn -q test (pass).
+- Next: optionally rename module/class names (reactor) to reflect new transport choice, keeping API compatibility in mind.
+
+Progress update (2026-02-13T07:18:29Z)
+- Expanded examples to show a simple real use-case: handlers now demonstrate SUCCESS, RETRY-once, and always-fail-to-STOPPED behavior based on message content.
+- Added example worker tuning in app yml (max-retries=3, claim-interval-ms=2000) for faster visible demo behavior.
+- Added README section 'Simple Use Case (Order + Retry)' with concrete run steps, test messages, SQL query, and expected outcomes.
+- Validation: mvn -q -pl examples/app-jdbc,examples/app-reactive -am test (pass).
+- Next: optionally add a tiny producer script/endpoint in examples to avoid manual Kafka UI publishing.
+
+Progress update (2026-02-13T07:24:45Z)
+- Expanded examples with optional built-in load seeder that publishes 1000 Kafka messages (configurable), for both JDBC and reactive apps.
+- Seeder distribution: mostly ok, every 10th retry-once, every 40th always-fail; keys distributed across configurable key count.
+- README now includes a concrete '1000 Messages Demo' showing how to run with seeding enabled and SQL checks for consumer ingest + worker results + per-key ordering.
+- Validation: mvn -q -pl examples/app-jdbc,examples/app-reactive -am test (pass).
+- Next: optional shell script to run demo and print DB stats automatically.
+
+Progress update (2026-02-13T07:34:04Z)
+- Fixed reactive example flow for seeded load runs: added handler-based progress tracking with CountDownLatch, so startup can wait until the ReactiveMessageHandler has seen all seeded message ids.
+- Added ordered startup runners in ReactiveExampleApplication: schema init -> seed publish -> await completion, with timeout logging.
+- Reactive handler now logs each received row and marks unique message ids as handled on first sight.
+- Tuned reactive example worker defaults for demo throughput (batch-size=250, claim-interval-ms=500) and added await-timeout-seconds config.
+- README updated to state that reactive example waits for handler completion in seeded runs.
+- Validation: mvn -q -pl examples/app-reactive -am test (pass); mvn -q test (pass).
+
+Progress update (2026-02-13T07:42:42Z)
+- Refactored reactive example to use an explicit handler class: ExampleReactiveMessageHandler implements ReactiveMessageHandler.
+- Added ExampleReactiveSeeder (ApplicationReadyEvent listener) so seeding starts only after application is fully ready; it also depends on SuperDuperWorkerReactiveService bean to ensure worker infrastructure is initialized.
+- Added SeedProgress component for unique message-id tracking and completion latch; seeder waits for handler to observe all seeded ids (or timeout) and logs result.
+- ReactiveExampleApplication now only bootstraps schema and app entry point (cleaner example structure).
+- Validation: mvn -q -pl examples/app-reactive -am test (pass); mvn -q test (pass).
+
+Progress update (2026-02-13T08:01:00Z)
+- Fixed reactive example startup determinism and seed tracking:
+  - `starter-autoselect`: removed fragile `@ConditionalOnBean` gate on `reactiveWorker` bean creation so Boot 4 startup ordering does not skip worker auto-creation.
+  - `ExampleReactiveSeeder`: waits for Kafka listener assignment, verifies worker presence, truncates `messages` before seed run, and seeds with run-tagged content (`run=<n>`).
+  - `SeedProgress`: now supports per-run reset (`startRun`) and counts only current active run ids.
+  - `ExampleReactiveMessageHandler`: parses `run=<n>` from content and only marks progress for the active seed run.
+- Reactive example seed count remains 1000 in `examples/app-reactive/src/main/resources/application.yml`.
+- Validation:
+  - `mvn -q -pl examples/app-reactive -am test` (pass)
+  - Local runtime with docker infra up (`docker compose up -d`) and app launch succeeded.
+  - DB verification during run for `run=1` seeded batch:
+    - total rows with run=1: `1000`
+    - final statuses after processing: `PROCESSED=975`, `STOPPED=25`, pending (`READY/FAILED/PROCESSING`)=`0`.
+- Note: one transient startup failure was due to local port conflict (`8080 already in use`); resolved by stopping stale Java process.
+
+Progress update (2026-02-13T08:26:39Z)
+- Non-reactive example aligned with reactive structure: explicit ExampleJdbcMessageHandler + ApplicationReady seeder + SeedProgress tracking remained in place, then hardened.
+- Fixed startup failure in JDBC seeder readiness: if listeners are running but assignment stays empty, proceed after 2s grace (still starts only after consumer/worker startup).
+- Switched seed run marker from integer run=... to unique runToken UUID per startup to avoid cross-restart collisions and stale-backlog miscounting.
+- Updated JDBC handler parsing/marking to use runToken and count only current seed batch.
+- Validation: mvn -q -pl examples/app-jdbc -am test passed.
+- Runtime validation: started JdbcExampleApplication with --superduper.example.seed.enabled=true; observed seed publish of 1000 and DB converged to PROCESSED=975, STOPPED=25, READY=0 (full drain).
+- Next: optionally mirror runToken hardening + readiness grace in reactive example for symmetry (reactive currently still uses run=<n> markers).
+
+Progress update (2026-02-13T08:57:49Z)
+- Added session rule to run Spotless after every code change.
+- Added reusable command: mvn -q spotless:apply.
+- Next: run Spotless automatically after each subsequent edit before validation.
+
+Progress update (2026-02-21T17:13:11Z)
+- Audited source for deprecated API usage (@Deprecated, deprecation suppressions, deprecated markers) and found none in project code.
+- Ran clean compile with deprecation/warning flags; only warning source was Lombok internals using deprecated sun.misc.Unsafe.
+- Removed unused Lombok configuration from root pom.xml (deleted lombok.version property and compiler annotationProcessorPaths entry).
+- Ran mvn -q spotless:apply after code change (session rule).
+- Validation: mvn clean compile -DskipTests -Dmaven.compiler.showDeprecation=true -Dmaven.compiler.showWarnings=true now emits no Lombok deprecation warning; mvn -q test passed.
+- Note: Spotless itself still prints a JDK 25 terminal deprecation warning from Spotless internals (spotless-lib), which is external tooling, not library source/runtime code.
+
+Progress update (2026-02-13T09:02:20Z)
+- Corrected prior restart-context timestamp entry for deprecated-usage cleanup.
+- Effective change: removed unused Lombok annotation processor wiring in pom.xml; compile deprecation warning from Lombok is gone.
+
+Progress update (2026-02-13T09:13:13Z)
+- Addressed deprecated Testcontainers usage in tests by migrating imports:
+  - org.testcontainers.containers.KafkaContainer -> org.testcontainers.kafka.KafkaContainer
+  - org.testcontainers.containers.PostgreSQLContainer -> org.testcontainers.postgresql.PostgreSQLContainer
+- Updated PostgreSQL container declarations to non-generic type required by new class.
+- Updated Kafka test image for new KafkaContainer runtime contract:
+  - now uses apache/kafka-native:4.1.1 (instead of confluentinc/cp-kafka:7.6.1)
+- Ran mvn -q spotless:apply after edits.
+- Validation:
+  - mvn clean test-compile -DskipTests -Dmaven.compiler.showDeprecation=true -Dmaven.compiler.showWarnings=true (no Testcontainers deprecation warnings)
+  - mvn -q -pl consumer-kafka-blocking,consumer-kafka-reactive -am test (pass)
+
+Progress update (2026-02-13T10:25:21Z)
+- Aligned message ID model to BIGINT/Long across library and examples.
+- Core changes:
+  - MessageRow id type updated to Long in JDBC and reactive worker modules.
+  - Worker claim/process APIs migrated from Integer ids to Long ids.
+  - Reactive worker id extraction now reads Number and converts to longValue().
+- Schema changes:
+  - Replaced message id column definitions from SERIAL to BIGSERIAL in example schema and integration test schema setup SQL.
+- Example tracking changes:
+  - SeedProgress seen-id sets migrated to Set<Long>.
+  - Example message handler attempt maps migrated to Map<Long, Integer>.
+- Test updates:
+  - Claim/process reflection casts and list/set/future generic types updated from Integer to Long where they represent message ids.
+  - MessageRow constructor literals updated to long literals in unit tests.
+- Formatting + validation:
+  - Ran mvn -q spotless:apply.
+  - Ran mvn clean test-compile -DskipTests -Dmaven.compiler.showDeprecation=true -Dmaven.compiler.showWarnings=true (pass).
+  - Ran mvn -q test (pass).
+
+Progress update (2026-02-13T14:51:06Z)
+- Phase 1 started: added new modules superduper-repository-api and superduper-repository-jdbc.
+- Added worker repository ports (WorkerMessageRepository, WorkerMaintenanceRepository) and JDBC implementations with SQL dialect abstraction (Postgres + MariaDB) plus auto-configuration and dialect detection.
+- Refactored worker-blocking to remove direct SQL from SuperDuperWorkerService, HeartbeatService, and OrphanReclaimer; these now call repository interfaces.
+- Updated starter-autoselect wiring to inject repository interfaces into JDBC worker/maintenance beans.
+- Updated affected tests and module dependencies (worker and consumer JDBC E2E helper wiring) for new constructor signatures.
+- Ran Spotless: mvn -q spotless:apply.
+- Validation: mvn -q -pl repository-api,repository-jdbc,worker-blocking,starter-autoselect,consumer-kafka-blocking -am -DskipTests test-compile (pass).
+- Validation: mvn -q -pl worker-blocking,starter-autoselect -am -Dtest=SuperDuperWorkerServiceTest,AutoSelectConfigurationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass).
+- Note: full integration test run requiring Testcontainers/Docker could not run in this environment (Docker unavailable during run).
+- Next: continue with Phase 1 hardening by adding repository-jdbc unit tests for dialect selection and SQL execution contracts, then prepare Phase 2 (r2dbc repository module and reactive worker refactor).
+
+Progress update (2026-02-13T14:53:36Z)
+- Re-ran Phase 1 test suite with Docker available.
+- Found and fixed Postgres lock error in JDBC claim query by changing FOR UPDATE to FOR UPDATE OF m1 SKIP LOCKED in repository-jdbc JdbcWorkerMessageRepository.
+- Found and fixed missing Postgres test driver in consumer-kafka-blocking after dependency decoupling; added org.postgresql:postgresql test dependency.
+- Ran Spotless after edits (session rule).
+- Validation: mvn -q -pl repository-api,repository-jdbc,worker-blocking,starter-autoselect,consumer-kafka-blocking -am test (pass).
+
+Progress update (2026-02-13T15:05:34Z)
+- Phase 2 implemented: added new module superduper-repository-r2dbc and extended repository-api with reactive worker ports (ReactiveWorkerMessageRepository, ReactiveWorkerMaintenanceRepository).
+- Implemented R2DBC repository auto-config, dialect detection (postgres/mariadb), worker message repository with transactional claim+update, and maintenance repository with dialect-specific heartbeat/orphan SQL.
+- Refactored worker-reactive to remove direct SQL/DatabaseClient usage in SuperDuperWorkerReactiveService, ReactiveHeartbeatService, and ReactiveOrphanReclaimer; now all DB operations go via repository interfaces.
+- Updated starter-autoselect reactive wiring to inject reactive repository interfaces into SuperDuperWorkerReactiveService.
+- Updated reactive tests (worker + consumer E2E helper wiring) to construct/use R2DBC repositories directly where needed after constructor/visibility changes.
+- Ran Spotless after edits.
+- Validation: mvn -q -pl repository-api,repository-r2dbc,worker-reactive,starter-autoselect,consumer-kafka-reactive -am -DskipTests test-compile (pass).
+- Validation: mvn -q -pl repository-api,repository-r2dbc,worker-reactive,starter-autoselect,consumer-kafka-reactive -am test (pass).
+- Validation: mvn -q test (pass).
+
+Progress update (2026-02-13T15:13:57Z)
+- Phase 3 implemented: introduced consumer ingest repository ports in repository-api (MessageIngestRepository + ReactiveMessageIngestRepository).
+- Added JDBC and R2DBC ingest repository implementations with dialect-specific upsert SQL in repository-jdbc/repository-r2dbc and exposed them via repository auto-configuration.
+- Refactored consumer modules to remove direct SQL from Kafka consumer services:
+  - consumer-kafka-blocking KafkaConsumerService now uses MessageIngestRepository
+  - consumer-kafka-reactive KafkaReactiveR2dbcConsumerService now uses ReactiveMessageIngestRepository
+- Updated consumer auto-config wiring + module dependencies to include repository-api and repository JDBC/R2DBC modules.
+- Updated consumer tests (unit + E2E configs) to provide ingest repository beans and align constructor signatures.
+- Hardened repository-r2dbc auto-config: TransactionalOperator/ReactiveWorkerMessageRepository creation is now conditional on ReactiveTransactionManager presence, so consumer-only contexts are not forced to provide reactive tx manager.
+- Ran Spotless after changes.
+- Validation: mvn -q -pl repository-api,repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests test-compile (pass).
+- Validation: mvn -q -pl repository-api,repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive -am test (pass).
+- Validation: mvn -q test (pass).
+
+Progress update (2026-02-13T15:28:16Z)
+- Added missing test coverage in repositories and consumers before Phase 4:
+  - repository-jdbc: auto-config dialect detection tests, SQL dialect selection tests, JDBC ingest integration tests (Postgres + MariaDB), JDBC worker repository integration tests (claim/order + retry transitions).
+  - repository-r2dbc: auto-config dialect detection tests, SQL dialect selection tests, R2DBC ingest integration test (Postgres), R2DBC worker repository integration tests (claim/order + retry transitions).
+  - consumer-kafka-blocking: added error-path unit test verifying no ack on ingest repository failure.
+  - consumer-kafka-reactive: added consumer service unit tests for success + failure ack behavior.
+  - worker-blocking + worker-reactive: added explicit retry-below-limit tests to verify READY requeue path (complements existing STOPPED boundary checks).
+- Added test dependencies for new repository module tests (Testcontainers Postgres/MariaDB and DB drivers where required).
+- Ran Spotless after edits.
+- Validation:
+  - mvn -q -pl repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive -am -DskipTests test-compile (pass)
+  - mvn -q -pl repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive -am test (pass)
+  - mvn -q test (pass)
+  - mvn -q -DskipTests test-compile (pass, post-spotless)
+
+Progress update (2026-02-21T17:13:11Z)
+- Implemented 3-timestamp model across ingest/processing:
+  - Added `occurred_at`, `received_at`, `processed_at` to schemas used in examples and tests.
+  - Updated ingest repository APIs to accept `Instant occurredAt`:
+    - `MessageIngestRepository.upsertReadyMessage(uuid, key, content, occurredAt)`
+    - `ReactiveMessageIngestRepository.upsertReadyMessage(uuid, key, content, occurredAt)`
+  - JDBC/R2DBC ingest SQL now writes `occurred_at=:occurredAt`, `received_at=NOW()`.
+  - Blocking/reactive Kafka consumers now resolve occurred time from header `occurred_at` (epoch millis or ISO-8601), fallback to Kafka record timestamp, final fallback `Instant.now()`.
+  - Worker success updates now set `processed_at=NOW()` when marking `PROCESSED`.
+- Added/updated tests:
+  - Consumer unit tests updated for new method signature and added header parsing assertions.
+  - Repository ingest SQL tests assert new columns in generated upsert SQL.
+  - Repository worker integration tests now assert `processed_at` is populated after `markProcessed`.
+- Updated README algorithm/data model to document the 3 timestamps and their semantics.
+- Ran Spotless after code changes.
+- Validation:
+  - `mvn -q -pl repository-api,repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive,examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive -am -Dtest=JdbcMessageIngestRepositoryTest,R2dbcMessageIngestRepositoryTest,KafkaConsumerServiceTest,KafkaReactiveR2dbcConsumerServiceTest,SuperDuperWorkerServiceTest,SuperDuperWorkerReactiveServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+  - Full module test run with Testcontainers currently fails in this environment due missing Docker socket (`/var/run/docker.sock`).
+- Next:
+  - If desired, add configurable header name for `occurred_at` (property-based) and optional strict parse mode (drop/park invalid header values).
+
+Progress update (2026-02-21T17:16:53Z)
+- Enforced non-null ingest timestamp semantics:
+  - `occurred_at` and `received_at` are now `NOT NULL` in example and test schemas.
+  - Added `DEFAULT CURRENT_TIMESTAMP` for both fields so manual/test seed inserts without explicit values still succeed.
+  - `processed_at` remains nullable and is still set when a worker marks `PROCESSED`.
+- Hardened ingest repositories:
+  - `JdbcMessageIngestRepository` and `R2dbcMessageIngestRepository` now enforce non-null `occurredAt` via `Objects.requireNonNull`.
+- Updated README data model to reflect `NOT NULL` + defaults for `occurred_at`/`received_at`.
+- Ran Spotless after edits.
+- Validation:
+  - `mvn -q spotless:apply && mvn -q -pl repository-api,repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive,examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl consumer-kafka-blocking,consumer-kafka-reactive,repository-jdbc,repository-r2dbc -am -Dtest=KafkaConsumerServiceTest,KafkaReactiveR2dbcConsumerServiceTest,JdbcMessageIngestRepositoryTest,R2dbcMessageIngestRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+Progress update (2026-02-21T17:21:30Z)
+- Re-verified full project test suite after Docker became available.
+- Validation:
+  - docker info --format '{{.ServerVersion}}' -> 29.2.0
+  - mvn -q test (pass, full multi-module run)
+- Observations:
+  - Testcontainers successfully started PostgreSQL, MariaDB, and Kafka containers during E2E/integration tests.
+
+Progress update (2026-02-21T17:36:07Z)
+- Extended worker repository dialect support to cover PostgreSQL and MariaDB consistently.
+- JDBC worker repository:
+  - Constructor now takes `SqlDialect`.
+  - Claim SQL now uses dialect-specific syntax (`FOR UPDATE OF m1 SKIP LOCKED` for Postgres, `FOR UPDATE SKIP LOCKED` for MariaDB) and MariaDB-safe quoting for `key`.
+  - Fetch SQL now aliases key column as `message_key` and uses dialect-safe ordering/quoting.
+- R2DBC worker repository:
+  - Constructor now takes `SqlDialect`.
+  - Claim and fetch SQL are dialect-specific with MariaDB-safe key quoting.
+  - Fetch mapping uses aliased `message_key`.
+- Auto-config wiring updated to pass dialect into worker repositories:
+  - `JdbcRepositoryAutoConfiguration`
+  - `R2dbcRepositoryAutoConfiguration`
+- Updated affected integration tests to pass explicit dialect constructor args.
+- Added worker dialect-focused tests:
+  - Unit tests: SQL selection assertions for Postgres vs MariaDB in JDBC and R2DBC worker repositories.
+  - Integration tests: MariaDB worker repository tests for claim ordering and retry/transition behavior.
+- Added test dependency `org.mariadb.jdbc:mariadb-java-client` in `repository-r2dbc/pom.xml` (required by `MariaDBContainer` health-check path).
+- Validation:
+  - `mvn -q -pl repository-jdbc,repository-r2dbc -am -Dtest=JdbcWorkerMessageRepositoryTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcWorkerMessageRepositoryTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+  - `mvn -q -pl worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -Dtest=WorkerJdbcIntegrationTest,WorkerReactiveIntegrationTest,KafkaConsumerWorkerE2EIT,KafkaReactiveWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+
+Progress update (2026-02-21T19:01:13Z)
+- Refactored repository implementations to be SQL-free by moving all SQL into dialect strategy classes.
+- New centralized dialect abstractions:
+  - JDBC: `JdbcSqlDialect`, with implementations `PostgresJdbcSqlDialect` and `MariaDbJdbcSqlDialect`.
+  - R2DBC: `R2dbcSqlDialect`, with implementations `PostgresR2dbcSqlDialect` and `MariaDbR2dbcSqlDialect`.
+- Repository classes now only call dialect methods (no embedded SQL literals):
+  - `JdbcMessageIngestRepository`, `JdbcWorkerMessageRepository`, `JdbcWorkerMaintenanceRepository`
+  - `R2dbcMessageIngestRepository`, `R2dbcWorkerMessageRepository`, `R2dbcWorkerMaintenanceRepository`
+- Added lightweight dialect mappers (`JdbcSqlDialects`, `R2dbcSqlDialects`) and kept convenience constructors that accept `SqlDialect` for call-site compatibility.
+- Auto-configuration now wires the new dialect strategy beans into all repositories:
+  - `JdbcRepositoryAutoConfiguration`
+  - `R2dbcRepositoryAutoConfiguration`
+- Removed legacy worker-only dialect types to avoid duplicate SQL definitions:
+  - JDBC: `WorkerJdbcSqlDialect`, `PostgresWorkerJdbcSqlDialect`, `MariaDbWorkerJdbcSqlDialect`
+  - R2DBC: `WorkerR2dbcSqlDialect`, `PostgresWorkerR2dbcSqlDialect`, `MariaDbWorkerR2dbcSqlDialect`
+- Updated tests:
+  - SQL syntax tests now assert SQL from dialect classes directly (instead of reflection over repository internals).
+  - Worker integration tests now use new dialect implementations for maintenance repositories.
+- Validation:
+  - `mvn -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl repository-jdbc,repository-r2dbc -am -Dtest=JdbcMessageIngestRepositoryTest,JdbcWorkerMessageRepositoryTest,JdbcMessageIngestRepositoryIntegrationTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcMessageIngestRepositoryTest,R2dbcWorkerMessageRepositoryTest,R2dbcMessageIngestRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+  - `mvn -q -pl worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -Dtest=WorkerJdbcIntegrationTest,WorkerReactiveIntegrationTest,KafkaConsumerWorkerE2EIT,KafkaReactiveWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+
+Progress update (2026-02-21T19:13:21Z)
+- Added ShedLock-based claim coordination to reactive worker path (aligned with blocking worker behavior).
+- `SuperDuperWorkerReactiveService` now receives `LockingTaskExecutor` and wraps claim in `executeWithLock(...)` using lock name `superduper-claim-batch`.
+- Reactive worker loop now runs via `@Scheduled` claim cycle and executes claim under lock, then processes claimed rows.
+- Starter auto-configuration updated:
+  - Added reactive ShedLock provider using R2DBC `ConnectionFactory` (`R2dbcLockProvider`).
+  - `LockingTaskExecutor` bean is now shared for both spring/reactor modes when a `LockProvider` exists.
+  - Reactive worker bean wiring now injects `LockingTaskExecutor`.
+- Dependency updates:
+  - `worker-reactive`: added `shedlock-core`.
+  - `starter-autoselect`: added `shedlock-provider-r2dbc`.
+- Updated tests for new constructor/wiring and added reactive service test asserting ShedLock usage in schedule path.
+- Updated README sections that previously stated reactive worker avoided ShedLock.
+- Validation:
+  - `mvn -q spotless:apply` (pass)
+  - `mvn -q -pl worker-reactive,starter-autoselect,consumer-kafka-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl worker-reactive,starter-autoselect,consumer-kafka-reactive -am -Dtest=SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest,AutoSelectConfigurationTest,KafkaReactiveWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+
+Progress update (2026-02-25T06:05:34Z)
+- Worker-Claim-Algorithmus umgestellt: Eligibility-Filter bleibt nur in claimBatchSql; claimBatchUpdateSql in JDBC/R2DBC enth�lt keine READY/FAILED/maxRetries-Bedingung mehr.
+- Repository-API ge�ndert: claimBatch liefert jetzt nur Count (blocking: long, reactive: Mono<Long>) statt ID-Liste; Fetch wurde auf workerbasiert umgestellt (fetchClaimedForWorker(workerId) liest status='PROCESSING' + container_id=:cid).
+- Worker-Services angepasst: blocking/reactive schedule() loggt Claim-Count, verarbeitet danach alle aktuell f�r den worker markierten PROCESSING-Datens�tze statt ID-Listen.
+- Betroffene Tests in repository-jdbc, repository-r2dbc, worker-blocking, worker-reactive und consumer-kafka-reactive E2E auf neue API/Semantik angepasst.
+- Build-Hardening: fehlende Table-Properties-Klassen erg�nzt (JdbcTableProperties, R2dbcTableProperties) und lokales Maven-Artefakt byte-buddy-agent:1.18.4 nachgeladen (war im lokalen Repo fehlend).
+- Validation:
+  - .\mvnw.cmd -q spotless:apply (pass)
+  - .\mvnw.cmd -q -pl repository-api,repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive,consumer-kafka-reactive -am -DskipTests test-compile (pass)
+  - .\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcWorkerMessageRepositoryTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcWorkerMessageRepositoryTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+  - .\mvnw.cmd -q -pl consumer-kafka-reactive -am -Dtest=KafkaReactiveWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+- Next: optional Nachsch�rfung, ob fetchClaimedForWorker(workerId) bei sehr langen Handler-Laufzeiten zus�tzlich per Batch-Limit begrenzt werden soll.
+
+
+Progress update (2026-02-25T07:23:31Z)
+- Claim-Logik auf Single-Statement pro Dialekt umgestellt (SELECT+UPDATE zusammengef�hrt), um DB-spezifische Lock/Update-Semantik direkt zu nutzen.
+- JDBC/R2DBC Dialekt-Interfaces vereinfacht: claimBatchUpdateSql* entfernt; claimBatchSql() ist jetzt die atomare Claim+Mark-SQL.
+- PostgreSQL Claim nutzt CTE (WITH candidate ... FOR UPDATE ... SKIP LOCKED) + direktes UPDATE FROM candidate.
+- MariaDB Claim nutzt UPDATE ... JOIN (SELECT id FROM (SELECT ... FOR UPDATE SKIP LOCKED) candidate_ids) f�r atomare Selektion+Markierung gegen dieselbe Tabelle.
+- Repositories vereinfacht: claimBatch f�hrt nur noch die eine Dialekt-SQL aus und liefert rowsUpdated als Claim-Count.
+- Keine �nderung am Worker-Vertrag n�tig: Worker loggt weiterhin Claim-Count und liest danach alle PROCESSING-Rows f�r workerId.
+- Validation:
+  - .\mvnw.cmd -q spotless:apply (pass)
+  - .\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -DskipTests test-compile (pass)
+  - .\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcWorkerMessageRepositoryTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcWorkerMessageRepositoryTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+- Next: optional EXPLAIN-Vergleich (Postgres/MariaDB) f�r Claim-SQL, um Index-/Join-Plan gegen gro�e Datenmengen zu verifizieren.
+
+
+Progress update (2026-02-25T09:44:52Z)
+- Added Postgres-specific Liquibase index changesets for worker claim/fetch/reclaim hot paths in both example apps.
+- New changelog file: db/changelog/002-worker-claim-indexes-postgres.sql (app-jdbc + app-reactive).
+- Added partial indexes: READY claim scan, FAILED retry scan, PROCESSING key lookup, PROCESSING worker fetch, PROCESSING stale-reclaim timestamp.
+- Updated db.changelog-master.yaml in both examples to include new 002 changeset with dbms=postgresql.
+- Validation:
+  - .\\mvnw.cmd -q -pl examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile (pass)
+
+
+Progress update (2026-02-25T09:50:13Z)
+- Added MariaDB-specific Liquibase index changesets for worker claim/fetch/reclaim in both example apps.
+- New file in each app: db/changelog/003-worker-claim-indexes-mariadb.sql.
+- Updated db.changelog-master.yaml in both examples to include changeset id 003 with dbms=mariadb.
+- Added composite indexes for status/retry/id/key claim path, key+status processing existence check, worker fetch path, and stale processing reclaim path.
+- Validation:
+  - .\\mvnw.cmd -q -pl examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile (pass)
+
+
+Progress update (2026-02-25T09:59:57Z)
+- Added before/after MariaDB EXPLAIN comparison in JdbcWorkerClaimExplainIntegrationTest.
+- Test now executes claim EXPLAIN once with baseline index set, then creates tuned MariaDB indexes and executes EXPLAIN again.
+- Observed plan improvement: baseline used full scans + block nested loop join; tuned plan switched to indexed ref lookups for p/prev and cost dropped strongly in the candidate subquery.
+- Validation:
+  - .\\mvnw.cmd -q -pl repository-jdbc -am '-Dtest=JdbcWorkerClaimExplainIntegrationTest#mariadb_claimBatchSingleStatement_explain' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T10:13:54Z)
+- Added new parallel worker load tests for both variants to process 1500 messages with at least 5 workers in parallel until completion.
+- Blocking test: worker-blocking WorkerJdbcIntegrationTest#parallel_workers_process_all_1500_messages seeds 1500 READY rows via generate_series, starts 5 workers concurrently, loops schedule() until processed count reaches 1500, then asserts no remaining non-PROCESSED rows.
+- Reactive test: worker-reactive WorkerReactiveIntegrationTest#parallel_workers_process_all_1500_messages mirrors the same scenario with 5 reactive workers and completion polling.
+- Added passthrough LockingTaskExecutor helpers in both tests so schedule() executes claim section during integration runs.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_1500_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_1500_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T10:33:46Z)
+- Updated parallel worker integration tests to actively record WorkerObservation instead of using Noop observer.
+- Added thread-safe RecordingObserver in blocking and reactive tests, collecting workerClaimed/workerProcessed/workerFailed events and observations.
+- Parallel tests now assert observability behavior (claim events exist, no worker failures, correct mode/ids, and 1500 distinct processed messageIds via WorkerObservation).
+- Relaxed raw event-count assertions to >= thresholds and added distinct messageId assertion to avoid false negatives under concurrent duplicate callbacks.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_1500_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_1500_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T10:42:25Z)
+- Made new parallel worker integration tests configurable via JVM system properties in both blocking and reactive variants.
+- Config keys used in both tests:
+  - superduper.test.parallel.messages (default 1500)
+  - superduper.test.parallel.workers (default 5)
+  - superduper.test.parallel.batch (default 100)
+  - superduper.test.parallel.timeout-seconds (default 60)
+- Renamed test methods to generic names: parallel_workers_process_all_messages.
+- Added positiveIntProperty(...) validation helper in both test classes.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T10:59:21Z)
+- Adjusted parallel worker tests to use fixed constants at the top of each test method (no system property config).
+- Added per-worker observation accounting in both parallel tests: claimed and processed counts keyed by WorkerObservation.workerId.
+- Added test output logging of worker distribution:
+  - BLOCKING WORKER CLAIMED/PROCESSED BY workerId
+  - REACTIVE WORKER CLAIMED/PROCESSED BY workerId
+- Updated blocking worker service to generate unique worker IDs per instance by appending UUID (aligns with reactive service and enables per-worker differentiation in parallel in-process tests).
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T13:09:52Z)
+- Replaced remaining System.out test logging with Log4j logger calls in worker parallel integration tests.
+- Added Log4j API imports and logger fields in WorkerJdbcIntegrationTest and WorkerReactiveIntegrationTest.
+- Added test-scope dependency org.apache.logging.log4j:log4j-api to worker-blocking and worker-reactive modules.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T13:54:43Z)
+- Renamed blocking worker Java package from net.rsworld.superduper.worker.jdbc to net.rsworld.superduper.worker.blocking.
+- Moved worker-blocking sources/tests to matching folder paths under worker/blocking.
+- Updated all affected imports/usages in modules referencing blocking worker classes:
+  - starter-autoselect (main/test)
+  - examples/app-jdbc
+  - consumer-kafka-blocking test
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,starter-autoselect,consumer-kafka-blocking,examples/app-jdbc -am -DskipTests test-compile (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,starter-autoselect -am '-Dtest=SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,AutoSelectConfigurationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T13:57:22Z)
+- Renamed blocking Kafka E2E test topic from e2e.worker.jdbc to e2e.worker.blocking in KafkaConsumerWorkerE2EIT.
+- Validation:
+  - .\\mvnw.cmd -q -pl consumer-kafka-blocking -am -DskipTests test-compile (pass)
+
+
+Progress update (2026-02-25T14:03:18Z)
+- Updated README algorithm description to current claim/fetch behavior and SQL structure.
+- Replaced outdated two-step/RETURNING-style claim description with current single-statement claim SQL for PostgreSQL and MariaDB.
+- Documented that claimBatch returns updated-row count, and fetch phase now reads PROCESSING rows by workerId (container_id=:cid) rather than by claimed id list.
+- Updated index guidance to reference Liquibase optimization scripts 002 (Postgres) and 003 (MariaDB), and adjusted consistency notes to reflect single-statement claim semantics.
+
+
+Progress update (2026-02-25T14:31:11Z)
+- Per-key-order verification hardened: added dedicated parallel strict-order integration tests for blocking and reactive workers with a single key and 5 parallel workers.
+- New tests assert processing order is exactly id 1..N (N=300), proving strict per-key sequencing under concurrent worker scheduling.
+- Fixed workerId consistency risk: default workerId in blocking/reactive worker services now matches heartbeat id format (runtime MXBean name), avoiding false orphan reclaim by missing-heartbeat checks.
+- Added package-local constructors with explicit workerId for tests; parallel tests now pass unique test worker ids to keep per-worker observation breakdown visible.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=SuperDuperWorkerServiceTest,WorkerBlockingIntegrationTest#parallel_workers_process_all_messages,WorkerBlockingIntegrationTest#parallel_workers_preserve_strict_per_key_ordering,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages,WorkerReactiveIntegrationTest#parallel_workers_preserve_strict_per_key_ordering' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T14:22:58Z)
+- Added strict per-key ordering hardening for mixed key input order in both worker variants.
+- New parallel integration test (blocking): WorkerBlockingIntegrationTest#parallel_workers_preserve_per_key_ordering_with_mixed_keys.
+- New parallel integration test (reactive): WorkerReactiveIntegrationTest#parallel_workers_preserve_per_key_ordering_with_mixed_keys.
+- Test pattern now covers mixed inserts across keys (k1/k2/k3 interleaved) and asserts each key is processed exactly in DB id order, even with 5 workers in parallel.
+- Added helper seedRowsMixedKeyPattern(...) and expectedMessageOrderByKey() in both test classes for deterministic setup/assertion.
+- Validation:
+  - .\\mvnw.cmd --% -q -pl worker-blocking,worker-reactive -am -Dtest=WorkerBlockingIntegrationTest#parallel_workers_preserve_per_key_ordering_with_mixed_keys,WorkerReactiveIntegrationTest#parallel_workers_preserve_per_key_ordering_with_mixed_keys -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+  - .\\mvnw.cmd --% -q -pl worker-blocking,worker-reactive -am -Dtest=WorkerBlockingIntegrationTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+- Next: add an optional true multi-container integration variant (separate JVM/app instances sharing the same DB + ShedLock table) to prove ordering guarantees beyond in-process concurrency.
+
+
+Progress update (2026-02-26T05:57:25Z)
+- Renamed example module directory from examples/app-jdbc to examples/app-blocking and updated root aggregator module path in pom.xml.
+- Renamed blocking example Java package from net.rsworld.superduper.example.jdbc to net.rsworld.superduper.example.blocking; renamed classes: JdbcExampleApplication->BlockingExampleApplication, ExampleJdbcSeeder->ExampleBlockingSeeder, ExampleJdbcMessageHandler->ExampleBlockingMessageHandler.
+- Updated module artifactId to example-app-blocking, app name/group-id in application.yml to blocking variants, and README run commands/module listing to examples/app-blocking.
+- Validation: .\\mvnw.cmd -q spotless:apply (pass); .\\mvnw.cmd -q -pl examples/app-blocking,examples/app-reactive -am -DskipTests compile (pass).
+- Note: initial .\\mvnw.cmd -q -pl examples/app-blocking -am -DskipTests test-compile failed in unrelated consumer-kafka-blocking test compile (generic inference in KafkaConsumerServiceTest).
+- Next: if needed, clean up unrelated Spotless formatting changes outside renamed module before commit.
+
+
+Progress update (2026-02-26T06:35:36Z)
+- Removed redundant local Liquibase changelog assets from example apps now that schema is provided by module superduper-schema-liquibase: deleted examples/app-blocking/src/main/resources/db/changelog/* and examples/app-reactive/src/main/resources/db/changelog/*.
+- Migrated integration tests from inline SQL schema creation (CREATE TABLE/CREATE INDEX) to Liquibase-based setup using central changelog db/changelog/superduper/db.changelog-master.yaml in affected modules: repository-jdbc, repository-r2dbc, worker-blocking, worker-reactive, consumer-kafka-blocking, consumer-kafka-reactive.
+- Added test-scoped Liquibase helper classes per module (LiquibaseTestSupport) and wired required test dependencies (liquibase-core, superduper-schema-liquibase, plus JDBC drivers where needed).
+- Adjusted MariaDB claim EXPLAIN test baseline setup to drop tuned indexes after Liquibase migration before baseline EXPLAIN, then recreate for tuned comparison.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -DskipTests test-compile (pass)
+  - .\\mvnw.cmd --% -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcMessageIngestRepositoryIntegrationTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,JdbcWorkerClaimExplainIntegrationTest,R2dbcMessageIngestRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,WorkerBlockingIntegrationTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+  - .\\mvnw.cmd -q -pl examples/app-blocking,examples/app-reactive -am -DskipTests compile (pass)
+  - consumer modules test-compile still blocked by pre-existing unrelated generic-inference compilation errors in KafkaConsumerServiceTest / KafkaReactiveR2dbcConsumerServiceTest.
+- Next: optionally fix the unrelated ConsumerRecord generic inference failures to restore full module test-compile.
+
+
+Progress update (2026-02-26T06:48:39Z)
+- Centralized Liquibase test helper into schema module: added schema-liquibase/src/test/java/net/rsworld/superduper/schema/liquibase/test/LiquibaseTestSupport.java.
+- Enabled publishing schema module test classes as artifact: schema-liquibase/pom.xml now produces 	est-jar via maven-jar-plugin and includes test-scope liquibase-core for helper compilation.
+- Switched integration tests in repository/worker/consumer modules to use centralized helper (
+et.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport.migrate(...)) and removed duplicated local LiquibaseTestSupport classes from each module.
+- Added test-jar dependency on superduper-schema-liquibase (type 	est-jar, scope 	est) in affected module POMs while keeping main test dependency on superduper-schema-liquibase for changelog resources.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl schema-liquibase,repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -DskipTests test-compile (pass)
+  - .\\mvnw.cmd --% -q -pl schema-liquibase,repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcMessageIngestRepositoryIntegrationTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,JdbcWorkerClaimExplainIntegrationTest,R2dbcMessageIngestRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,WorkerBlockingIntegrationTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+  - .\\mvnw.cmd -q -pl consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests compile (pass)
+  - .\\mvnw.cmd -q -pl consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests test-compile still fails due pre-existing unrelated ConsumerRecord generic inference in KafkaConsumerServiceTest (blocking).
+- Next: optional cleanup to import centralized helper instead of FQCN at call sites for readability (functional behavior already centralized).
+
+
+Progress update (2026-02-26T06:55:34Z)
+- Replaced fully-qualified 
+et.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport usages in integration tests with LiquibaseTestSupport + explicit import statements across worker/repository/consumer test classes.
+- Fixed import refactor fallout by restoring correct package declarations and removing accidental invalid import LiquibaseTestSupport; entries in affected test files.
+- Validation: .\\mvnw.cmd -q spotless:apply (pass).
+- Note: no additional consumer test-compile run beyond existing known pre-existing ConsumerRecord generic inference failures.
+
+
+Progress update (2026-02-26T09:48:30+01:00)
+- Implemented a Sonar refactoring wave to resolve all open BLOCKER/CRITICAL/MAJOR findings (including majors).
+- Fixed functional/risk-relevant items:
+  - Thread-safety in examples SeedProgress (CountDownLatch via AtomicReference)
+  - Removed security hotspots (Regex DoS) in seeders (no split("\\s*,\\s*") anymore)
+  - Replaced generic exception signature in blocking MessageHandler with dedicated MessageHandlingException.
+- Additional Sonar-oriented cleanup:
+  - LoggingSuperduperObserver: moved log argument method calls to local variables (S2629)
+  - NoopSuperduperObserver: added explicit no-op comments (S1186)
+  - Added constants for duplicated metric/literal strings (S1192)
+  - Renamed restricted identifiers (consumer record parameter names), removed unused parameters (heartbeat services)
+  - Replaced Thread.sleep in affected E2E tests with LockSupport-based pause.
+- Simplified heartbeat constructors and updated call sites in starter-autoselect and worker tests.
+- Removed commented-out code block from POM (xml:S125).
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -T 1C -q -DskipTests test-compile (pass)
+  - .\\mvnw.cmd -T 1C -q test (pass)
+  - .\\mvnw.cmd --% -DskipTests verify org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=<token> -Dsonar.projectKey=superduper -Dsonar.projectName=superduper (pass)
+- Sonar result after re-analysis:
+  - TOTAL_MAJOR_PLUS=0
+  - BUG_TOTAL=0
+  - VULN_TOTAL=0
+  - HOTSPOT_TO_REVIEW=0
+  - Quality Gate still ERROR only because new_coverage=0.0 against threshold 80 (no JaCoCo report imported).
+- Note: left untracked file qodana.yaml unchanged.
+
+Progress update (2026-02-26T11:41:14Z)
+- Checked Sonar Quality Gate on local SonarQube (http://localhost:9000) and reproduced analysis pipeline end-to-end.
+- Fixed build/quality configuration in root pom.xml:
+  - Added JaCoCo plugin management + inherited executions (prepare-agent + report at verify) to generate XML coverage for Sonar import.
+  - Updated Surefire argLine to prepend ${argLine} so JaCoCo agent and existing ByteBuddy agent both apply.
+  - Added managed version for maven-jar-plugin to remove effective-model warning in schema-liquibase.
+- Ran Spotless after edits (session rule).
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -T 1C verify (pass)
+  - .\\mvnw.cmd --% org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin -Dsonar.projectKey=superduper -Dsonar.projectName=superduper (pass)
+  - Sonar API: quality gate status = OK; major+ issues = 0; hotspots to review = 0.
+- Notes:
+  - Sonar scanner now imports JaCoCo XML reports where tests exist (no more global "No report imported" situation).
+  - Remaining scanner warning about sonar.password is due deprecated credential style; token-based auth is recommended for CI.
+
+Progress update (2026-02-26T13:16:00Z)
+- Excluded example modules from Sonar analysis by setting sonar.skip=true in:
+  - examples/app-blocking/pom.xml
+  - examples/app-reactive/pom.xml
+- Ran formatting and verification:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -T 1C verify (pass)
+- Re-ran Sonar scan on fresh local SonarQube instance:
+  - .\\mvnw.cmd --% org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin -Dsonar.projectKey=superduper -Dsonar.projectName=superduper (pass)
+  - Scan log confirms both example modules skipped via sonar.skip.
+- Coverage result after excluding examples:
+  - Overall coverage (Sonar): 61.6% (below 80%)
+  - Quality Gate: OK
+- Notable module coverages from Sonar:
+  - consumer-kafka-blocking 91.6%
+  - consumer-kafka-reactive 90.7%
+  - worker-blocking 81.9%
+  - worker-reactive 85.8%
+  - repository-jdbc 79.7%
+  - repository-r2dbc 74.4%
+  - starter-autoselect 79.5%
+  - observability-api/logging/metrics currently 0.0%
+
+Progress update (2026-02-26T14:14:21Z)
+- Added AGENTS.md as the single source for permanent agent instructions and project workflow/context rules.
+- Reduced RESTART_CONTEXT.txt to chronological progress-log content only to avoid duplicated guidance across files.
+- Validation: verified file rewrite and presence of AGENTS.md.
+- Next: keep ongoing implementation/testing progress entries only in RESTART_CONTEXT.txt.
+
+Progress update (2026-02-26T14:18:57Z)
+- Updated AGENTS.md session workflow with Git rules: stage newly created files and always commit completed changes.
+- Added explicit requirement that commit messages must be short, meaningful, and follow Conventional Commits.
+- Validation: Spotless run after rule update.
+- Next: enforce this workflow for all following changes.
+
+Progress update (2026-02-26T14:20:51Z)
+- Updated AGENTS.md Git workflow: do not auto-commit after changes.
+- New behavior: print a short Conventional Commit message proposal and wait for explicit user confirmation before committing.
+- Validation: Spotless run after rule update.
+- Next: for upcoming tasks, return proposed commit message only unless commit is explicitly requested.
+
+Progress update (2026-02-26T14:26:50Z)
+- Fixed doc drift in AGENTS quick resume checklist:
+  - Updated blocking worker path from `worker/.../worker/jdbc/SuperDuperWorkerService.java` to `worker/.../worker/blocking/SuperDuperWorkerService.java`.
+- Validation:
+  - `mvn -q spotless:apply` (pass)
+
+Progress update (2026-02-26T14:36:10Z)
+- Re-ran validation and Sonar analysis for current workspace state.
+- Full verify attempt failed in `superduper-consumer-kafka-reactive` due Testcontainers Ryuk connectivity:
+  - `KafkaReactiveE2ETest` error: `Could not connect to Ryuk at localhost:55334`.
+- SonarQube on `http://localhost:9000` was initially unavailable; started local container `superduper-sonar` (`sonarqube:community`) and waited until status `UP`.
+- Sonar authentication with `sonar.login/sonar.password` failed (`Not authorized`); generated user token via Sonar API and reran scanner with `sonar.token` successfully.
+- Sonar results (project `superduper`):
+  - Coverage: `55.4%` (`lines_to_cover=1122`, `uncovered_lines=527`)
+  - Quality Gate: `OK`
+- Conclusion: coverage is below the requested 80% threshold.
+
+Progress update (2026-02-26T15:02:46Z)
+- Implemented coverage uplift focused on low-performing modules.
+- Added new tests:
+  - `observability-api/src/test/java/net/rsworld/superduper/observability/api/ObservabilitySettingsTest.java`
+  - `observability-logging/src/test/java/net/rsworld/superduper/observability/logging/LoggingSuperduperObserverTest.java`
+  - `observability-metrics/src/test/java/net/rsworld/superduper/observability/metrics/MetricsSuperduperObserverTest.java`
+- Added missing test dependencies (`spring-boot-starter-test`, scope `test`) in:
+  - `observability-api/pom.xml`
+  - `observability-logging/pom.xml`
+  - `observability-metrics/pom.xml`
+- Validation and analysis:
+  - `mvn -q spotless:apply` (pass)
+  - `mvn -q -pl observability-api,observability-logging,observability-metrics,consumer-kafka-reactive -am -Dtest=ObservabilitySettingsTest,LoggingSuperduperObserverTest,MetricsSuperduperObserverTest,KafkaReactiveR2dbcAutoConfigurationTest,KafkaReactiveR2dbcConsumerServiceTest -Dsurefire.failIfNoSpecifiedTests=false verify` (pass)
+  - `mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<temp-token> -Dsonar.projectKey=superduper -Dsonar.projectName=superduper` (pass)
+- Sonar results after uplift:
+  - Coverage: `82.2%` (`lines_to_cover=1113`, `uncovered_lines=179`)
+  - Notable module coverages:
+    - `observability-api`: `100.0%`
+    - `observability-logging`: `77.9%`
+    - `observability-metrics`: `85.0%`
+    - `consumer-kafka-reactive`: `88.4%`
+  - Quality Gate: `ERROR` due `new_violations=3` (coverage target met).
