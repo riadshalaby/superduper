@@ -1,0 +1,77 @@
+package net.rsworld.superduper.consumer.plain;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+import net.rsworld.superduper.repository.api.MessageIngestRepository;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.kafka.support.Acknowledgment;
+
+class KafkaConsumerServiceTest {
+
+    @Test
+    void onMessage_insertsAndAcks() {
+        MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
+        KafkaConsumerService svc = new KafkaConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        Acknowledgment ack = mock(Acknowledgment.class);
+        ConsumerRecord<String, String> rec = new ConsumerRecord<>("t", 0, 0L, "key1", "value1");
+
+        svc.onMessage(rec, ack);
+
+        var uuidCap = ArgumentCaptor.forClass(String.class);
+        var keyCap = ArgumentCaptor.forClass(String.class);
+        var contentCap = ArgumentCaptor.forClass(String.class);
+        verify(ingestRepository).upsertReadyMessage(uuidCap.capture(), keyCap.capture(), contentCap.capture());
+        assertThat(keyCap.getValue()).isEqualTo("key1");
+        assertThat(contentCap.getValue()).isEqualTo("value1");
+        assertThat(uuidCap.getValue())
+                .isEqualTo(UUID.nameUUIDFromBytes("t:0:0".getBytes(StandardCharsets.UTF_8))
+                        .toString());
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    void onMessage_defaultsNullKey() {
+        MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
+        KafkaConsumerService svc = new KafkaConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        Acknowledgment ack = mock(Acknowledgment.class);
+        ConsumerRecord<String, String> rec = new ConsumerRecord<>("t", 0, 7L, null, "value1");
+
+        svc.onMessage(rec, ack);
+
+        var keyCap = ArgumentCaptor.forClass(String.class);
+        verify(ingestRepository)
+                .upsertReadyMessage(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        keyCap.capture(),
+                        org.mockito.ArgumentMatchers.anyString());
+        assertThat(keyCap.getValue()).isEqualTo("default");
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    void onMessage_whenRepositoryFails_doesNotAck() {
+        MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
+        KafkaConsumerService svc = new KafkaConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        Acknowledgment ack = mock(Acknowledgment.class);
+        ConsumerRecord<String, String> rec = new ConsumerRecord<>("t", 0, 9L, "key1", "value1");
+
+        doThrow(new RuntimeException("db fail"))
+                .when(ingestRepository)
+                .upsertReadyMessage(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+
+        assertThatThrownBy(() -> svc.onMessage(rec, ack)).isInstanceOf(RuntimeException.class);
+        verify(ack, never()).acknowledge();
+    }
+}

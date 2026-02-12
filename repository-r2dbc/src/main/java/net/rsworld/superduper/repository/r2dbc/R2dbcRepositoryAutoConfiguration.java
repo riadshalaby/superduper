@@ -1,0 +1,81 @@
+package net.rsworld.superduper.repository.r2dbc;
+
+import java.util.Locale;
+import net.rsworld.superduper.repository.api.ReactiveMessageIngestRepository;
+import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
+import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.transaction.ReactiveTransactionManager;
+import org.springframework.transaction.reactive.TransactionalOperator;
+
+@AutoConfiguration
+public class R2dbcRepositoryAutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SqlDialect r2dbcSqlDialect(
+            @Value("${superduper.db.dialect:}") String configuredDialect,
+            @Value("${spring.r2dbc.url:}") String r2dbcUrl) {
+        if (!configuredDialect.isBlank()) {
+            String raw = configuredDialect.trim().toUpperCase(Locale.ROOT);
+            if ("POSTGRES".equals(raw) || "POSTGRESQL".equals(raw)) {
+                return SqlDialect.POSTGRES;
+            }
+            if ("MARIADB".equals(raw) || "MARIA".equals(raw)) {
+                return SqlDialect.MARIADB;
+            }
+            throw new IllegalArgumentException("Unsupported superduper.db.dialect: " + configuredDialect);
+        }
+
+        String url = r2dbcUrl.toLowerCase(Locale.ROOT);
+        if (url.contains("postgresql")) {
+            return SqlDialect.POSTGRES;
+        }
+        if (url.contains("mariadb")) {
+            return SqlDialect.MARIADB;
+        }
+        throw new IllegalArgumentException("Unable to detect SQL dialect. Set superduper.db.dialect=postgres|mariadb");
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WorkerR2dbcSqlDialect workerR2dbcSqlDialect(SqlDialect dialect) {
+        return switch (dialect) {
+            case POSTGRES -> new PostgresWorkerR2dbcSqlDialect();
+            case MARIADB -> new MariaDbWorkerR2dbcSqlDialect();
+        };
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ReactiveMessageIngestRepository reactiveMessageIngestRepository(DatabaseClient db, SqlDialect dialect) {
+        return new R2dbcMessageIngestRepository(db, dialect);
+    }
+
+    @Bean
+    @ConditionalOnBean(ReactiveTransactionManager.class)
+    @ConditionalOnMissingBean
+    public TransactionalOperator transactionalOperator(ReactiveTransactionManager txManager) {
+        return TransactionalOperator.create(txManager);
+    }
+
+    @Bean
+    @ConditionalOnBean(TransactionalOperator.class)
+    @ConditionalOnMissingBean
+    public ReactiveWorkerMessageRepository reactiveWorkerMessageRepository(
+            DatabaseClient db, TransactionalOperator tx) {
+        return new R2dbcWorkerMessageRepository(db, tx);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ReactiveWorkerMaintenanceRepository reactiveWorkerMaintenanceRepository(
+            DatabaseClient db, WorkerR2dbcSqlDialect dialect) {
+        return new R2dbcWorkerMaintenanceRepository(db, dialect);
+    }
+}

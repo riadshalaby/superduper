@@ -8,11 +8,22 @@ spring:
 
 superduper:
   consumer:
-    type: reactor
+    type: reactor # selects reactive worker stack; Kafka consumer is still Spring Kafka
   kafka:
     bootstrap-servers: localhost:9092
     group-id: example-reactive
     topic: superduper.example
+  worker:
+    batch-size: 250
+    max-retries: 3
+    claim-interval-ms: 500
+  example:
+    seed:
+      enabled: true
+      count: 1000
+      keys: 20
+      await-timeout-seconds: 180
+      readiness-timeout-seconds: 30
 
 logging:
   level:
