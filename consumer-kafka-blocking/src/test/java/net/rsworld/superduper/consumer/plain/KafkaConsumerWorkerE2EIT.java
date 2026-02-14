@@ -55,7 +55,7 @@ class KafkaConsumerWorkerE2EIT {
     static final String TOPIC = "e2e.worker.jdbc";
 
     @Container
-    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka-native:4.1.1"));
+    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:4.1.1"));
 
     @Container
     static PostgreSQLContainer pg = new PostgreSQLContainer("postgres:16-alpine");
