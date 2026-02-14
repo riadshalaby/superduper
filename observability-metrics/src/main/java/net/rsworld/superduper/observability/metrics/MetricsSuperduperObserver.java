@@ -30,54 +30,70 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
     @Override
     public void consumerReceived(ConsumerObservation observation) {
         loggingDelegate.consumerReceived(observation);
-        if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.LIFECYCLE)) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
-        counter("superduper.consumer.received.total", consumerTags(observation, null)).increment();
+        counter("superduper.consumer.received.total", consumerTags(observation, null))
+                .increment();
     }
 
     @Override
     public void consumerSucceeded(ConsumerObservation observation) {
         loggingDelegate.consumerSucceeded(observation);
-        if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.SUCCESS)) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.SUCCESS)) {
             return;
         }
         Tags tags = consumerTags(observation, null);
         counter("superduper.consumer.persisted.total", tags).increment();
-        recordDuration("superduper.consumer.persist.duration", tags, observation.durationMs(), ObservabilityComponent.CONSUMER);
+        recordDuration(
+                "superduper.consumer.persist.duration",
+                tags,
+                observation.durationMs(),
+                ObservabilityComponent.CONSUMER);
     }
 
     @Override
     public void consumerFailed(ConsumerObservation observation, Throwable error) {
         loggingDelegate.consumerFailed(observation, error);
-        if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.FAILURE)) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.FAILURE)) {
             return;
         }
         Tags tags = consumerTags(observation, error);
         counter("superduper.consumer.failed.total", tags).increment();
-        recordDuration("superduper.consumer.persist.duration", tags, observation.durationMs(), ObservabilityComponent.CONSUMER);
+        recordDuration(
+                "superduper.consumer.persist.duration",
+                tags,
+                observation.durationMs(),
+                ObservabilityComponent.CONSUMER);
     }
 
     @Override
     public void workerClaimed(WorkerObservation observation, int claimedCount) {
         loggingDelegate.workerClaimed(observation, claimedCount);
-        if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.LIFECYCLE)) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
         Tags tags = workerTags(observation, null).and("claimed_count", Integer.toString(claimedCount));
         counter("superduper.worker.claim.total", tags).increment();
-        recordDuration("superduper.worker.claim.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(
+                "superduper.worker.claim.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override
     public void workerProcessed(WorkerObservation observation) {
         loggingDelegate.workerProcessed(observation);
-        if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.SUCCESS)) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.SUCCESS)) {
             return;
         }
         Tags tags = workerTags(observation, null);
         counter("superduper.worker.processed.total", tags).increment();
-        recordDuration("superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(
+                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override
@@ -88,29 +104,34 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         }
         Tags tags = workerTags(observation, null);
         counter("superduper.worker.retried.total", tags).increment();
-        recordDuration("superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(
+                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override
     public void workerStopped(WorkerObservation observation) {
         loggingDelegate.workerStopped(observation);
-        if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.FAILURE)) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.FAILURE)) {
             return;
         }
         Tags tags = workerTags(observation, null);
         counter("superduper.worker.stopped.total", tags).increment();
-        recordDuration("superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(
+                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override
     public void workerFailed(WorkerObservation observation, Throwable error) {
         loggingDelegate.workerFailed(observation, error);
-        if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.FAILURE)) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.FAILURE)) {
             return;
         }
         Tags tags = workerTags(observation, error);
         counter("superduper.worker.failed.total", tags).increment();
-        recordDuration("superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(
+                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override

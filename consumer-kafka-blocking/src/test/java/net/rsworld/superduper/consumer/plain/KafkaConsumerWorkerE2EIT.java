@@ -129,7 +129,14 @@ class KafkaConsumerWorkerE2EIT {
         MessageHandler handler = (MessageRow r) -> ProcessingResult.SUCCESS;
         WorkerMessageRepository messageRepository = new JdbcWorkerMessageRepository(np);
 
-        SuperDuperWorkerService svc = new SuperDuperWorkerService(messageRepository, txm, lockExec, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10, 5);
+        SuperDuperWorkerService svc = new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5);
 
         var claim = SuperDuperWorkerService.class.getDeclaredMethod("claimBatch");
         claim.setAccessible(true);

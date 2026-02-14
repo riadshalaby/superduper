@@ -26,7 +26,14 @@ class SuperDuperWorkerServiceTest {
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
 
-        SuperDuperWorkerService svc = new SuperDuperWorkerService(messageRepository, txm, lockExec, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 100, 2);
+        SuperDuperWorkerService svc = new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                100,
+                2);
         svc.process(List.of(1L, 2L));
 
         verify(messageRepository).markProcessed(1L);
@@ -43,7 +50,14 @@ class SuperDuperWorkerServiceTest {
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
 
-        SuperDuperWorkerService svc = new SuperDuperWorkerService(messageRepository, txm, lockExec, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 100, 3);
+        SuperDuperWorkerService svc = new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                100,
+                3);
         svc.process(List.of(10L));
 
         verify(messageRepository).markReadyForRetry(10L, 1);

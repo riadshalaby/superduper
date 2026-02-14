@@ -75,7 +75,14 @@ class WorkerJdbcIntegrationTest {
         seedRows("ju1", "k1", "v1", "READY", "ju2", "k1", "v2", "READY", "ju3", "k2", "v3", "READY");
 
         MessageHandler handler = r -> ProcessingResult.SUCCESS;
-        SuperDuperWorkerService svc = new SuperDuperWorkerService(messageRepository, txm, lockExec, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10, 5);
+        SuperDuperWorkerService svc = new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5);
 
         List<Long> first = svc.claimBatch();
         assertThat(first).hasSize(2);
@@ -95,10 +102,17 @@ class WorkerJdbcIntegrationTest {
                 "UPDATE messages SET status='PROCESSING', last_updated = NOW() - INTERVAL '10 minutes' WHERE uuid=:uuid",
                 new MapSqlParameterSource("uuid", "ju3"));
 
-        HeartbeatService hb = new HeartbeatService(maintenanceRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10_000);
+        HeartbeatService hb = new HeartbeatService(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10_000);
         hb.heartbeat();
 
-        OrphanReclaimer rec = new OrphanReclaimer(maintenanceRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 120_000, 10_000);
+        OrphanReclaimer rec = new OrphanReclaimer(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                120_000,
+                10_000);
         rec.reclaim();
 
         String status = jdbc.queryForObject(
@@ -112,8 +126,22 @@ class WorkerJdbcIntegrationTest {
         seedRows("cu1", "ck1", "a", "READY", "cu2", "ck1", "b", "READY", "cu3", "ck2", "c", "READY");
 
         MessageHandler handler = r -> ProcessingResult.SUCCESS;
-        SuperDuperWorkerService svc1 = new SuperDuperWorkerService(messageRepository, txm, lockExec, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10, 5);
-        SuperDuperWorkerService svc2 = new SuperDuperWorkerService(messageRepository, txm, lockExec, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10, 5);
+        SuperDuperWorkerService svc1 = new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5);
+        SuperDuperWorkerService svc2 = new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5);
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {

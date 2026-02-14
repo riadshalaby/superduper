@@ -56,7 +56,10 @@ public class SuperDuperWorkerReactiveService {
                                         new WorkerObservation(
                                                 "reactive", workerId, null, null, batchSize, elapsedMs(started)),
                                         ids.size());
-                                return messageRepository.fetchClaimedByIds(ids).concatMap(this::processOne).then();
+                                return messageRepository
+                                        .fetchClaimedByIds(ids)
+                                        .concatMap(this::processOne)
+                                        .then();
                             })
                             .onErrorResume(e -> {
                                 observer.workerFailed(

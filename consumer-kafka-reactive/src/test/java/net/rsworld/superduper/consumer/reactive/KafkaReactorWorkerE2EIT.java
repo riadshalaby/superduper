@@ -131,7 +131,13 @@ class KafkaReactorWorkerE2EIT {
                 .build());
         ReactiveWorkerMessageRepository messageRepository =
                 new R2dbcWorkerMessageRepository(db, TransactionalOperator.create(new R2dbcTransactionManager(cf)));
-        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(messageRepository, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10, 5, 500);
+        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
+                messageRepository,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5,
+                500);
 
         List<Long> first =
                 messageRepository.claimBatch("w1", 10, 5).collectList().block();

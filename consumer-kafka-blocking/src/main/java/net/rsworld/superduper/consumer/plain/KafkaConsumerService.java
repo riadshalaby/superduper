@@ -25,12 +25,15 @@ class KafkaConsumerService {
         long started = System.nanoTime();
         String k = record.key() != null ? record.key() : "default";
         int payloadSize = record.value() == null ? 0 : record.value().getBytes(StandardCharsets.UTF_8).length;
-        observer.consumerReceived(
-                new ConsumerObservation("blocking", record.topic(), record.partition(), record.offset(), k, payloadSize, 0));
+        observer.consumerReceived(new ConsumerObservation(
+                "blocking", record.topic(), record.partition(), record.offset(), k, payloadSize, 0));
         String seed = record.topic() + ":" + record.partition() + ":" + record.offset();
         try {
             messageIngestRepository.upsertReadyMessage(
-                    UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString(), k, record.value());
+                    UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8))
+                            .toString(),
+                    k,
+                    record.value());
             ack.acknowledge();
             observer.consumerSucceeded(new ConsumerObservation(
                     "blocking",

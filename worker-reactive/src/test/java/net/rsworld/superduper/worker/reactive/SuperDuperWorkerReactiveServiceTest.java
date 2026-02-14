@@ -20,7 +20,8 @@ class SuperDuperWorkerReactiveServiceTest {
         ReactiveMessageHandler handler =
                 row -> Mono.just(row.id() == 1L ? ProcessingResult.SUCCESS : ProcessingResult.RETRY);
 
-        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(mr, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 100, 2, 5000);
+        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
+                mr, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 100, 2, 5000);
 
         ClaimedMessage row1 = new ClaimedMessage(1L, "k1", "v", 0, "cid");
         ClaimedMessage row2 = new ClaimedMessage(2L, "k2", "v", 1, "cid");
@@ -40,7 +41,8 @@ class SuperDuperWorkerReactiveServiceTest {
         when(mr.markReadyForRetry(10L, 1)).thenReturn(Mono.empty());
 
         ReactiveMessageHandler handler = row -> Mono.just(ProcessingResult.RETRY);
-        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(mr, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 100, 3, 5000);
+        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
+                mr, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 100, 3, 5000);
 
         ClaimedMessage row = new ClaimedMessage(10L, "k1", "v1", 0, "cid");
         var m = SuperDuperWorkerReactiveService.class.getDeclaredMethod("processOne", ClaimedMessage.class);

@@ -1,14 +1,15 @@
 package net.rsworld.superduper.starter;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import javax.sql.DataSource;
-import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
-import net.rsworld.superduper.observability.api.SuperduperObserver;
-import net.rsworld.superduper.observability.metrics.MetricsSuperduperObserver;
-import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 import net.javacrumbs.shedlock.core.DefaultLockingTaskExecutor;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider;
+import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
+import net.rsworld.superduper.observability.api.SuperduperObserver;
+import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
+import net.rsworld.superduper.observability.metrics.MetricsSuperduperObserver;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
@@ -21,7 +22,6 @@ import net.rsworld.superduper.worker.reactive.ReactiveHeartbeatService;
 import net.rsworld.superduper.worker.reactive.ReactiveMessageHandler;
 import net.rsworld.superduper.worker.reactive.ReactiveOrphanReclaimer;
 import net.rsworld.superduper.worker.reactive.SuperDuperWorkerReactiveService;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -39,7 +39,8 @@ public class AutoSelectConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SuperduperObserver superduperObserver(
-            ObservabilityProperties properties, org.springframework.beans.factory.ObjectProvider<MeterRegistry> meterRegistry) {
+            ObservabilityProperties properties,
+            org.springframework.beans.factory.ObjectProvider<MeterRegistry> meterRegistry) {
         var settings = properties.toSettings();
         if (!settings.enabled()) {
             return NoopSuperduperObserver.INSTANCE;

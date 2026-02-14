@@ -25,8 +25,8 @@ class KafkaReactorR2dbcConsumerService {
         long started = System.nanoTime();
         String key = record.key() != null ? record.key() : "default";
         int payloadSize = record.value() == null ? 0 : record.value().getBytes(StandardCharsets.UTF_8).length;
-        observer.consumerReceived(
-                new ConsumerObservation("reactive", record.topic(), record.partition(), record.offset(), key, payloadSize, 0));
+        observer.consumerReceived(new ConsumerObservation(
+                "reactive", record.topic(), record.partition(), record.offset(), key, payloadSize, 0));
         String seed = record.topic() + ":" + record.partition() + ":" + record.offset();
         messageIngestRepository
                 .upsertReadyMessage(

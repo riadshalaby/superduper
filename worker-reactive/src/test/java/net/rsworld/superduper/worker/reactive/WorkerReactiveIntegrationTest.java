@@ -77,7 +77,12 @@ class WorkerReactiveIntegrationTest {
 
         ReactiveMessageHandler handler = r -> Mono.just(ProcessingResult.SUCCESS);
         SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
-                messageRepository, handler, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10, 5, 200);
+                messageRepository,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5,
+                200);
 
         List<Long> first =
                 messageRepository.claimBatch("w1", 10, 5).collectList().block();
@@ -107,10 +112,17 @@ class WorkerReactiveIntegrationTest {
                 .rowsUpdated()
                 .block();
 
-        ReactiveHeartbeatService hb = new ReactiveHeartbeatService(maintenanceRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 10_000);
+        ReactiveHeartbeatService hb = new ReactiveHeartbeatService(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10_000);
         hb.heartbeat();
 
-        ReactiveOrphanReclaimer rec = new ReactiveOrphanReclaimer(maintenanceRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE, 120_000, 10_000);
+        ReactiveOrphanReclaimer rec = new ReactiveOrphanReclaimer(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                120_000,
+                10_000);
         rec.reclaim();
 
         Mono<String> status = db.sql("SELECT status FROM messages WHERE uuid='ru3'")

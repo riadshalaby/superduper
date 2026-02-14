@@ -56,7 +56,8 @@ public class SuperDuperWorkerService {
                     new LockConfiguration(
                             Instant.now(), "superduper-claim-batch", Duration.ofSeconds(15), Duration.ofSeconds(2)));
             observer.workerClaimed(
-                    new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)), ids.size());
+                    new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)),
+                    ids.size());
         } catch (RuntimeException e) {
             observer.workerFailed(
                     new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)), e);

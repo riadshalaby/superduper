@@ -20,7 +20,8 @@ class KafkaConsumerServiceTest {
     @Test
     void onMessage_insertsAndAcks() {
         MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
-        KafkaConsumerService svc = new KafkaConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        KafkaConsumerService svc = new KafkaConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
         Acknowledgment ack = mock(Acknowledgment.class);
         ConsumerRecord<String, String> rec = new ConsumerRecord<>("t", 0, 0L, "key1", "value1");
 
@@ -41,7 +42,8 @@ class KafkaConsumerServiceTest {
     @Test
     void onMessage_defaultsNullKey() {
         MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
-        KafkaConsumerService svc = new KafkaConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        KafkaConsumerService svc = new KafkaConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
         Acknowledgment ack = mock(Acknowledgment.class);
         ConsumerRecord<String, String> rec = new ConsumerRecord<>("t", 0, 7L, null, "value1");
 
@@ -60,7 +62,8 @@ class KafkaConsumerServiceTest {
     @Test
     void onMessage_whenRepositoryFails_doesNotAck() {
         MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
-        KafkaConsumerService svc = new KafkaConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        KafkaConsumerService svc = new KafkaConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
         Acknowledgment ack = mock(Acknowledgment.class);
         ConsumerRecord<String, String> rec = new ConsumerRecord<>("t", 0, 9L, "key1", "value1");
 

@@ -23,11 +23,12 @@ public record ObservabilitySettings(
         if (!enabled) {
             return false;
         }
-        boolean componentAllowed = switch (component) {
-            case CONSUMER -> consumerEnabled;
-            case WORKER -> workerEnabled;
-            case MAINTENANCE -> maintenanceEnabled;
-        };
+        boolean componentAllowed =
+                switch (component) {
+                    case CONSUMER -> consumerEnabled;
+                    case WORKER -> workerEnabled;
+                    case MAINTENANCE -> maintenanceEnabled;
+                };
         if (!componentAllowed) {
             return false;
         }

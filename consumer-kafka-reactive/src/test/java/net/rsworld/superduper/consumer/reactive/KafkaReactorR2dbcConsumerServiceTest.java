@@ -16,7 +16,8 @@ class KafkaReactorR2dbcConsumerServiceTest {
     @Test
     void onMessage_success_acknowledges() {
         ReactiveMessageIngestRepository ingestRepository = mock(ReactiveMessageIngestRepository.class);
-        KafkaReactorR2dbcConsumerService svc = new KafkaReactorR2dbcConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        KafkaReactorR2dbcConsumerService svc = new KafkaReactorR2dbcConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
         Acknowledgment ack = mock(Acknowledgment.class);
 
         when(ingestRepository.upsertReadyMessage(
@@ -33,7 +34,8 @@ class KafkaReactorR2dbcConsumerServiceTest {
     @Test
     void onMessage_whenRepositoryFails_doesNotAck() {
         ReactiveMessageIngestRepository ingestRepository = mock(ReactiveMessageIngestRepository.class);
-        KafkaReactorR2dbcConsumerService svc = new KafkaReactorR2dbcConsumerService(ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        KafkaReactorR2dbcConsumerService svc = new KafkaReactorR2dbcConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
         Acknowledgment ack = mock(Acknowledgment.class);
 
         when(ingestRepository.upsertReadyMessage(

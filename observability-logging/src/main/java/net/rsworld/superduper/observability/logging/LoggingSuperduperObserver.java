@@ -21,7 +21,8 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
 
     @Override
     public void consumerReceived(ConsumerObservation observation) {
-        if (!settings.logEnabled() || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.LIFECYCLE)) {
+        if (!settings.logEnabled()
+                || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
         log.info(
