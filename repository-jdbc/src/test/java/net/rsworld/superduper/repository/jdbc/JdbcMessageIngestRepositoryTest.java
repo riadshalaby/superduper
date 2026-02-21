@@ -16,6 +16,8 @@ class JdbcMessageIngestRepositoryTest {
         String sql = readUpsertSql(repo);
         assertThat(sql).contains("ON CONFLICT (uuid)");
         assertThat(sql).doesNotContain("ON DUPLICATE KEY UPDATE");
+        assertThat(sql).contains("occurred_at");
+        assertThat(sql).contains("received_at");
     }
 
     @Test
@@ -26,6 +28,8 @@ class JdbcMessageIngestRepositoryTest {
         String sql = readUpsertSql(repo);
         assertThat(sql).contains("ON DUPLICATE KEY UPDATE");
         assertThat(sql).contains("`key`");
+        assertThat(sql).contains("occurred_at");
+        assertThat(sql).contains("received_at");
     }
 
     private static String readUpsertSql(JdbcMessageIngestRepository repo) throws Exception {

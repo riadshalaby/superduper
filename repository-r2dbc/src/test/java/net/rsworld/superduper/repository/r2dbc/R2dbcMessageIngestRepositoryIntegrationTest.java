@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionFactory;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ class R2dbcMessageIngestRepositoryIntegrationTest {
 
         db.sql("DROP TABLE IF EXISTS messages").fetch().rowsUpdated().block();
         db.sql(
-                        "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, last_updated TIMESTAMP DEFAULT NOW(), timestamp TIMESTAMP)")
+                        "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())")
                 .fetch()
                 .rowsUpdated()
                 .block();
@@ -48,8 +49,9 @@ class R2dbcMessageIngestRepositoryIntegrationTest {
     void upsertWorksOnPostgres() {
         R2dbcMessageIngestRepository repo = new R2dbcMessageIngestRepository(db, SqlDialect.POSTGRES);
 
-        repo.upsertReadyMessage("u1", "k1", "v1").block();
-        repo.upsertReadyMessage("u1", "k1", "v2").block();
+        Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
+        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt).block();
+        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt).block();
 
         Integer count = db.sql("SELECT COUNT(*) AS c FROM messages WHERE uuid='u1'")
                 .map((row, md) -> row.get("c", Integer.class))

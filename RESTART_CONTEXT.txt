@@ -156,7 +156,7 @@ Progress update (2026-02-13T08:57:49Z)
 - Added reusable command: mvn -q spotless:apply.
 - Next: run Spotless automatically after each subsequent edit before validation.
 
-Progress update ($(date -u '+%Y-%m-%dT%H:%M:%SZ'))
+Progress update (2026-02-21T17:13:11Z)
 - Audited source for deprecated API usage (@Deprecated, deprecation suppressions, deprecated markers) and found none in project code.
 - Ran clean compile with deprecation/warning flags; only warning source was Lombok internals using deprecated sun.misc.Unsafe.
 - Removed unused Lombok configuration from root pom.xml (deleted lombok.version property and compiler annotationProcessorPaths entry).
@@ -1326,3 +1326,45 @@ Progress update (2026-02-13T15:28:16Z)
   - mvn -q -pl repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive -am test (pass)
   - mvn -q test (pass)
   - mvn -q -DskipTests test-compile (pass, post-spotless)
+
+Progress update (2026-02-21T17:13:11Z)
+- Implemented 3-timestamp model across ingest/processing:
+  - Added `occurred_at`, `received_at`, `processed_at` to schemas used in examples and tests.
+  - Updated ingest repository APIs to accept `Instant occurredAt`:
+    - `MessageIngestRepository.upsertReadyMessage(uuid, key, content, occurredAt)`
+    - `ReactiveMessageIngestRepository.upsertReadyMessage(uuid, key, content, occurredAt)`
+  - JDBC/R2DBC ingest SQL now writes `occurred_at=:occurredAt`, `received_at=NOW()`.
+  - Blocking/reactive Kafka consumers now resolve occurred time from header `occurred_at` (epoch millis or ISO-8601), fallback to Kafka record timestamp, final fallback `Instant.now()`.
+  - Worker success updates now set `processed_at=NOW()` when marking `PROCESSED`.
+- Added/updated tests:
+  - Consumer unit tests updated for new method signature and added header parsing assertions.
+  - Repository ingest SQL tests assert new columns in generated upsert SQL.
+  - Repository worker integration tests now assert `processed_at` is populated after `markProcessed`.
+- Updated README algorithm/data model to document the 3 timestamps and their semantics.
+- Ran Spotless after code changes.
+- Validation:
+  - `mvn -q -pl repository-api,repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive,examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive -am -Dtest=JdbcMessageIngestRepositoryTest,R2dbcMessageIngestRepositoryTest,KafkaConsumerServiceTest,KafkaReactorR2dbcConsumerServiceTest,SuperDuperWorkerServiceTest,SuperDuperWorkerReactiveServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+  - Full module test run with Testcontainers currently fails in this environment due missing Docker socket (`/var/run/docker.sock`).
+- Next:
+  - If desired, add configurable header name for `occurred_at` (property-based) and optional strict parse mode (drop/park invalid header values).
+
+Progress update (2026-02-21T17:16:53Z)
+- Enforced non-null ingest timestamp semantics:
+  - `occurred_at` and `received_at` are now `NOT NULL` in example and test schemas.
+  - Added `DEFAULT CURRENT_TIMESTAMP` for both fields so manual/test seed inserts without explicit values still succeed.
+  - `processed_at` remains nullable and is still set when a worker marks `PROCESSED`.
+- Hardened ingest repositories:
+  - `JdbcMessageIngestRepository` and `R2dbcMessageIngestRepository` now enforce non-null `occurredAt` via `Objects.requireNonNull`.
+- Updated README data model to reflect `NOT NULL` + defaults for `occurred_at`/`received_at`.
+- Ran Spotless after edits.
+- Validation:
+  - `mvn -q spotless:apply && mvn -q -pl repository-api,repository-jdbc,repository-r2dbc,consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive,examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl consumer-kafka-blocking,consumer-kafka-reactive,repository-jdbc,repository-r2dbc -am -Dtest=KafkaConsumerServiceTest,KafkaReactorR2dbcConsumerServiceTest,JdbcMessageIngestRepositoryTest,R2dbcMessageIngestRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+Progress update (2026-02-21T17:21:30Z)
+- Re-verified full project test suite after Docker became available.
+- Validation:
+  - docker info --format '{{.ServerVersion}}' -> 29.2.0
+  - mvn -q test (pass, full multi-module run)
+- Observations:
+  - Testcontainers successfully started PostgreSQL, MariaDB, and Kafka containers during E2E/integration tests.

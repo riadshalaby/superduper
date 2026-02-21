@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.UUID;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -30,12 +31,15 @@ class KafkaConsumerServiceTest {
         var uuidCap = ArgumentCaptor.forClass(String.class);
         var keyCap = ArgumentCaptor.forClass(String.class);
         var contentCap = ArgumentCaptor.forClass(String.class);
-        verify(ingestRepository).upsertReadyMessage(uuidCap.capture(), keyCap.capture(), contentCap.capture());
+        var occurredAtCap = ArgumentCaptor.forClass(Instant.class);
+        verify(ingestRepository)
+                .upsertReadyMessage(uuidCap.capture(), keyCap.capture(), contentCap.capture(), occurredAtCap.capture());
         assertThat(keyCap.getValue()).isEqualTo("key1");
         assertThat(contentCap.getValue()).isEqualTo("value1");
         assertThat(uuidCap.getValue())
                 .isEqualTo(UUID.nameUUIDFromBytes("t:0:0".getBytes(StandardCharsets.UTF_8))
                         .toString());
+        assertThat(occurredAtCap.getValue()).isNotNull();
         verify(ack).acknowledge();
     }
 
@@ -54,7 +58,8 @@ class KafkaConsumerServiceTest {
                 .upsertReadyMessage(
                         org.mockito.ArgumentMatchers.anyString(),
                         keyCap.capture(),
-                        org.mockito.ArgumentMatchers.anyString());
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(Instant.class));
         assertThat(keyCap.getValue()).isEqualTo("default");
         verify(ack).acknowledge();
     }
@@ -72,9 +77,31 @@ class KafkaConsumerServiceTest {
                 .upsertReadyMessage(
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString());
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(Instant.class));
 
         assertThatThrownBy(() -> svc.onMessage(rec, ack)).isInstanceOf(RuntimeException.class);
         verify(ack, never()).acknowledge();
+    }
+
+    @Test
+    void onMessage_prefersOccurredAtHeader() {
+        MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
+        KafkaConsumerService svc = new KafkaConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        Acknowledgment ack = mock(Acknowledgment.class);
+        ConsumerRecord<String, String> rec = new ConsumerRecord<>("t", 0, 11L, "key1", "value1");
+        rec.headers().add("occurred_at", "2026-02-21T10:15:30Z".getBytes(StandardCharsets.UTF_8));
+
+        svc.onMessage(rec, ack);
+
+        var occurredAtCap = ArgumentCaptor.forClass(Instant.class);
+        verify(ingestRepository)
+                .upsertReadyMessage(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        occurredAtCap.capture());
+        assertThat(occurredAtCap.getValue()).isEqualTo(Instant.parse("2026-02-21T10:15:30Z"));
     }
 }

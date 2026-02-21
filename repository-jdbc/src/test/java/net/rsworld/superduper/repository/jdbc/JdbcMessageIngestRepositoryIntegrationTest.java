@@ -2,6 +2,7 @@ package net.rsworld.superduper.repository.jdbc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -45,12 +46,13 @@ class JdbcMessageIngestRepositoryIntegrationTest {
         JdbcTemplate jdbc = new JdbcTemplate(ds);
         jdbc.execute("DROP TABLE IF EXISTS messages");
         jdbc.execute(
-                "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, last_updated TIMESTAMP DEFAULT NOW(), timestamp TIMESTAMP)");
+                "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())");
 
         JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
                 new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.POSTGRES);
-        repo.upsertReadyMessage("u1", "k1", "v1");
-        repo.upsertReadyMessage("u1", "k1", "v2");
+        Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
+        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt);
+        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt);
 
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE uuid='u1'", Integer.class);
         assertThat(count).isEqualTo(1);
@@ -67,12 +69,13 @@ class JdbcMessageIngestRepositoryIntegrationTest {
         JdbcTemplate jdbc = new JdbcTemplate(ds);
         jdbc.execute("DROP TABLE IF EXISTS messages");
         jdbc.execute(
-                "CREATE TABLE messages (id BIGINT AUTO_INCREMENT PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, `key` VARCHAR(255) NOT NULL, content TEXT, status VARCHAR(32) NOT NULL, retry_count INT DEFAULT 0, last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, timestamp TIMESTAMP NULL)");
+                "CREATE TABLE messages (id BIGINT AUTO_INCREMENT PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, `key` VARCHAR(255) NOT NULL, content TEXT, status VARCHAR(32) NOT NULL, retry_count INT DEFAULT 0, occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)");
 
         JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
                 new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.MARIADB);
-        repo.upsertReadyMessage("u1", "k1", "v1");
-        repo.upsertReadyMessage("u1", "k1", "v2");
+        Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
+        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt);
+        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt);
 
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE uuid='u1'", Integer.class);
         assertThat(count).isEqualTo(1);

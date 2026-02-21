@@ -82,7 +82,9 @@ content          TEXT
 status           VARCHAR(32) NOT NULL CHECK (status IN ('READY','PROCESSING','PROCESSED','FAILED','STOPPED'))
 retry_count      INT DEFAULT 0
 container_id     VARCHAR(255) NULL
-timestamp        TIMESTAMP NULL       -- original send-ts (optional)
+occurred_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- event time from source header, fallback Kafka record timestamp
+received_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- ingest time (consumer write time)
+processed_at     TIMESTAMP NULL       -- set when a worker marks message as PROCESSED
 last_updated     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 
 -- heartbeat
@@ -100,7 +102,9 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
 
 1. **Ingest (Consumer) → Persist**
    - Spring-Kafka (JDBC) or Spring-Kafka (R2DBC variant) **inserts** each consumed record into `messages` as `READY`.
-   - The row gets an **auto-increment `id`**, **`uuid`**, **`key`**, **payload**, and timestamps.
+   - `occurred_at` is resolved from header `occurred_at`; if missing/invalid, fallback is Kafka record timestamp.
+   - `received_at` is set to ingest time (`NOW()`).
+   - The row gets an **auto-increment `id`**, **`uuid`**, **`key`**, and payload.
 
 2. **Claim Batch (Worker)**
    - A single worker instance (JDBC worker protected by **ShedLock**) or each reactive worker **claims** a batch of candidate rows:
@@ -140,7 +144,7 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
      - **Reactive:** `ReactiveMessageHandler` → `Mono<SUCCESS|RETRY>`.
 
 4. **On Success or Failure**
-   - `SUCCESS` → `status='PROCESSED'`.
+   - `SUCCESS` → `status='PROCESSED'`, `processed_at=NOW()`.
    - `RETRY` → `retry_count = retry_count + 1`.
      - If `retry_count < max` → `status='READY'` (will be retried later; **per-key ordering** is preserved).
      - Else → `status='STOPPED'` (manual intervention required).
@@ -155,7 +159,7 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
    - Guarantees **no stuck** messages when a container dies or loses heartbeats.
 
 7. **Ordering Guarantee**
-   - Using **auto-increment `id`** as the **order marker** per key (not `timestamp`), combined with the **candidate filter** that blocks later rows while an earlier row is pending.
+   - Using **auto-increment `id`** as the **order marker** per key (not `occurred_at`/`received_at`), combined with the **candidate filter** that blocks later rows while an earlier row is pending.
 
 ---
 

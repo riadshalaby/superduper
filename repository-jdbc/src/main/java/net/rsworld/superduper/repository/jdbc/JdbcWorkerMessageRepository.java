@@ -65,7 +65,7 @@ public class JdbcWorkerMessageRepository implements WorkerMessageRepository {
     @Override
     public void markProcessed(long id) {
         jdbc.update(
-                "UPDATE messages SET status='PROCESSED', last_updated=NOW() WHERE id=:id",
+                "UPDATE messages SET status='PROCESSED', processed_at=NOW(), last_updated=NOW() WHERE id=:id",
                 new MapSqlParameterSource().addValue("id", id));
     }
 

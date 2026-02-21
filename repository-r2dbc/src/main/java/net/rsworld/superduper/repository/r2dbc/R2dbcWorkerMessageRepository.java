@@ -76,7 +76,7 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
 
     @Override
     public Mono<Void> markProcessed(long id) {
-        return db.sql("UPDATE messages SET status='PROCESSED', last_updated=NOW() WHERE id=:id")
+        return db.sql("UPDATE messages SET status='PROCESSED', processed_at=NOW(), last_updated=NOW() WHERE id=:id")
                 .bind("id", id)
                 .fetch()
                 .rowsUpdated()

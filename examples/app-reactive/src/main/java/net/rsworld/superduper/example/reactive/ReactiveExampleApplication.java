@@ -24,7 +24,9 @@ public class ReactiveExampleApplication {
         status TEXT NOT NULL,
         retry_count INT DEFAULT 0,
         container_id VARCHAR(255),
-        timestamp TIMESTAMP,
+        occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP NULL,
         last_updated TIMESTAMP DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_messages_key_id ON messages(key, id);

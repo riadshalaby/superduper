@@ -33,7 +33,7 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
 
         JdbcTemplate jt = new JdbcTemplate(ds);
         jt.execute(
-                "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), timestamp TIMESTAMP, last_updated TIMESTAMP DEFAULT NOW())");
+                "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())");
         jt.execute("CREATE INDEX idx_messages_key_id ON messages(key, id)");
     }
 
@@ -58,6 +58,12 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         assertThat(second).isEmpty();
 
         first.forEach(repo::markProcessed);
+        Integer processedAtCount = jdbc.getJdbcTemplate()
+                .queryForObject(
+                        "SELECT COUNT(*) FROM messages WHERE id IN (" + first.get(0) + "," + first.get(1) + ") "
+                                + "AND processed_at IS NOT NULL",
+                        Integer.class);
+        assertThat(processedAtCount).isEqualTo(2);
         List<Long> third = repo.claimBatch("w1", 10, 5);
         assertThat(third).hasSize(1);
     }
