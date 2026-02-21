@@ -24,7 +24,6 @@ import net.rsworld.superduper.worker.reactive.ReactiveHeartbeatService;
 import net.rsworld.superduper.worker.reactive.ReactiveMessageHandler;
 import net.rsworld.superduper.worker.reactive.ReactiveOrphanReclaimer;
 import net.rsworld.superduper.worker.reactive.SuperDuperWorkerReactiveService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -36,7 +35,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @AutoConfiguration
 @EnableScheduling
-@EnableConfigurationProperties(ObservabilityProperties.class)
+@EnableConfigurationProperties({ObservabilityProperties.class, WorkerProperties.class})
 public class AutoSelectConfiguration {
 
     @Bean
@@ -63,9 +62,9 @@ public class AutoSelectConfiguration {
     @Bean
     @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "spring", matchIfMissing = true)
     @ConditionalOnMissingBean
-    public LockProvider lockProvider(DataSource ds) {
+    public LockProvider lockProvider(DataSource ds, WorkerProperties workerProperties) {
         return new JdbcTemplateLockProvider(JdbcTemplateLockProvider.Configuration.builder()
-                .withTableName("shedlock")
+                .withTableName(workerProperties.getShedlock().getTableName())
                 .withJdbcTemplate(new JdbcTemplate(ds))
                 .build());
     }
@@ -74,8 +73,9 @@ public class AutoSelectConfiguration {
     @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
     @ConditionalOnBean(ConnectionFactory.class)
     @ConditionalOnMissingBean
-    public LockProvider reactiveLockProvider(ConnectionFactory connectionFactory) {
-        return new R2dbcLockProvider(connectionFactory, "shedlock");
+    public LockProvider reactiveLockProvider(ConnectionFactory connectionFactory, WorkerProperties workerProperties) {
+        return new R2dbcLockProvider(
+                connectionFactory, workerProperties.getShedlock().getTableName());
     }
 
     @Bean
@@ -93,9 +93,18 @@ public class AutoSelectConfiguration {
             LockingTaskExecutor lockExec,
             MessageHandler handler,
             SuperduperObserver observer,
-            @Value("${superduper.worker.batch-size:100}") int batchSize,
-            @Value("${superduper.worker.max-retries:5}") int maxRetries) {
-        return new SuperDuperWorkerService(messageRepository, txm, lockExec, handler, observer, batchSize, maxRetries);
+            WorkerProperties workerProperties) {
+        return new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                observer,
+                workerProperties.getBatchSize(),
+                workerProperties.getMaxRetries(),
+                workerProperties.getShedlock().getClaimLockName(),
+                workerProperties.getShedlock().getLockAtMostForMs(),
+                workerProperties.getShedlock().getLockAtLeastForMs());
     }
 
     @Bean
@@ -104,8 +113,8 @@ public class AutoSelectConfiguration {
     public HeartbeatService jdbcHeartbeatService(
             WorkerMaintenanceRepository maintenanceRepository,
             SuperduperObserver observer,
-            @Value("${superduper.worker.heartbeat-interval-ms:30000}") long heartbeatIntervalMs) {
-        return new HeartbeatService(maintenanceRepository, observer, heartbeatIntervalMs);
+            WorkerProperties workerProperties) {
+        return new HeartbeatService(maintenanceRepository, observer, workerProperties.getHeartbeatIntervalMs());
     }
 
     @Bean
@@ -114,9 +123,9 @@ public class AutoSelectConfiguration {
     public OrphanReclaimer jdbcOrphanReclaimer(
             WorkerMaintenanceRepository maintenanceRepository,
             SuperduperObserver observer,
-            @Value("${superduper.worker.orphan-timeout-ms:120000}") int orphanTimeoutMs,
-            @Value("${superduper.worker.heartbeat-interval-ms:30000}") int heartbeatIntervalMs) {
-        return new OrphanReclaimer(maintenanceRepository, observer, orphanTimeoutMs, heartbeatIntervalMs);
+            WorkerProperties workerProperties) {
+        return new OrphanReclaimer(maintenanceRepository, observer, workerProperties.getOrphanTimeoutMs(), (int)
+                workerProperties.getHeartbeatIntervalMs());
     }
 
     @Bean
@@ -127,10 +136,17 @@ public class AutoSelectConfiguration {
             LockingTaskExecutor lockExec,
             ReactiveMessageHandler handler,
             SuperduperObserver observer,
-            @Value("${superduper.worker.batch-size:100}") int batchSize,
-            @Value("${superduper.worker.max-retries:5}") int maxRetries) {
+            WorkerProperties workerProperties) {
         return new SuperDuperWorkerReactiveService(
-                messageRepository, lockExec, handler, observer, batchSize, maxRetries);
+                messageRepository,
+                lockExec,
+                handler,
+                observer,
+                workerProperties.getBatchSize(),
+                workerProperties.getMaxRetries(),
+                workerProperties.getShedlock().getClaimLockName(),
+                workerProperties.getShedlock().getLockAtMostForMs(),
+                workerProperties.getShedlock().getLockAtLeastForMs());
     }
 
     @Bean
@@ -139,8 +155,8 @@ public class AutoSelectConfiguration {
     public ReactiveHeartbeatService reactiveHeartbeatService(
             ReactiveWorkerMaintenanceRepository maintenanceRepository,
             SuperduperObserver observer,
-            @Value("${superduper.worker.heartbeat-interval-ms:30000}") long heartbeatIntervalMs) {
-        return new ReactiveHeartbeatService(maintenanceRepository, observer, heartbeatIntervalMs);
+            WorkerProperties workerProperties) {
+        return new ReactiveHeartbeatService(maintenanceRepository, observer, workerProperties.getHeartbeatIntervalMs());
     }
 
     @Bean
@@ -149,8 +165,8 @@ public class AutoSelectConfiguration {
     public ReactiveOrphanReclaimer reactiveOrphanReclaimer(
             ReactiveWorkerMaintenanceRepository maintenanceRepository,
             SuperduperObserver observer,
-            @Value("${superduper.worker.orphan-timeout-ms:120000}") int orphanTimeoutMs,
-            @Value("${superduper.worker.heartbeat-interval-ms:30000}") int heartbeatIntervalMs) {
-        return new ReactiveOrphanReclaimer(maintenanceRepository, observer, orphanTimeoutMs, heartbeatIntervalMs);
+            WorkerProperties workerProperties) {
+        return new ReactiveOrphanReclaimer(maintenanceRepository, observer, workerProperties.getOrphanTimeoutMs(), (int)
+                workerProperties.getHeartbeatIntervalMs());
     }
 }

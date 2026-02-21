@@ -10,7 +10,6 @@ import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.api.WorkerObservation;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -27,6 +26,9 @@ public class SuperDuperWorkerService {
     private final String workerId;
     private final int batch;
     private final int maxRetries;
+    private final String claimLockName;
+    private final Duration lockAtMostFor;
+    private final Duration lockAtLeastFor;
 
     public SuperDuperWorkerService(
             WorkerMessageRepository messageRepository,
@@ -34,8 +36,11 @@ public class SuperDuperWorkerService {
             LockingTaskExecutor lockExec,
             MessageHandler handler,
             SuperduperObserver observer,
-            @Value("${superduper.worker.batch-size:100}") int batch,
-            @Value("${superduper.worker.max-retries:5}") int maxRetries) {
+            int batch,
+            int maxRetries,
+            String claimLockName,
+            long lockAtMostForMs,
+            long lockAtLeastForMs) {
         this.messageRepository = messageRepository;
         this.tx = new TransactionTemplate(txm);
         this.lockExec = lockExec;
@@ -43,18 +48,43 @@ public class SuperDuperWorkerService {
         this.observer = observer;
         this.batch = batch;
         this.maxRetries = maxRetries;
+        this.claimLockName = claimLockName;
+        this.lockAtMostFor = Duration.ofMillis(lockAtMostForMs);
+        this.lockAtLeastFor = Duration.ofMillis(lockAtLeastForMs);
         this.workerId = ManagementFactory.getRuntimeMXBean().getName();
     }
 
-    @Scheduled(fixedDelayString = "${superduper.worker.claim-interval-ms:5000}", initialDelay = 3000)
+    public SuperDuperWorkerService(
+            WorkerMessageRepository messageRepository,
+            PlatformTransactionManager txm,
+            LockingTaskExecutor lockExec,
+            MessageHandler handler,
+            SuperduperObserver observer,
+            int batch,
+            int maxRetries) {
+        this(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                observer,
+                batch,
+                maxRetries,
+                "superduper-claim-batch",
+                15000,
+                2000);
+    }
+
+    @Scheduled(
+            fixedDelayString = "${superduper.worker.claim-interval-ms:5000}",
+            initialDelayString = "${superduper.worker.claim-initial-delay-ms:3000}")
     public void schedule() {
         final List<Long> ids = new ArrayList<>();
         long claimStarted = System.nanoTime();
         try {
             lockExec.executeWithLock(
                     (Runnable) () -> ids.addAll(claimBatch()),
-                    new LockConfiguration(
-                            Instant.now(), "superduper-claim-batch", Duration.ofSeconds(15), Duration.ofSeconds(2)));
+                    new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
                     new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)),
                     ids.size());

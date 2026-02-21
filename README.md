@@ -404,7 +404,15 @@ mvn -T 1C test
 
 - **Batch size** (`superduper.worker.batch-size`): Larger batches claim more keys at once; keep moderate to reduce lock contention.
 - **Claim interval** (`superduper.worker.claim-interval-ms`): Shorter interval → faster throughput, more DB load.
+- **Initial delays**:
+  - claim loop: `superduper.worker.claim-initial-delay-ms`
+  - heartbeat loop: `superduper.worker.heartbeat-initial-delay-ms`
+  - orphan reclaimer loop: `superduper.worker.orphan-initial-delay-ms`
 - **Heartbeat interval** & **orphan timeout**: Tune to your SLO for failover speed.
+- **ShedLock claim settings**:
+  - table: `superduper.worker.shedlock.table-name`
+  - claim lock name: `superduper.worker.shedlock.claim-lock-name`
+  - lock windows: `superduper.worker.shedlock.lock-at-most-for-ms`, `superduper.worker.shedlock.lock-at-least-for-ms`
 - **Max retries**: After `STOPPED`, set up alerting; operator can **manually fix** and requeue (`status='READY', retry_count=retry_count-1` or reset to 0).
 - **Indexes**: Ensure `messages(key, id)` exists; consider partitioning for very large tables.
 - **Idempotency**: `uuid` is deterministic from Kafka `topic:partition:offset` so redeliveries upsert instead of inserting duplicates.

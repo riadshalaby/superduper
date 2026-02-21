@@ -24,11 +24,21 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 class AutoSelectConfigurationTest {
 
+    private static WorkerProperties workerProperties() {
+        WorkerProperties p = new WorkerProperties();
+        p.setBatchSize(100);
+        p.setMaxRetries(5);
+        p.setHeartbeatIntervalMs(30_000);
+        p.setOrphanTimeoutMs(120_000);
+        return p;
+    }
+
     @Test
     void createsJdbcBeans() {
         AutoSelectConfiguration cfg = new AutoSelectConfiguration();
         DataSource ds = mock(DataSource.class);
-        LockProvider lp = cfg.lockProvider(ds);
+        WorkerProperties workerProperties = workerProperties();
+        LockProvider lp = cfg.lockProvider(ds, workerProperties);
         LockingTaskExecutor exec = cfg.lockingTaskExecutor(lp);
 
         WorkerMessageRepository mr = mock(WorkerMessageRepository.class);
@@ -37,9 +47,9 @@ class AutoSelectConfigurationTest {
         MessageHandler handler = row -> net.rsworld.superduper.worker.jdbc.ProcessingResult.SUCCESS;
         var observer = NoopSuperduperObserver.INSTANCE;
 
-        SuperDuperWorkerService svc = cfg.jdbcWorker(mr, txm, exec, handler, observer, 100, 5);
-        HeartbeatService hb = cfg.jdbcHeartbeatService(maintenanceRepository, observer, 30_000);
-        OrphanReclaimer rec = cfg.jdbcOrphanReclaimer(maintenanceRepository, observer, 120_000, 30_000);
+        SuperDuperWorkerService svc = cfg.jdbcWorker(mr, txm, exec, handler, observer, workerProperties);
+        HeartbeatService hb = cfg.jdbcHeartbeatService(maintenanceRepository, observer, workerProperties);
+        OrphanReclaimer rec = cfg.jdbcOrphanReclaimer(maintenanceRepository, observer, workerProperties);
 
         assertThat(lp).isNotNull();
         assertThat(exec).isNotNull();
@@ -60,12 +70,13 @@ class AutoSelectConfigurationTest {
         ReactiveWorkerMessageRepository mr = mock(ReactiveWorkerMessageRepository.class);
         ReactiveWorkerMaintenanceRepository maintenanceRepository = mock(ReactiveWorkerMaintenanceRepository.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+        WorkerProperties workerProperties = workerProperties();
         ReactiveMessageHandler h = row ->
                 reactor.core.publisher.Mono.just(net.rsworld.superduper.worker.reactive.ProcessingResult.SUCCESS);
         var observer = NoopSuperduperObserver.INSTANCE;
-        SuperDuperWorkerReactiveService svc = cfg.reactiveWorker(mr, lockExec, h, observer, 100, 5);
-        ReactiveHeartbeatService hb = cfg.reactiveHeartbeatService(maintenanceRepository, observer, 30_000);
-        ReactiveOrphanReclaimer rec = cfg.reactiveOrphanReclaimer(maintenanceRepository, observer, 120_000, 30_000);
+        SuperDuperWorkerReactiveService svc = cfg.reactiveWorker(mr, lockExec, h, observer, workerProperties);
+        ReactiveHeartbeatService hb = cfg.reactiveHeartbeatService(maintenanceRepository, observer, workerProperties);
+        ReactiveOrphanReclaimer rec = cfg.reactiveOrphanReclaimer(maintenanceRepository, observer, workerProperties);
         assertThat(svc).isNotNull();
         assertThat(hb).isNotNull();
         assertThat(rec).isNotNull();

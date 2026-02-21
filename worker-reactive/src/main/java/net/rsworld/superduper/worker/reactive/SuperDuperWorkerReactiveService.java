@@ -12,7 +12,6 @@ import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.api.WorkerObservation;
 import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -26,32 +25,61 @@ public class SuperDuperWorkerReactiveService {
     private final String workerId;
     private final int batchSize;
     private final int maxRetries;
+    private final String claimLockName;
+    private final Duration lockAtMostFor;
+    private final Duration lockAtLeastFor;
 
     public SuperDuperWorkerReactiveService(
             ReactiveWorkerMessageRepository messageRepository,
             LockingTaskExecutor lockExec,
             ReactiveMessageHandler handler,
             SuperduperObserver observer,
-            @Value("${superduper.worker.batch-size:100}") int batchSize,
-            @Value("${superduper.worker.max-retries:5}") int maxRetries) {
+            int batchSize,
+            int maxRetries,
+            String claimLockName,
+            long lockAtMostForMs,
+            long lockAtLeastForMs) {
         this.messageRepository = messageRepository;
         this.lockExec = lockExec;
         this.handler = handler;
         this.observer = observer;
         this.batchSize = batchSize;
         this.maxRetries = maxRetries;
+        this.claimLockName = claimLockName;
+        this.lockAtMostFor = Duration.ofMillis(lockAtMostForMs);
+        this.lockAtLeastFor = Duration.ofMillis(lockAtLeastForMs);
         this.workerId = ManagementFactory.getRuntimeMXBean().getName() + ":" + UUID.randomUUID();
     }
 
-    @Scheduled(fixedDelayString = "${superduper.worker.claim-interval-ms:5000}", initialDelay = 3000)
+    public SuperDuperWorkerReactiveService(
+            ReactiveWorkerMessageRepository messageRepository,
+            LockingTaskExecutor lockExec,
+            ReactiveMessageHandler handler,
+            SuperduperObserver observer,
+            int batchSize,
+            int maxRetries) {
+        this(
+                messageRepository,
+                lockExec,
+                handler,
+                observer,
+                batchSize,
+                maxRetries,
+                "superduper-claim-batch",
+                15000,
+                2000);
+    }
+
+    @Scheduled(
+            fixedDelayString = "${superduper.worker.claim-interval-ms:5000}",
+            initialDelayString = "${superduper.worker.claim-initial-delay-ms:3000}")
     public void schedule() {
         long started = System.nanoTime();
         List<Long> ids = new ArrayList<>();
         try {
             lockExec.executeWithLock(
                     (Runnable) () -> ids.addAll(claimBatch()),
-                    new LockConfiguration(
-                            Instant.now(), "superduper-claim-batch", Duration.ofSeconds(15), Duration.ofSeconds(2)));
+                    new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
                     new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), ids.size());
         } catch (RuntimeException e) {

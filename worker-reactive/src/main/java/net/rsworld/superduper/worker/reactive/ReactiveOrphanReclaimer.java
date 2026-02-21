@@ -26,7 +26,9 @@ public class ReactiveOrphanReclaimer {
         this.heartbeatWindowSec = hbMs / 1000;
     }
 
-    @Scheduled(fixedDelayString = "${superduper.worker.orphan-timeout-ms:120000}", initialDelay = 15000)
+    @Scheduled(
+            fixedDelayString = "${superduper.worker.orphan-timeout-ms:120000}",
+            initialDelayString = "${superduper.worker.orphan-initial-delay-ms:15000}")
     public void reclaim() {
         long started = System.nanoTime();
         Mono.when(
