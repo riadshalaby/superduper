@@ -6,6 +6,7 @@ import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionFactory;
 import java.util.HashSet;
 import java.util.List;
+import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.r2dbc.PostgresR2dbcSqlDialect;
@@ -79,11 +80,11 @@ class WorkerReactiveIntegrationTest {
         ReactiveMessageHandler handler = r -> Mono.just(ProcessingResult.SUCCESS);
         SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
                 messageRepository,
+                org.mockito.Mockito.mock(LockingTaskExecutor.class),
                 handler,
                 net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                 10,
-                5,
-                200);
+                5);
 
         List<Long> first =
                 messageRepository.claimBatch("w1", 10, 5).collectList().block();

@@ -1,76 +1,87 @@
 package net.rsworld.superduper.worker.reactive;
 
-import jakarta.annotation.PostConstruct;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import net.javacrumbs.shedlock.core.LockConfiguration;
+import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.api.WorkerObservation;
 import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Service
 public class SuperDuperWorkerReactiveService {
-    private static final Logger log = LoggerFactory.getLogger(SuperDuperWorkerReactiveService.class);
-
     private final ReactiveWorkerMessageRepository messageRepository;
+    private final LockingTaskExecutor lockExec;
     private final ReactiveMessageHandler handler;
     private final SuperduperObserver observer;
     private final String workerId;
     private final int batchSize;
     private final int maxRetries;
-    private final long claimIntervalMs;
 
     public SuperDuperWorkerReactiveService(
             ReactiveWorkerMessageRepository messageRepository,
+            LockingTaskExecutor lockExec,
             ReactiveMessageHandler handler,
             SuperduperObserver observer,
             @Value("${superduper.worker.batch-size:100}") int batchSize,
-            @Value("${superduper.worker.max-retries:5}") int maxRetries,
-            @Value("${superduper.worker.claim-interval-ms:5000}") long claimIntervalMs) {
+            @Value("${superduper.worker.max-retries:5}") int maxRetries) {
         this.messageRepository = messageRepository;
+        this.lockExec = lockExec;
         this.handler = handler;
         this.observer = observer;
         this.batchSize = batchSize;
         this.maxRetries = maxRetries;
-        this.claimIntervalMs = claimIntervalMs;
         this.workerId = ManagementFactory.getRuntimeMXBean().getName() + ":" + UUID.randomUUID();
     }
 
-    @PostConstruct
-    public void startLoops() {
-        Flux.interval(Duration.ofMillis(claimIntervalMs))
-                .concatMap(tick -> {
-                    long started = System.nanoTime();
-                    return messageRepository
-                            .claimBatch(workerId, batchSize, maxRetries)
-                            .collectList()
-                            .flatMap(ids -> {
-                                observer.workerClaimed(
-                                        new WorkerObservation(
-                                                "reactive", workerId, null, null, batchSize, elapsedMs(started)),
-                                        ids.size());
-                                return messageRepository
-                                        .fetchClaimedByIds(ids)
-                                        .concatMap(this::processOne)
-                                        .then();
-                            })
-                            .onErrorResume(e -> {
-                                observer.workerFailed(
-                                        new WorkerObservation(
-                                                "reactive", workerId, null, null, batchSize, elapsedMs(started)),
-                                        e);
-                                log.error("Reactive claim/process loop failed for tick {}", tick, e);
-                                return Mono.empty();
-                            });
+    @Scheduled(fixedDelayString = "${superduper.worker.claim-interval-ms:5000}", initialDelay = 3000)
+    public void schedule() {
+        long started = System.nanoTime();
+        List<Long> ids = new ArrayList<>();
+        try {
+            lockExec.executeWithLock(
+                    (Runnable) () -> ids.addAll(claimBatch()),
+                    new LockConfiguration(
+                            Instant.now(), "superduper-claim-batch", Duration.ofSeconds(15), Duration.ofSeconds(2)));
+            observer.workerClaimed(
+                    new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), ids.size());
+        } catch (RuntimeException e) {
+            observer.workerFailed(
+                    new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), e);
+            return;
+        }
+
+        if (ids.isEmpty()) {
+            return;
+        }
+
+        messageRepository
+                .fetchClaimedByIds(ids)
+                .concatMap(this::processOne)
+                .onErrorResume(e -> {
+                    observer.workerFailed(
+                            new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), e);
+                    return Mono.empty();
                 })
-                .subscribe();
+                .then()
+                .block();
+    }
+
+    List<Long> claimBatch() {
+        return messageRepository
+                .claimBatch(workerId, batchSize, maxRetries)
+                .collectList()
+                .blockOptional()
+                .orElseGet(List::of);
     }
 
     private Mono<Void> processOne(ClaimedMessage row) {
@@ -82,7 +93,6 @@ public class SuperDuperWorkerReactiveService {
                 .onErrorResume(e -> {
                     observer.workerFailed(
                             new WorkerObservation("reactive", workerId, id, retry, batchSize, elapsedMs(started)), e);
-                    log.error("Reactive handler failed for message id={}", id, e);
                     return Mono.just(ProcessingResult.RETRY);
                 })
                 .flatMap(result -> {

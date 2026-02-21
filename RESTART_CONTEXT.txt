@@ -1413,3 +1413,21 @@ Progress update (2026-02-21T19:01:13Z)
   - `mvn -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests test-compile` (pass)
   - `mvn -q -pl repository-jdbc,repository-r2dbc -am -Dtest=JdbcMessageIngestRepositoryTest,JdbcWorkerMessageRepositoryTest,JdbcMessageIngestRepositoryIntegrationTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcMessageIngestRepositoryTest,R2dbcWorkerMessageRepositoryTest,R2dbcMessageIngestRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
   - `mvn -q -pl worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -Dtest=WorkerJdbcIntegrationTest,WorkerReactiveIntegrationTest,KafkaConsumerWorkerE2EIT,KafkaReactorWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+
+Progress update (2026-02-21T19:13:21Z)
+- Added ShedLock-based claim coordination to reactive worker path (aligned with blocking worker behavior).
+- `SuperDuperWorkerReactiveService` now receives `LockingTaskExecutor` and wraps claim in `executeWithLock(...)` using lock name `superduper-claim-batch`.
+- Reactive worker loop now runs via `@Scheduled` claim cycle and executes claim under lock, then processes claimed rows.
+- Starter auto-configuration updated:
+  - Added reactive ShedLock provider using R2DBC `ConnectionFactory` (`R2dbcLockProvider`).
+  - `LockingTaskExecutor` bean is now shared for both spring/reactor modes when a `LockProvider` exists.
+  - Reactive worker bean wiring now injects `LockingTaskExecutor`.
+- Dependency updates:
+  - `worker-reactive`: added `shedlock-core`.
+  - `starter-autoselect`: added `shedlock-provider-r2dbc`.
+- Updated tests for new constructor/wiring and added reactive service test asserting ShedLock usage in schedule path.
+- Updated README sections that previously stated reactive worker avoided ShedLock.
+- Validation:
+  - `mvn -q spotless:apply` (pass)
+  - `mvn -q -pl worker-reactive,starter-autoselect,consumer-kafka-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl worker-reactive,starter-autoselect,consumer-kafka-reactive -am -Dtest=SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest,AutoSelectConfigurationTest,KafkaReactorWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)

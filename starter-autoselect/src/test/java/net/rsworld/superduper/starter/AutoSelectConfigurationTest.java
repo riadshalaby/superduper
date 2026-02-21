@@ -59,10 +59,11 @@ class AutoSelectConfigurationTest {
         AutoSelectConfiguration cfg = new AutoSelectConfiguration();
         ReactiveWorkerMessageRepository mr = mock(ReactiveWorkerMessageRepository.class);
         ReactiveWorkerMaintenanceRepository maintenanceRepository = mock(ReactiveWorkerMaintenanceRepository.class);
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
         ReactiveMessageHandler h = row ->
                 reactor.core.publisher.Mono.just(net.rsworld.superduper.worker.reactive.ProcessingResult.SUCCESS);
         var observer = NoopSuperduperObserver.INSTANCE;
-        SuperDuperWorkerReactiveService svc = cfg.reactiveWorker(mr, h, observer, 100, 5, 5000);
+        SuperDuperWorkerReactiveService svc = cfg.reactiveWorker(mr, lockExec, h, observer, 100, 5);
         ReactiveHeartbeatService hb = cfg.reactiveHeartbeatService(maintenanceRepository, observer, 30_000);
         ReactiveOrphanReclaimer rec = cfg.reactiveOrphanReclaimer(maintenanceRepository, observer, 120_000, 30_000);
         assertThat(svc).isNotNull();

@@ -90,7 +90,7 @@ last_updated     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 -- heartbeat
 container_heartbeats(container_id PRIMARY KEY, last_heartbeat TIMESTAMP)
 
--- ShedLock (if JDBC workflow)
+-- ShedLock (JDBC and reactive worker claim coordination)
 shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), locked_by VARCHAR(255))
 ```
 
@@ -107,7 +107,7 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
    - The row gets an **auto-increment `id`**, **`uuid`**, **`key`**, and payload.
 
 2. **Claim Batch (Worker)**
-   - A single worker instance (JDBC worker protected by **ShedLock**) or each reactive worker **claims** a batch of candidate rows:
+   - Worker claim is coordinated by **ShedLock** (both JDBC and reactive worker variants), then claims a batch of candidate rows:
      - Only rows with `status IN ('READY') OR ('FAILED' AND retry_count < max)`.
      - **No per-key conflict**: We only claim a row if **no earlier row** for the same key is still `READY|FAILED|PROCESSING`.
      - Each claimed row is atomically set to `PROCESSING` with `container_id = current_worker`.
@@ -225,7 +225,7 @@ ReactiveMessageHandler superduperWorkerReactive() {
 
 The starter:
 - Autowires **JDBC Worker + ShedLock + Heartbeat + Orphan Reclaimer** when `type=spring`.
-- Autowires **Reactive Worker + Reactive Heartbeat + Reactive Orphan Reclaimer** when `type=reactor`.
+- Autowires **Reactive Worker + ShedLock + Reactive Heartbeat + Reactive Orphan Reclaimer** when `type=reactor`.
 - Consumers persist Kafka records into `messages` automatically.
 
 ### Observability configuration
@@ -415,8 +415,8 @@ mvn -T 1C test
 
 - The **claim UPDATE** runs in a transaction (JDBC) or atomically (reactive SQL) to avoid race conditions.
 - Only the **oldest** pending row per key can be claimed, preserving ordering.
-- ShedLock ensures only **one JDBC worker** does the claim at a time (you can still run multiple workers; the critical section is short).
-- The reactive variant avoids ShedLock and relies on **SQL invariants** + periodic claiming (and can be scaled horizontally).
+- ShedLock ensures only **one worker claim section** runs at a time (JDBC and reactive worker variants; critical section stays short).
+- Reactive processing still scales horizontally; lock coordination only guards claim entry.
 
 ---
 

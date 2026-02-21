@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.repository.api.ReactiveMessageIngestRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.r2dbc.R2dbcMessageIngestRepository;
@@ -133,11 +134,11 @@ class KafkaReactorWorkerE2EIT {
                 db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.POSTGRES);
         SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
                 messageRepository,
+                org.mockito.Mockito.mock(LockingTaskExecutor.class),
                 handler,
                 net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                 10,
-                5,
-                500);
+                5);
 
         List<Long> first =
                 messageRepository.claimBatch("w1", 10, 5).collectList().block();

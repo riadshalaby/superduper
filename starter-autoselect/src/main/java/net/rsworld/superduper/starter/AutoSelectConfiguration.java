@@ -1,11 +1,13 @@
 package net.rsworld.superduper.starter;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.r2dbc.spi.ConnectionFactory;
 import javax.sql.DataSource;
 import net.javacrumbs.shedlock.core.DefaultLockingTaskExecutor;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider;
+import net.javacrumbs.shedlock.provider.r2dbc.R2dbcLockProvider;
 import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
@@ -24,6 +26,7 @@ import net.rsworld.superduper.worker.reactive.ReactiveOrphanReclaimer;
 import net.rsworld.superduper.worker.reactive.SuperDuperWorkerReactiveService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -68,7 +71,14 @@ public class AutoSelectConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "spring", matchIfMissing = true)
+    @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
+    @ConditionalOnBean(ConnectionFactory.class)
+    @ConditionalOnMissingBean
+    public LockProvider reactiveLockProvider(ConnectionFactory connectionFactory) {
+        return new R2dbcLockProvider(connectionFactory, "shedlock");
+    }
+
+    @Bean
     @ConditionalOnMissingBean
     public LockingTaskExecutor lockingTaskExecutor(LockProvider lp) {
         return new DefaultLockingTaskExecutor(lp);
@@ -114,13 +124,13 @@ public class AutoSelectConfiguration {
     @ConditionalOnMissingBean
     public SuperDuperWorkerReactiveService reactiveWorker(
             ReactiveWorkerMessageRepository messageRepository,
+            LockingTaskExecutor lockExec,
             ReactiveMessageHandler handler,
             SuperduperObserver observer,
             @Value("${superduper.worker.batch-size:100}") int batchSize,
-            @Value("${superduper.worker.max-retries:5}") int maxRetries,
-            @Value("${superduper.worker.claim-interval-ms:5000}") long claimIntervalMs) {
+            @Value("${superduper.worker.max-retries:5}") int maxRetries) {
         return new SuperDuperWorkerReactiveService(
-                messageRepository, handler, observer, batchSize, maxRetries, claimIntervalMs);
+                messageRepository, lockExec, handler, observer, batchSize, maxRetries);
     }
 
     @Bean
