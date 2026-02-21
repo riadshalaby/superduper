@@ -1368,3 +1368,48 @@ Progress update (2026-02-21T17:21:30Z)
   - mvn -q test (pass, full multi-module run)
 - Observations:
   - Testcontainers successfully started PostgreSQL, MariaDB, and Kafka containers during E2E/integration tests.
+
+Progress update (2026-02-21T17:36:07Z)
+- Extended worker repository dialect support to cover PostgreSQL and MariaDB consistently.
+- JDBC worker repository:
+  - Constructor now takes `SqlDialect`.
+  - Claim SQL now uses dialect-specific syntax (`FOR UPDATE OF m1 SKIP LOCKED` for Postgres, `FOR UPDATE SKIP LOCKED` for MariaDB) and MariaDB-safe quoting for `key`.
+  - Fetch SQL now aliases key column as `message_key` and uses dialect-safe ordering/quoting.
+- R2DBC worker repository:
+  - Constructor now takes `SqlDialect`.
+  - Claim and fetch SQL are dialect-specific with MariaDB-safe key quoting.
+  - Fetch mapping uses aliased `message_key`.
+- Auto-config wiring updated to pass dialect into worker repositories:
+  - `JdbcRepositoryAutoConfiguration`
+  - `R2dbcRepositoryAutoConfiguration`
+- Updated affected integration tests to pass explicit dialect constructor args.
+- Added worker dialect-focused tests:
+  - Unit tests: SQL selection assertions for Postgres vs MariaDB in JDBC and R2DBC worker repositories.
+  - Integration tests: MariaDB worker repository tests for claim ordering and retry/transition behavior.
+- Added test dependency `org.mariadb.jdbc:mariadb-java-client` in `repository-r2dbc/pom.xml` (required by `MariaDBContainer` health-check path).
+- Validation:
+  - `mvn -q -pl repository-jdbc,repository-r2dbc -am -Dtest=JdbcWorkerMessageRepositoryTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcWorkerMessageRepositoryTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+  - `mvn -q -pl worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -Dtest=WorkerJdbcIntegrationTest,WorkerReactiveIntegrationTest,KafkaConsumerWorkerE2EIT,KafkaReactorWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+
+Progress update (2026-02-21T19:01:13Z)
+- Refactored repository implementations to be SQL-free by moving all SQL into dialect strategy classes.
+- New centralized dialect abstractions:
+  - JDBC: `JdbcSqlDialect`, with implementations `PostgresJdbcSqlDialect` and `MariaDbJdbcSqlDialect`.
+  - R2DBC: `R2dbcSqlDialect`, with implementations `PostgresR2dbcSqlDialect` and `MariaDbR2dbcSqlDialect`.
+- Repository classes now only call dialect methods (no embedded SQL literals):
+  - `JdbcMessageIngestRepository`, `JdbcWorkerMessageRepository`, `JdbcWorkerMaintenanceRepository`
+  - `R2dbcMessageIngestRepository`, `R2dbcWorkerMessageRepository`, `R2dbcWorkerMaintenanceRepository`
+- Added lightweight dialect mappers (`JdbcSqlDialects`, `R2dbcSqlDialects`) and kept convenience constructors that accept `SqlDialect` for call-site compatibility.
+- Auto-configuration now wires the new dialect strategy beans into all repositories:
+  - `JdbcRepositoryAutoConfiguration`
+  - `R2dbcRepositoryAutoConfiguration`
+- Removed legacy worker-only dialect types to avoid duplicate SQL definitions:
+  - JDBC: `WorkerJdbcSqlDialect`, `PostgresWorkerJdbcSqlDialect`, `MariaDbWorkerJdbcSqlDialect`
+  - R2DBC: `WorkerR2dbcSqlDialect`, `PostgresWorkerR2dbcSqlDialect`, `MariaDbWorkerR2dbcSqlDialect`
+- Updated tests:
+  - SQL syntax tests now assert SQL from dialect classes directly (instead of reflection over repository internals).
+  - Worker integration tests now use new dialect implementations for maintenance repositories.
+- Validation:
+  - `mvn -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests test-compile` (pass)
+  - `mvn -q -pl repository-jdbc,repository-r2dbc -am -Dtest=JdbcMessageIngestRepositoryTest,JdbcWorkerMessageRepositoryTest,JdbcMessageIngestRepositoryIntegrationTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcMessageIngestRepositoryTest,R2dbcWorkerMessageRepositoryTest,R2dbcMessageIngestRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+  - `mvn -q -pl worker-blocking,worker-reactive,consumer-kafka-blocking,consumer-kafka-reactive -am -Dtest=WorkerJdbcIntegrationTest,WorkerReactiveIntegrationTest,KafkaConsumerWorkerE2EIT,KafkaReactorWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)

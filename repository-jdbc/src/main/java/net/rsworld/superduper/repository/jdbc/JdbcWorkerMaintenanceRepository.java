@@ -7,9 +7,9 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 public class JdbcWorkerMaintenanceRepository implements WorkerMaintenanceRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
-    private final WorkerJdbcSqlDialect dialect;
+    private final JdbcSqlDialect dialect;
 
-    public JdbcWorkerMaintenanceRepository(NamedParameterJdbcTemplate jdbc, WorkerJdbcSqlDialect dialect) {
+    public JdbcWorkerMaintenanceRepository(NamedParameterJdbcTemplate jdbc, JdbcSqlDialect dialect) {
         this.jdbc = jdbc;
         this.dialect = dialect;
     }

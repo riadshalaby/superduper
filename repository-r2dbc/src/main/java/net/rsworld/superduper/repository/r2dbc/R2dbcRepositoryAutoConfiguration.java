@@ -44,16 +44,16 @@ public class R2dbcRepositoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WorkerR2dbcSqlDialect workerR2dbcSqlDialect(SqlDialect dialect) {
+    public R2dbcSqlDialect r2dbcSqlDialectStrategy(SqlDialect dialect) {
         return switch (dialect) {
-            case POSTGRES -> new PostgresWorkerR2dbcSqlDialect();
-            case MARIADB -> new MariaDbWorkerR2dbcSqlDialect();
+            case POSTGRES -> new PostgresR2dbcSqlDialect();
+            case MARIADB -> new MariaDbR2dbcSqlDialect();
         };
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ReactiveMessageIngestRepository reactiveMessageIngestRepository(DatabaseClient db, SqlDialect dialect) {
+    public ReactiveMessageIngestRepository reactiveMessageIngestRepository(DatabaseClient db, R2dbcSqlDialect dialect) {
         return new R2dbcMessageIngestRepository(db, dialect);
     }
 
@@ -68,14 +68,14 @@ public class R2dbcRepositoryAutoConfiguration {
     @ConditionalOnBean(TransactionalOperator.class)
     @ConditionalOnMissingBean
     public ReactiveWorkerMessageRepository reactiveWorkerMessageRepository(
-            DatabaseClient db, TransactionalOperator tx) {
-        return new R2dbcWorkerMessageRepository(db, tx);
+            DatabaseClient db, TransactionalOperator tx, R2dbcSqlDialect dialect) {
+        return new R2dbcWorkerMessageRepository(db, tx, dialect);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public ReactiveWorkerMaintenanceRepository reactiveWorkerMaintenanceRepository(
-            DatabaseClient db, WorkerR2dbcSqlDialect dialect) {
+            DatabaseClient db, R2dbcSqlDialect dialect) {
         return new R2dbcWorkerMaintenanceRepository(db, dialect);
     }
 }

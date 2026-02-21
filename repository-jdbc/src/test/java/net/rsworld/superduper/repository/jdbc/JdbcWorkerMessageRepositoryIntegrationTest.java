@@ -29,7 +29,7 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         ds.setPassword(postgres.getPassword());
 
         jdbc = new NamedParameterJdbcTemplate(ds);
-        repo = new JdbcWorkerMessageRepository(jdbc);
+        repo = new JdbcWorkerMessageRepository(jdbc, SqlDialect.POSTGRES);
 
         JdbcTemplate jt = new JdbcTemplate(ds);
         jt.execute(

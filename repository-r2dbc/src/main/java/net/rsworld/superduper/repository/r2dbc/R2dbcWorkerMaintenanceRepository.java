@@ -7,9 +7,9 @@ import reactor.core.publisher.Mono;
 public class R2dbcWorkerMaintenanceRepository implements ReactiveWorkerMaintenanceRepository {
 
     private final DatabaseClient db;
-    private final WorkerR2dbcSqlDialect dialect;
+    private final R2dbcSqlDialect dialect;
 
-    public R2dbcWorkerMaintenanceRepository(DatabaseClient db, WorkerR2dbcSqlDialect dialect) {
+    public R2dbcWorkerMaintenanceRepository(DatabaseClient db, R2dbcSqlDialect dialect) {
         this.db = db;
         this.dialect = dialect;
     }

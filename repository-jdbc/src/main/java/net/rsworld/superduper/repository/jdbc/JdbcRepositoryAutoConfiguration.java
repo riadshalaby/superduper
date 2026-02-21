@@ -41,29 +41,29 @@ public class JdbcRepositoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WorkerJdbcSqlDialect workerJdbcSqlDialect(SqlDialect dialect) {
+    public JdbcSqlDialect jdbcSqlDialect(SqlDialect dialect) {
         return switch (dialect) {
-            case POSTGRES -> new PostgresWorkerJdbcSqlDialect();
-            case MARIADB -> new MariaDbWorkerJdbcSqlDialect();
+            case POSTGRES -> new PostgresJdbcSqlDialect();
+            case MARIADB -> new MariaDbJdbcSqlDialect();
         };
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public MessageIngestRepository messageIngestRepository(NamedParameterJdbcTemplate jdbc, SqlDialect dialect) {
+    public MessageIngestRepository messageIngestRepository(NamedParameterJdbcTemplate jdbc, JdbcSqlDialect dialect) {
         return new JdbcMessageIngestRepository(jdbc, dialect);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public WorkerMessageRepository workerMessageRepository(NamedParameterJdbcTemplate jdbc) {
-        return new JdbcWorkerMessageRepository(jdbc);
+    public WorkerMessageRepository workerMessageRepository(NamedParameterJdbcTemplate jdbc, JdbcSqlDialect dialect) {
+        return new JdbcWorkerMessageRepository(jdbc, dialect);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public WorkerMaintenanceRepository workerMaintenanceRepository(
-            NamedParameterJdbcTemplate jdbc, WorkerJdbcSqlDialect dialect) {
+            NamedParameterJdbcTemplate jdbc, JdbcSqlDialect dialect) {
         return new JdbcWorkerMaintenanceRepository(jdbc, dialect);
     }
 }

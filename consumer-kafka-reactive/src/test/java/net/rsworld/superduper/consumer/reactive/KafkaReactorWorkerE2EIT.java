@@ -129,8 +129,8 @@ class KafkaReactorWorkerE2EIT {
                 .username(pg.getUsername())
                 .password(pg.getPassword())
                 .build());
-        ReactiveWorkerMessageRepository messageRepository =
-                new R2dbcWorkerMessageRepository(db, TransactionalOperator.create(new R2dbcTransactionManager(cf)));
+        ReactiveWorkerMessageRepository messageRepository = new R2dbcWorkerMessageRepository(
+                db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.POSTGRES);
         SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
                 messageRepository,
                 handler,

@@ -127,7 +127,7 @@ class KafkaConsumerWorkerE2EIT {
         LockingTaskExecutor lockExec = new DefaultLockingTaskExecutor(lockProvider);
 
         MessageHandler handler = (MessageRow r) -> ProcessingResult.SUCCESS;
-        WorkerMessageRepository messageRepository = new JdbcWorkerMessageRepository(np);
+        WorkerMessageRepository messageRepository = new JdbcWorkerMessageRepository(np, SqlDialect.POSTGRES);
 
         SuperDuperWorkerService svc = new SuperDuperWorkerService(
                 messageRepository,

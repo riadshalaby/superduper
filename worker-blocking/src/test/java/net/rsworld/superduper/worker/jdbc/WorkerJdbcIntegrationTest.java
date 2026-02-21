@@ -14,7 +14,8 @@ import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
 import net.rsworld.superduper.repository.jdbc.JdbcWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.jdbc.JdbcWorkerMessageRepository;
-import net.rsworld.superduper.repository.jdbc.PostgresWorkerJdbcSqlDialect;
+import net.rsworld.superduper.repository.jdbc.PostgresJdbcSqlDialect;
+import net.rsworld.superduper.repository.jdbc.SqlDialect;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -50,8 +51,8 @@ class WorkerJdbcIntegrationTest {
         jdbc = new NamedParameterJdbcTemplate(ds);
         txm = new DataSourceTransactionManager(ds);
         lockExec = mock(LockingTaskExecutor.class);
-        messageRepository = new JdbcWorkerMessageRepository(jdbc);
-        maintenanceRepository = new JdbcWorkerMaintenanceRepository(jdbc, new PostgresWorkerJdbcSqlDialect());
+        messageRepository = new JdbcWorkerMessageRepository(jdbc, SqlDialect.POSTGRES);
+        maintenanceRepository = new JdbcWorkerMaintenanceRepository(jdbc, new PostgresJdbcSqlDialect());
 
         jdbc.getJdbcTemplate()
                 .execute(

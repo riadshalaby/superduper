@@ -8,9 +8,10 @@ import java.util.HashSet;
 import java.util.List;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
-import net.rsworld.superduper.repository.r2dbc.PostgresWorkerR2dbcSqlDialect;
+import net.rsworld.superduper.repository.r2dbc.PostgresR2dbcSqlDialect;
 import net.rsworld.superduper.repository.r2dbc.R2dbcWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.r2dbc.R2dbcWorkerMessageRepository;
+import net.rsworld.superduper.repository.r2dbc.SqlDialect;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -45,9 +46,9 @@ class WorkerReactiveIntegrationTest {
                 .password(pg.getPassword())
                 .build());
         db = DatabaseClient.create(cf);
-        messageRepository =
-                new R2dbcWorkerMessageRepository(db, TransactionalOperator.create(new R2dbcTransactionManager(cf)));
-        maintenanceRepository = new R2dbcWorkerMaintenanceRepository(db, new PostgresWorkerR2dbcSqlDialect());
+        messageRepository = new R2dbcWorkerMessageRepository(
+                db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.POSTGRES);
+        maintenanceRepository = new R2dbcWorkerMaintenanceRepository(db, new PostgresR2dbcSqlDialect());
 
         Flux.concat(
                         db.sql(

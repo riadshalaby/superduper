@@ -33,7 +33,8 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
                 .password(postgres.getPassword())
                 .build());
         db = DatabaseClient.create(cf);
-        repo = new R2dbcWorkerMessageRepository(db, TransactionalOperator.create(new R2dbcTransactionManager(cf)));
+        repo = new R2dbcWorkerMessageRepository(
+                db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.POSTGRES);
 
         Flux.concat(
                         db.sql(

@@ -17,7 +17,7 @@ When multiple containers consume messages concurrently and persist them for late
 - **Retries & cut-off**: Failed messages are retried up to a maximum (default `5`) and then marked as `STOPPED`.
 - **Resilience**: Crashing containers leave **no** stuck work; **orphaned** `PROCESSING` rows are recovered.
 - **Observability**: Heartbeats detect dead containers; status fields show lifecycle progress.
-- **Flexibility**: Use **Spring Kafka + JDBC** or **Spring Kafka + R2DBC (reactive processing chain)** with the same algorithm and schema on PostgreSQL.
+- **Flexibility**: Use **Spring Kafka + JDBC** or **Spring Kafka + R2DBC (reactive processing chain)** with the same algorithm and schema on PostgreSQL or MariaDB.
 
 ---
 
@@ -36,7 +36,7 @@ graph LR
     W2[Worker Reactive]
   end
 
-  subgraph DB[(PostgreSQL)]
+  subgraph DB[(PostgreSQL / MariaDB)]
     M[(messages)]
     H[(container_heartbeats)]
     L[(shedlock)]
