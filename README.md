@@ -196,7 +196,17 @@ superduper:
   kafka:
     bootstrap-servers: localhost:9092
     group-id: my-group
-    topic: my-topic
+    topic: my-topic # backward compatible single topic
+    # or multi-topic subscription (CSV):
+    # topics: topic-a,topic-b,topic-c
+  db:
+    tables:
+      messages: messages
+      heartbeats: container_heartbeats
+  worker:
+    shedlock:
+      table-name: shedlock
+      claim-lock-name: superduper-claim-batch
 ```
 
 ### Provide your business logic
@@ -408,6 +418,12 @@ mvn -T 1C test
   - claim loop: `superduper.worker.claim-initial-delay-ms`
   - heartbeat loop: `superduper.worker.heartbeat-initial-delay-ms`
   - orphan reclaimer loop: `superduper.worker.orphan-initial-delay-ms`
+- **Kafka topics**:
+  - single topic: `superduper.kafka.topic`
+  - multiple topics (CSV): `superduper.kafka.topics` (falls back to `topic`)
+- **Repository tables**:
+  - message queue table: `superduper.db.tables.messages`
+  - heartbeat table: `superduper.db.tables.heartbeats`
 - **Heartbeat interval** & **orphan timeout**: Tune to your SLO for failover speed.
 - **ShedLock claim settings**:
   - table: `superduper.worker.shedlock.table-name`
@@ -424,6 +440,7 @@ mvn -T 1C test
 - The **claim UPDATE** runs in a transaction (JDBC) or atomically (reactive SQL) to avoid race conditions.
 - Only the **oldest** pending row per key can be claimed, preserving ordering.
 - ShedLock ensures only **one worker claim section** runs at a time (JDBC and reactive worker variants; critical section stays short).
+- In Kubernetes, this singleton-claim behavior is cluster-wide as long as all pods share the same database and same `superduper.worker.shedlock.claim-lock-name`.
 - Reactive processing still scales horizontally; lock coordination only guards claim entry.
 
 ---

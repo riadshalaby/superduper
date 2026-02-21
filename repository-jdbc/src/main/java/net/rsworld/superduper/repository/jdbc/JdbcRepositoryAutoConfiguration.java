@@ -7,10 +7,12 @@ import net.rsworld.superduper.repository.api.WorkerMessageRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 @AutoConfiguration
+@EnableConfigurationProperties(JdbcTableProperties.class)
 public class JdbcRepositoryAutoConfiguration {
 
     @Bean
@@ -41,11 +43,8 @@ public class JdbcRepositoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public JdbcSqlDialect jdbcSqlDialect(SqlDialect dialect) {
-        return switch (dialect) {
-            case POSTGRES -> new PostgresJdbcSqlDialect();
-            case MARIADB -> new MariaDbJdbcSqlDialect();
-        };
+    public JdbcSqlDialect jdbcSqlDialect(SqlDialect dialect, JdbcTableProperties tableProperties) {
+        return JdbcSqlDialects.from(dialect, tableProperties);
     }
 
     @Bean

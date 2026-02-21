@@ -8,12 +8,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.reactive.TransactionalOperator;
 
 @AutoConfiguration
+@EnableConfigurationProperties(R2dbcTableProperties.class)
 public class R2dbcRepositoryAutoConfiguration {
 
     @Bean
@@ -44,11 +46,8 @@ public class R2dbcRepositoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public R2dbcSqlDialect r2dbcSqlDialectStrategy(SqlDialect dialect) {
-        return switch (dialect) {
-            case POSTGRES -> new PostgresR2dbcSqlDialect();
-            case MARIADB -> new MariaDbR2dbcSqlDialect();
-        };
+    public R2dbcSqlDialect r2dbcSqlDialectStrategy(SqlDialect dialect, R2dbcTableProperties tableProperties) {
+        return R2dbcSqlDialects.from(dialect, tableProperties);
     }
 
     @Bean

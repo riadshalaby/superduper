@@ -39,7 +39,7 @@ class ExampleReactiveSeeder {
 
     ExampleReactiveSeeder(
             @Value("${superduper.kafka.bootstrap-servers}") String bootstrapServers,
-            @Value("${superduper.kafka.topic}") String topic,
+            @Value("${superduper.kafka.topics:${superduper.kafka.topic}}") String configuredTopics,
             @Value("${superduper.example.seed.count:1000}") int count,
             @Value("${superduper.example.seed.keys:20}") int keyCount,
             @Value("${superduper.example.seed.await-timeout-seconds:180}") long awaitTimeoutSeconds,
@@ -49,7 +49,7 @@ class ExampleReactiveSeeder {
             KafkaListenerEndpointRegistry listenerRegistry,
             DatabaseClient db) {
         this.bootstrapServers = bootstrapServers;
-        this.topic = topic;
+        this.topic = configuredTopics.split("\\s*,\\s*")[0];
         this.count = count;
         this.keyCount = keyCount;
         this.awaitTimeoutSeconds = awaitTimeoutSeconds;

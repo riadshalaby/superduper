@@ -25,7 +25,9 @@ class KafkaReactorR2dbcConsumerService {
         this.observer = observer;
     }
 
-    @KafkaListener(topics = "${superduper.kafka.topic}", containerFactory = "reactiveKafkaListenerContainerFactory")
+    @KafkaListener(
+            topics = "#{'${superduper.kafka.topics:${superduper.kafka.topic}}'.split('\\\\s*,\\\\s*')}",
+            containerFactory = "reactiveKafkaListenerContainerFactory")
     public void onMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
         long started = System.nanoTime();
         String key = record.key() != null ? record.key() : "default";
