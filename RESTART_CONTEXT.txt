@@ -1485,3 +1485,94 @@ Progress update (2026-02-25T09:59:57Z)
 - Validation:
   - .\\mvnw.cmd -q -pl repository-jdbc -am '-Dtest=JdbcWorkerClaimExplainIntegrationTest#mariadb_claimBatchSingleStatement_explain' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
 
+
+Progress update (2026-02-25T10:13:54Z)
+- Added new parallel worker load tests for both variants to process 1500 messages with at least 5 workers in parallel until completion.
+- Blocking test: worker-blocking WorkerJdbcIntegrationTest#parallel_workers_process_all_1500_messages seeds 1500 READY rows via generate_series, starts 5 workers concurrently, loops schedule() until processed count reaches 1500, then asserts no remaining non-PROCESSED rows.
+- Reactive test: worker-reactive WorkerReactiveIntegrationTest#parallel_workers_process_all_1500_messages mirrors the same scenario with 5 reactive workers and completion polling.
+- Added passthrough LockingTaskExecutor helpers in both tests so schedule() executes claim section during integration runs.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_1500_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_1500_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T10:33:46Z)
+- Updated parallel worker integration tests to actively record WorkerObservation instead of using Noop observer.
+- Added thread-safe RecordingObserver in blocking and reactive tests, collecting workerClaimed/workerProcessed/workerFailed events and observations.
+- Parallel tests now assert observability behavior (claim events exist, no worker failures, correct mode/ids, and 1500 distinct processed messageIds via WorkerObservation).
+- Relaxed raw event-count assertions to >= thresholds and added distinct messageId assertion to avoid false negatives under concurrent duplicate callbacks.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_1500_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_1500_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T10:42:25Z)
+- Made new parallel worker integration tests configurable via JVM system properties in both blocking and reactive variants.
+- Config keys used in both tests:
+  - superduper.test.parallel.messages (default 1500)
+  - superduper.test.parallel.workers (default 5)
+  - superduper.test.parallel.batch (default 100)
+  - superduper.test.parallel.timeout-seconds (default 60)
+- Renamed test methods to generic names: parallel_workers_process_all_messages.
+- Added positiveIntProperty(...) validation helper in both test classes.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T10:59:21Z)
+- Adjusted parallel worker tests to use fixed constants at the top of each test method (no system property config).
+- Added per-worker observation accounting in both parallel tests: claimed and processed counts keyed by WorkerObservation.workerId.
+- Added test output logging of worker distribution:
+  - BLOCKING WORKER CLAIMED/PROCESSED BY workerId
+  - REACTIVE WORKER CLAIMED/PROCESSED BY workerId
+- Updated blocking worker service to generate unique worker IDs per instance by appending UUID (aligns with reactive service and enables per-worker differentiation in parallel in-process tests).
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T13:09:52Z)
+- Replaced remaining System.out test logging with Log4j logger calls in worker parallel integration tests.
+- Added Log4j API imports and logger fields in WorkerJdbcIntegrationTest and WorkerReactiveIntegrationTest.
+- Added test-scope dependency org.apache.logging.log4j:log4j-api to worker-blocking and worker-reactive modules.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T13:54:43Z)
+- Renamed blocking worker Java package from net.rsworld.superduper.worker.jdbc to net.rsworld.superduper.worker.blocking.
+- Moved worker-blocking sources/tests to matching folder paths under worker/blocking.
+- Updated all affected imports/usages in modules referencing blocking worker classes:
+  - starter-autoselect (main/test)
+  - examples/app-jdbc
+  - consumer-kafka-blocking test
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,starter-autoselect,consumer-kafka-blocking,examples/app-jdbc -am -DskipTests test-compile (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,starter-autoselect -am '-Dtest=SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest#parallel_workers_process_all_messages,AutoSelectConfigurationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
+
+Progress update (2026-02-25T13:57:22Z)
+- Renamed blocking Kafka E2E test topic from e2e.worker.jdbc to e2e.worker.blocking in KafkaConsumerWorkerE2EIT.
+- Validation:
+  - .\\mvnw.cmd -q -pl consumer-kafka-blocking -am -DskipTests test-compile (pass)
+
+
+Progress update (2026-02-25T14:03:18Z)
+- Updated README algorithm description to current claim/fetch behavior and SQL structure.
+- Replaced outdated two-step/RETURNING-style claim description with current single-statement claim SQL for PostgreSQL and MariaDB.
+- Documented that claimBatch returns updated-row count, and fetch phase now reads PROCESSING rows by workerId (container_id=:cid) rather than by claimed id list.
+- Updated index guidance to reference Liquibase optimization scripts 002 (Postgres) and 003 (MariaDB), and adjusted consistency notes to reflect single-statement claim semantics.
+
+
+Progress update (2026-02-25T14:31:11Z)
+- Per-key-order verification hardened: added dedicated parallel strict-order integration tests for blocking and reactive workers with a single key and 5 parallel workers.
+- New tests assert processing order is exactly id 1..N (N=300), proving strict per-key sequencing under concurrent worker scheduling.
+- Fixed workerId consistency risk: default workerId in blocking/reactive worker services now matches heartbeat id format (runtime MXBean name), avoiding false orphan reclaim by missing-heartbeat checks.
+- Added package-local constructors with explicit workerId for tests; parallel tests now pass unique test worker ids to keep per-worker observation breakdown visible.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl worker-blocking,worker-reactive -am '-Dtest=SuperDuperWorkerServiceTest,WorkerBlockingIntegrationTest#parallel_workers_process_all_messages,WorkerBlockingIntegrationTest#parallel_workers_preserve_strict_per_key_ordering,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest#parallel_workers_process_all_messages,WorkerReactiveIntegrationTest#parallel_workers_preserve_strict_per_key_ordering' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+

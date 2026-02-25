@@ -1,4 +1,4 @@
-package net.rsworld.superduper.worker.jdbc;
+package net.rsworld.superduper.worker.blocking;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;

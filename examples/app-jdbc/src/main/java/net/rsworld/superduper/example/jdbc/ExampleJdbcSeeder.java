@@ -5,7 +5,7 @@ import java.util.Collection;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import net.rsworld.superduper.worker.jdbc.SuperDuperWorkerService;
+import net.rsworld.superduper.worker.blocking.SuperDuperWorkerService;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;

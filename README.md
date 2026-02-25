@@ -94,7 +94,7 @@ container_heartbeats(container_id PRIMARY KEY, last_heartbeat TIMESTAMP)
 shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), locked_by VARCHAR(255))
 ```
 
-**Indexes:** `messages(key, id)` keeps **per-key ordering by `id`** (auto-increment).
+**Indexes:** `messages(key, id)` is the baseline for per-key order checks. For production workloads, add the claim/fetch/reclaim indexes shown in the example Liquibase files (`002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`).
 
 ---
 
@@ -107,41 +107,78 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
    - The row gets an **auto-increment `id`**, **`uuid`**, **`key`**, and payload.
 
 2. **Claim Batch (Worker)**
-   - Worker claim is coordinated by **ShedLock** (both JDBC and reactive worker variants), then claims a batch of candidate rows:
-     - Only rows with `status IN ('READY') OR ('FAILED' AND retry_count < max)`.
-     - **No per-key conflict**: We only claim a row if **no earlier row** for the same key is still `READY|FAILED|PROCESSING`.
-     - Each claimed row is atomically set to `PROCESSING` with `container_id = current_worker`.
+   - Worker claim is coordinated by **ShedLock** (both JDBC and reactive worker variants).
+   - Claiming is done with **one SQL statement per dialect** (candidate selection + update in a single DB roundtrip).
+   - Candidate filter rules:
+     - Only `READY` or retry-eligible `FAILED` rows (`retry_count < maxRetries`).
+     - No per-key conflict: only the oldest pending row per key can pass.
+     - Rows already being processed for the same key are excluded.
+   - The `claimBatch` API returns only the **number of updated rows** (for metrics/logging), not a list of ids.
+   - Important: the status/retry eligibility predicate is only in the candidate selection; the update phase joins by candidate id.
 
-   **JDBC claim query (PostgreSQL):**
+   **PostgreSQL claim SQL (JDBC and R2DBC variants):**
    ```sql
    WITH candidate AS (
      SELECT m1.id
      FROM messages m1
      LEFT JOIN messages p
-      ON p.key = m1.key AND p.status = 'PROCESSING'
+       ON p.key = m1.key AND p.status = 'PROCESSING'
      WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries))
        AND p.id IS NULL
        AND NOT EXISTS (
-           SELECT 1 FROM messages prev
-           WHERE prev.key = m1.key
-             AND prev.id   < m1.id
-             AND prev.status IN ('READY','FAILED','PROCESSING')
+         SELECT 1
+         FROM messages prev
+         WHERE prev.key = m1.key
+           AND prev.id < m1.id
+           AND prev.status IN ('READY','FAILED','PROCESSING')
        )
      ORDER BY m1.id
      LIMIT :batch
+     FOR UPDATE OF m1 SKIP LOCKED
    )
    UPDATE messages m
-      SET status='PROCESSING', container_id=:cid, last_updated=NOW()
-     FROM candidate c
-    WHERE m.id = c.id
-      AND (m.status = 'READY' OR (m.status = 'FAILED' AND m.retry_count < :maxRetries))
-   RETURNING m.id;
+   SET status='PROCESSING', container_id=:cid, last_updated=NOW()
+   FROM candidate c
+   WHERE m.id = c.id;
    ```
 
-3. **Process (Business Logic)**
-   - Worker fetches the claimed rows and **invokes your business function**:
-     - **JDBC:** `MessageHandler` → returns `SUCCESS` or `RETRY`.
-     - **Reactive:** `ReactiveMessageHandler` → `Mono<SUCCESS|RETRY>`.
+   **MariaDB claim SQL (JDBC and R2DBC variants):**
+   ```sql
+   UPDATE messages m
+   JOIN (
+     SELECT id FROM (
+       SELECT m1.id
+       FROM messages m1
+       LEFT JOIN messages p
+         ON p.`key` = m1.`key` AND p.status = 'PROCESSING'
+       WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries))
+         AND p.id IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+           FROM messages prev
+           WHERE prev.`key` = m1.`key`
+             AND prev.id < m1.id
+             AND prev.status IN ('READY','FAILED','PROCESSING')
+         )
+       ORDER BY m1.id
+       LIMIT :batch
+       FOR UPDATE SKIP LOCKED
+     ) candidate_ids
+   ) c ON c.id = m.id
+   SET m.status='PROCESSING', m.container_id=:cid, m.last_updated=NOW();
+   ```
+
+3. **Fetch + Process (Business Logic)**
+   - After claiming, each worker fetches all rows currently marked for its own `workerId`:
+   ```sql
+   SELECT id, key AS message_key, content, retry_count, container_id
+   FROM messages
+   WHERE status='PROCESSING' AND container_id=:cid
+   ORDER BY key, id;
+   ```
+   - Then it invokes your business function:
+     - **JDBC:** `MessageHandler` -> returns `SUCCESS` or `RETRY`.
+     - **Reactive:** `ReactiveMessageHandler` -> `Mono<SUCCESS|RETRY>`.
 
 4. **On Success or Failure**
    - `SUCCESS` → `status='PROCESSED'`, `processed_at=NOW()`.
@@ -430,14 +467,14 @@ mvn -T 1C test
   - claim lock name: `superduper.worker.shedlock.claim-lock-name`
   - lock windows: `superduper.worker.shedlock.lock-at-most-for-ms`, `superduper.worker.shedlock.lock-at-least-for-ms`
 - **Max retries**: After `STOPPED`, set up alerting; operator can **manually fix** and requeue (`status='READY', retry_count=retry_count-1` or reset to 0).
-- **Indexes**: Ensure `messages(key, id)` exists; consider partitioning for very large tables.
+- **Indexes**: Keep `messages(key, id)` as baseline and add claim/fetch/reclaim indexes from the example Liquibase SQL (`002-worker-claim-indexes-postgres.sql`, `003-worker-claim-indexes-mariadb.sql`). Consider partitioning for very large tables.
 - **Idempotency**: `uuid` is deterministic from Kafka `topic:partition:offset` so redeliveries upsert instead of inserting duplicates.
 
 ---
 
 ## Security & Consistency Notes
 
-- The **claim UPDATE** runs in a transaction (JDBC) or atomically (reactive SQL) to avoid race conditions.
+- Claiming is a **single SQL statement per dialect** (selection + mark to PROCESSING) to minimize race windows.
 - Only the **oldest** pending row per key can be claimed, preserving ordering.
 - ShedLock ensures only **one worker claim section** runs at a time (JDBC and reactive worker variants; critical section stays short).
 - In Kubernetes, this singleton-claim behavior is cluster-wide as long as all pods share the same database and same `superduper.worker.shedlock.claim-lock-name`.

@@ -1,4 +1,4 @@
-package net.rsworld.superduper.worker.jdbc;
+package net.rsworld.superduper.worker.blocking;
 
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
@@ -39,6 +39,32 @@ public class SuperDuperWorkerService {
             String claimLockName,
             long lockAtMostForMs,
             long lockAtLeastForMs) {
+        this(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                observer,
+                batch,
+                maxRetries,
+                claimLockName,
+                lockAtMostForMs,
+                lockAtLeastForMs,
+                ManagementFactory.getRuntimeMXBean().getName());
+    }
+
+    SuperDuperWorkerService(
+            WorkerMessageRepository messageRepository,
+            PlatformTransactionManager txm,
+            LockingTaskExecutor lockExec,
+            MessageHandler handler,
+            SuperduperObserver observer,
+            int batch,
+            int maxRetries,
+            String claimLockName,
+            long lockAtMostForMs,
+            long lockAtLeastForMs,
+            String workerId) {
         this.messageRepository = messageRepository;
         this.tx = new TransactionTemplate(txm);
         this.lockExec = lockExec;
@@ -49,7 +75,7 @@ public class SuperDuperWorkerService {
         this.claimLockName = claimLockName;
         this.lockAtMostFor = Duration.ofMillis(lockAtMostForMs);
         this.lockAtLeastFor = Duration.ofMillis(lockAtLeastForMs);
-        this.workerId = ManagementFactory.getRuntimeMXBean().getName();
+        this.workerId = workerId;
     }
 
     public SuperDuperWorkerService(

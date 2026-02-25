@@ -2,9 +2,9 @@ package net.rsworld.superduper.example.jdbc;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import net.rsworld.superduper.worker.jdbc.MessageHandler;
-import net.rsworld.superduper.worker.jdbc.MessageRow;
-import net.rsworld.superduper.worker.jdbc.ProcessingResult;
+import net.rsworld.superduper.worker.blocking.MessageHandler;
+import net.rsworld.superduper.worker.blocking.MessageRow;
+import net.rsworld.superduper.worker.blocking.ProcessingResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

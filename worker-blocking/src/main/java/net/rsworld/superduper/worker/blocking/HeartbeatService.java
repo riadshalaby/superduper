@@ -1,5 +1,6 @@
-package net.rsworld.superduper.worker.jdbc;
+package net.rsworld.superduper.worker.blocking;
 
+import java.lang.management.ManagementFactory;
 import net.rsworld.superduper.observability.api.MaintenanceObservation;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
@@ -8,36 +9,32 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
-public class OrphanReclaimer {
+public class HeartbeatService {
     private final WorkerMaintenanceRepository maintenanceRepository;
     private final SuperduperObserver observer;
-    private final int orphanTimeoutSec;
-    private final int heartbeatWindowSec;
+    private final String workerId;
 
-    public OrphanReclaimer(
+    public HeartbeatService(
             WorkerMaintenanceRepository maintenanceRepository,
             SuperduperObserver observer,
-            @Value("${superduper.worker.orphan-timeout-ms:120000}") int orphanTimeoutMs,
-            @Value("${superduper.worker.heartbeat-interval-ms:30000}") int hbMs) {
+            @Value("${superduper.worker.heartbeat-interval-ms:30000}") long hb) {
         this.maintenanceRepository = maintenanceRepository;
         this.observer = observer;
-        this.orphanTimeoutSec = orphanTimeoutMs / 1000;
-        this.heartbeatWindowSec = hbMs / 1000;
+        this.workerId = ManagementFactory.getRuntimeMXBean().getName();
     }
 
     @Scheduled(
-            fixedDelayString = "${superduper.worker.orphan-timeout-ms:120000}",
-            initialDelayString = "${superduper.worker.orphan-initial-delay-ms:15000}")
-    public void reclaim() {
+            fixedRateString = "${superduper.worker.heartbeat-interval-ms:30000}",
+            initialDelayString = "${superduper.worker.heartbeat-initial-delay-ms:0}")
+    public void heartbeat() {
         long started = System.nanoTime();
         try {
-            maintenanceRepository.reclaimStaleProcessing(orphanTimeoutSec);
-            maintenanceRepository.reclaimMissingHeartbeats(heartbeatWindowSec);
+            maintenanceRepository.heartbeat(workerId);
             observer.maintenanceSucceeded(
-                    new MaintenanceObservation("blocking", "n/a", "orphan-reclaim", elapsedMs(started)));
+                    new MaintenanceObservation("blocking", workerId, "heartbeat", elapsedMs(started)));
         } catch (RuntimeException e) {
             observer.maintenanceFailed(
-                    new MaintenanceObservation("blocking", "n/a", "orphan-reclaim", elapsedMs(started)), e);
+                    new MaintenanceObservation("blocking", workerId, "heartbeat", elapsedMs(started)), e);
             throw e;
         }
     }

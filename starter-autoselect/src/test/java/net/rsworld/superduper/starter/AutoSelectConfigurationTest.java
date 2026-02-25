@@ -11,10 +11,10 @@ import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
-import net.rsworld.superduper.worker.jdbc.HeartbeatService;
-import net.rsworld.superduper.worker.jdbc.MessageHandler;
-import net.rsworld.superduper.worker.jdbc.OrphanReclaimer;
-import net.rsworld.superduper.worker.jdbc.SuperDuperWorkerService;
+import net.rsworld.superduper.worker.blocking.HeartbeatService;
+import net.rsworld.superduper.worker.blocking.MessageHandler;
+import net.rsworld.superduper.worker.blocking.OrphanReclaimer;
+import net.rsworld.superduper.worker.blocking.SuperDuperWorkerService;
 import net.rsworld.superduper.worker.reactive.ReactiveHeartbeatService;
 import net.rsworld.superduper.worker.reactive.ReactiveMessageHandler;
 import net.rsworld.superduper.worker.reactive.ReactiveOrphanReclaimer;
@@ -44,7 +44,7 @@ class AutoSelectConfigurationTest {
         WorkerMessageRepository mr = mock(WorkerMessageRepository.class);
         WorkerMaintenanceRepository maintenanceRepository = mock(WorkerMaintenanceRepository.class);
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
-        MessageHandler handler = row -> net.rsworld.superduper.worker.jdbc.ProcessingResult.SUCCESS;
+        MessageHandler handler = row -> net.rsworld.superduper.worker.blocking.ProcessingResult.SUCCESS;
         var observer = NoopSuperduperObserver.INSTANCE;
 
         SuperDuperWorkerService svc = cfg.jdbcWorker(mr, txm, exec, handler, observer, workerProperties);

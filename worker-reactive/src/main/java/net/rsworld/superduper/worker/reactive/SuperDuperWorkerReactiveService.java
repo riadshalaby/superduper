@@ -3,7 +3,6 @@ package net.rsworld.superduper.worker.reactive;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.UUID;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
@@ -37,6 +36,30 @@ public class SuperDuperWorkerReactiveService {
             String claimLockName,
             long lockAtMostForMs,
             long lockAtLeastForMs) {
+        this(
+                messageRepository,
+                lockExec,
+                handler,
+                observer,
+                batchSize,
+                maxRetries,
+                claimLockName,
+                lockAtMostForMs,
+                lockAtLeastForMs,
+                ManagementFactory.getRuntimeMXBean().getName());
+    }
+
+    SuperDuperWorkerReactiveService(
+            ReactiveWorkerMessageRepository messageRepository,
+            LockingTaskExecutor lockExec,
+            ReactiveMessageHandler handler,
+            SuperduperObserver observer,
+            int batchSize,
+            int maxRetries,
+            String claimLockName,
+            long lockAtMostForMs,
+            long lockAtLeastForMs,
+            String workerId) {
         this.messageRepository = messageRepository;
         this.lockExec = lockExec;
         this.handler = handler;
@@ -46,7 +69,7 @@ public class SuperDuperWorkerReactiveService {
         this.claimLockName = claimLockName;
         this.lockAtMostFor = Duration.ofMillis(lockAtMostForMs);
         this.lockAtLeastFor = Duration.ofMillis(lockAtLeastForMs);
-        this.workerId = ManagementFactory.getRuntimeMXBean().getName() + ":" + UUID.randomUUID();
+        this.workerId = workerId;
     }
 
     public SuperDuperWorkerReactiveService(

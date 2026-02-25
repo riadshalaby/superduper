@@ -16,10 +16,10 @@ import net.rsworld.superduper.repository.api.WorkerMessageRepository;
 import net.rsworld.superduper.repository.jdbc.JdbcMessageIngestRepository;
 import net.rsworld.superduper.repository.jdbc.JdbcWorkerMessageRepository;
 import net.rsworld.superduper.repository.jdbc.SqlDialect;
-import net.rsworld.superduper.worker.jdbc.MessageHandler;
-import net.rsworld.superduper.worker.jdbc.MessageRow;
-import net.rsworld.superduper.worker.jdbc.ProcessingResult;
-import net.rsworld.superduper.worker.jdbc.SuperDuperWorkerService;
+import net.rsworld.superduper.worker.blocking.MessageHandler;
+import net.rsworld.superduper.worker.blocking.MessageRow;
+import net.rsworld.superduper.worker.blocking.ProcessingResult;
+import net.rsworld.superduper.worker.blocking.SuperDuperWorkerService;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -52,7 +52,7 @@ import org.testcontainers.utility.DockerImageName;
 @SpringBootTest(classes = KafkaConsumerWorkerE2EIT.TestConfig.class)
 class KafkaConsumerWorkerE2EIT {
 
-    static final String TOPIC = "e2e.worker.jdbc";
+    static final String TOPIC = "e2e.worker.blocking";
 
     @Container
     static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:4.1.1"));

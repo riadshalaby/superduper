@@ -1,4 +1,4 @@
-package net.rsworld.superduper.worker.jdbc;
+package net.rsworld.superduper.worker.blocking;
 
 public enum ProcessingResult {
     SUCCESS,

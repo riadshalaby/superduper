@@ -99,10 +99,7 @@ class JdbcWorkerClaimExplainIntegrationTest {
                     .addValue("batch", 200)
                     .addValue("maxRetries", 5);
 
-            List<String> baselinePlan = jdbc.queryForList(
-                    explainSql,
-                    params,
-                    String.class);
+            List<String> baselinePlan = jdbc.queryForList(explainSql, params, String.class);
             String baselinePlanText = String.join(System.lineSeparator(), baselinePlan);
 
             System.out.println("MARIADB CLAIM PLAN (baseline)");
@@ -119,7 +116,8 @@ class JdbcWorkerClaimExplainIntegrationTest {
                     .execute(
                             "CREATE INDEX idx_messages_processing_worker_status_container_key_id ON messages(status, container_id, `key`, id)");
             jdbc.getJdbcTemplate()
-                    .execute("CREATE INDEX idx_messages_processing_stale_status_last_updated ON messages(status, last_updated)");
+                    .execute(
+                            "CREATE INDEX idx_messages_processing_stale_status_last_updated ON messages(status, last_updated)");
 
             List<String> tunedPlan = jdbc.queryForList(explainSql, params, String.class);
             String tunedPlanText = String.join(System.lineSeparator(), tunedPlan);
