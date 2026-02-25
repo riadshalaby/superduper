@@ -2,7 +2,6 @@ package net.rsworld.superduper.repository.jdbc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -51,15 +50,15 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         insert("u2", "k1", "v2", "READY");
         insert("u3", "k2", "v3", "READY");
 
-        List<Long> first = repo.claimBatch("w1", 10, 5);
-        assertThat(first).hasSize(2);
+        long first = repo.claimBatch("w1", 10, 5);
+        assertThat(first).isEqualTo(2);
 
-        List<Long> second = repo.claimBatch("w1", 10, 5);
-        assertThat(second).isEmpty();
+        long second = repo.claimBatch("w1", 10, 5);
+        assertThat(second).isZero();
 
-        first.forEach(repo::markProcessed);
-        List<Long> third = repo.claimBatch("w1", 10, 5);
-        assertThat(third).hasSize(1);
+        repo.fetchClaimedForWorker("w1").forEach(row -> repo.markProcessed(row.id()));
+        long third = repo.claimBatch("w1", 10, 5);
+        assertThat(third).isEqualTo(1);
     }
 
     @Test
@@ -67,10 +66,10 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         resetData();
         insert("u4", "k4", "v4", "READY");
 
-        List<Long> claimed = repo.claimBatch("w1", 10, 5);
-        assertThat(claimed).hasSize(1);
+        long claimed = repo.claimBatch("w1", 10, 5);
+        assertThat(claimed).isEqualTo(1);
 
-        var rows = repo.fetchClaimedByIds(claimed);
+        var rows = repo.fetchClaimedForWorker("w1");
         assertThat(rows).hasSize(1);
 
         long id = rows.getFirst().id();

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionFactory;
-import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -62,21 +61,24 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         insert("u2", "k1", "v2", "READY");
         insert("u3", "k2", "v3", "READY");
 
-        List<Long> first = repo.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(first).hasSize(2);
+        Long first = repo.claimBatch("w1", 10, 5).block();
+        assertThat(first).isEqualTo(2L);
 
-        List<Long> second = repo.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(second).isEmpty();
+        Long second = repo.claimBatch("w1", 10, 5).block();
+        assertThat(second).isZero();
 
-        first.forEach(id -> repo.markProcessed(id).block());
-        Integer processedAtCount = db.sql("SELECT COUNT(*) AS c FROM messages WHERE id IN (" + first.get(0) + ","
-                        + first.get(1) + ") AND processed_at IS NOT NULL")
+        var firstRows = repo.fetchClaimedForWorker("w1").collectList().block();
+        assertThat(firstRows).isNotNull();
+        assertThat(firstRows).hasSize(2);
+        firstRows.forEach(row -> repo.markProcessed(row.id()).block());
+        Integer processedAtCount = db.sql("SELECT COUNT(*) AS c FROM messages WHERE status='PROCESSED' "
+                        + "AND container_id='w1' AND processed_at IS NOT NULL")
                 .map((row, md) -> row.get("c", Integer.class))
                 .one()
                 .block();
         assertThat(processedAtCount).isEqualTo(2);
-        List<Long> third = repo.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(third).hasSize(1);
+        Long third = repo.claimBatch("w1", 10, 5).block();
+        assertThat(third).isEqualTo(1L);
     }
 
     @Test
@@ -84,10 +86,10 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         resetData();
         insert("u4", "k4", "v4", "READY");
 
-        List<Long> claimed = repo.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(claimed).hasSize(1);
+        Long claimed = repo.claimBatch("w1", 10, 5).block();
+        assertThat(claimed).isEqualTo(1L);
 
-        var rows = repo.fetchClaimedByIds(claimed).collectList().block();
+        var rows = repo.fetchClaimedForWorker("w1").collectList().block();
         assertThat(rows).hasSize(1);
 
         long id = rows.getFirst().id();

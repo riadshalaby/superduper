@@ -10,7 +10,7 @@ class JdbcWorkerMessageRepositoryTest {
     void usesPostgresWorkerSql() {
         JdbcSqlDialect dialect = new PostgresJdbcSqlDialect();
         String claimSql = dialect.claimBatchSql();
-        String fetchSql = dialect.fetchClaimedSql();
+        String fetchSql = dialect.fetchClaimedForWorkerSql();
 
         assertThat(claimSql).contains("FOR UPDATE OF m1 SKIP LOCKED");
         assertThat(claimSql).contains("p.key = m1.key");
@@ -24,7 +24,7 @@ class JdbcWorkerMessageRepositoryTest {
     void usesMariaDbWorkerSql() {
         JdbcSqlDialect dialect = new MariaDbJdbcSqlDialect();
         String claimSql = dialect.claimBatchSql();
-        String fetchSql = dialect.fetchClaimedSql();
+        String fetchSql = dialect.fetchClaimedForWorkerSql();
 
         assertThat(claimSql).contains("FOR UPDATE SKIP LOCKED");
         assertThat(claimSql).doesNotContain("FOR UPDATE OF m1 SKIP LOCKED");

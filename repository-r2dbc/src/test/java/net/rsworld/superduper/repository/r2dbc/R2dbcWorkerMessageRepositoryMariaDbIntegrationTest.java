@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.r2dbc.spi.ConnectionFactories;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryOptions;
-import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -62,15 +61,17 @@ class R2dbcWorkerMessageRepositoryMariaDbIntegrationTest {
         insert("u2", "k1", "v2", "READY");
         insert("u3", "k2", "v3", "READY");
 
-        List<Long> first = repo.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(first).hasSize(2);
+        Long first = repo.claimBatch("w1", 10, 5).block();
+        assertThat(first).isEqualTo(2L);
 
-        List<Long> second = repo.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(second).isEmpty();
+        Long second = repo.claimBatch("w1", 10, 5).block();
+        assertThat(second).isZero();
 
-        first.forEach(id -> repo.markProcessed(id).block());
-        List<Long> third = repo.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(third).hasSize(1);
+        var firstRows = repo.fetchClaimedForWorker("w1").collectList().block();
+        assertThat(firstRows).isNotNull();
+        firstRows.forEach(row -> repo.markProcessed(row.id()).block());
+        Long third = repo.claimBatch("w1", 10, 5).block();
+        assertThat(third).isEqualTo(1L);
     }
 
     private static void resetData() {

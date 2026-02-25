@@ -1,13 +1,12 @@
 package net.rsworld.superduper.repository.api;
 
-import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface ReactiveWorkerMessageRepository {
-    Flux<Long> claimBatch(String workerId, int batchSize, int maxRetries);
+    Mono<Long> claimBatch(String workerId, int batchSize, int maxRetries);
 
-    Flux<ClaimedMessage> fetchClaimedByIds(List<Long> ids);
+    Flux<ClaimedMessage> fetchClaimedForWorker(String workerId);
 
     Mono<Void> markProcessed(long id);
 

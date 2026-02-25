@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS messages (
   processed_at TIMESTAMP NULL,
   last_updated TIMESTAMP DEFAULT NOW()
 );
+
 CREATE INDEX IF NOT EXISTS idx_messages_key_id ON messages(key, id);
 
 CREATE TABLE IF NOT EXISTS container_heartbeats (

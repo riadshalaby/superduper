@@ -23,26 +23,25 @@ public final class MariaDbR2dbcSqlDialect implements R2dbcSqlDialect {
 
     @Override
     public String claimBatchSql() {
-        return ("SELECT m1.id FROM %s m1 "
+        return ("UPDATE %s m "
+                        + "JOIN ("
+                        + "SELECT id FROM ("
+                        + "SELECT m1.id FROM %s m1 "
                         + "WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries)) "
                         + "AND NOT EXISTS (SELECT 1 FROM %s p WHERE p.`key` = m1.`key` AND p.status = 'PROCESSING') "
                         + "AND NOT EXISTS (SELECT 1 FROM %s prev WHERE prev.`key` = m1.`key` "
                         + "AND prev.id < m1.id AND prev.status IN ('READY','FAILED','PROCESSING')) "
-                        + "ORDER BY m1.id LIMIT :batch FOR UPDATE SKIP LOCKED")
-                .formatted(messagesTable, messagesTable, messagesTable);
+                        + "ORDER BY m1.id LIMIT :batch FOR UPDATE SKIP LOCKED"
+                        + ") candidate_ids"
+                        + ") c ON c.id = m.id "
+                        + "SET m.status='PROCESSING', m.container_id=:cid, m.last_updated=NOW()")
+                .formatted(messagesTable, messagesTable, messagesTable, messagesTable);
     }
 
     @Override
-    public String claimBatchUpdateSqlTemplate() {
-        return ("UPDATE %s SET status='PROCESSING', container_id=:cid, last_updated=NOW() "
-                        + "WHERE id IN (%%s) AND (status='READY' OR (status='FAILED' AND retry_count < :maxRetries))")
-                .formatted(messagesTable);
-    }
-
-    @Override
-    public String fetchClaimedByIdsSqlTemplate() {
+    public String fetchClaimedForWorkerSql() {
         return "SELECT id, `key` AS message_key, content, retry_count, container_id "
-                + "FROM %s WHERE id IN (%%s) ORDER BY `key`, id".formatted(messagesTable);
+                + "FROM %s WHERE status='PROCESSING' AND container_id=:cid ORDER BY `key`, id".formatted(messagesTable);
     }
 
     @Override

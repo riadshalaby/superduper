@@ -1,0 +1,24 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-init-schema
+      author: codex
+      changes:
+        - sqlFile:
+            path: db/changelog/001-init-schema.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 002-worker-claim-indexes-postgres
+      author: codex
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/002-worker-claim-indexes-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 003-worker-claim-indexes-mariadb
+      author: codex
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/003-worker-claim-indexes-mariadb.sql
+            relativeToChangelogFile: false

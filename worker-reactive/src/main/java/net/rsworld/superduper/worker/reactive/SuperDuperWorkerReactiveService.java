@@ -3,8 +3,6 @@ package net.rsworld.superduper.worker.reactive;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
@@ -75,25 +73,26 @@ public class SuperDuperWorkerReactiveService {
             initialDelayString = "${superduper.worker.claim-initial-delay-ms:3000}")
     public void schedule() {
         long started = System.nanoTime();
-        List<Long> ids = new ArrayList<>();
+        long[] claimedCount = new long[] {0L};
         try {
             lockExec.executeWithLock(
-                    (Runnable) () -> ids.addAll(claimBatch()),
+                    (Runnable) () -> claimedCount[0] = claimBatch(),
                     new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
-                    new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), ids.size());
+                    new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)),
+                    Math.toIntExact(claimedCount[0]));
         } catch (RuntimeException e) {
             observer.workerFailed(
                     new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), e);
             return;
         }
 
-        if (ids.isEmpty()) {
+        if (claimedCount[0] <= 0) {
             return;
         }
 
         messageRepository
-                .fetchClaimedByIds(ids)
+                .fetchClaimedForWorker(workerId)
                 .concatMap(this::processOne)
                 .onErrorResume(e -> {
                     observer.workerFailed(
@@ -104,12 +103,11 @@ public class SuperDuperWorkerReactiveService {
                 .block();
     }
 
-    List<Long> claimBatch() {
+    long claimBatch() {
         return messageRepository
                 .claimBatch(workerId, batchSize, maxRetries)
-                .collectList()
                 .blockOptional()
-                .orElseGet(List::of);
+                .orElse(0L);
     }
 
     private Mono<Void> processOne(ClaimedMessage row) {

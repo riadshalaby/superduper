@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionFactory;
-import java.util.HashSet;
-import java.util.List;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
@@ -86,21 +84,19 @@ class WorkerReactiveIntegrationTest {
                 10,
                 5);
 
-        List<Long> first =
-                messageRepository.claimBatch("w1", 10, 5).collectList().block();
-        StepVerifier.create(Mono.just(first == null ? 0 : first.size()))
-                .expectNextMatches(sz -> sz == 2)
+        Long first = messageRepository.claimBatch("w1", 10, 5).block();
+        StepVerifier.create(Mono.just(first == null ? 0L : first))
+                .expectNext(2L)
                 .verifyComplete();
 
-        var list = messageRepository.fetchClaimedByIds(first).collectList().block();
+        var list = messageRepository.fetchClaimedForWorker("w1").collectList().block();
         for (var row : list) {
             processRow(svc, row);
         }
 
-        List<Long> second =
-                messageRepository.claimBatch("w1", 10, 5).collectList().block();
-        StepVerifier.create(Mono.just(second == null ? 0 : second.size()))
-                .expectNext(1)
+        Long second = messageRepository.claimBatch("w1", 10, 5).block();
+        StepVerifier.create(Mono.just(second == null ? 0L : second))
+                .expectNext(1L)
                 .verifyComplete();
     }
 
@@ -138,25 +134,23 @@ class WorkerReactiveIntegrationTest {
         resetData();
         seedRows("cu1", "ck1", "a", "READY", "cu2", "ck1", "b", "READY", "cu3", "ck2", "c", "READY");
 
-        Mono<List<Long>> c1 =
-                messageRepository.claimBatch("w1", 10, 5).collectList().subscribeOn(Schedulers.parallel());
-        Mono<List<Long>> c2 =
-                messageRepository.claimBatch("w2", 10, 5).collectList().subscribeOn(Schedulers.parallel());
+        Mono<Long> c1 = messageRepository.claimBatch("w1", 10, 5).subscribeOn(Schedulers.parallel());
+        Mono<Long> c2 = messageRepository.claimBatch("w2", 10, 5).subscribeOn(Schedulers.parallel());
 
         var result = Mono.zip(c1, c2).block();
         assertThat(result).isNotNull();
 
-        List<Long> first = result.getT1();
-        List<Long> second = result.getT2();
+        Long first = result.getT1();
+        Long second = result.getT2();
+        assertThat(first).isNotNull();
+        assertThat(second).isNotNull();
+        assertThat(first + second).isEqualTo(2L);
 
-        var overlap = new HashSet<>(first);
-        overlap.retainAll(second);
-        assertThat(overlap).isEmpty();
-
-        var allClaimed = new HashSet<Long>();
-        allClaimed.addAll(first);
-        allClaimed.addAll(second);
-        assertThat(allClaimed).hasSize(2);
+        Integer processing = db.sql("SELECT COUNT(*) AS c FROM messages WHERE status='PROCESSING'")
+                .map((r, m) -> r.get("c", Integer.class))
+                .one()
+                .block();
+        assertThat(processing).isEqualTo(2);
     }
 
     private static void processRow(

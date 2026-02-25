@@ -5,9 +5,7 @@ public interface R2dbcSqlDialect {
 
     String claimBatchSql();
 
-    String claimBatchUpdateSqlTemplate();
-
-    String fetchClaimedByIdsSqlTemplate();
+    String fetchClaimedForWorkerSql();
 
     String markProcessedSql();
 

@@ -3,9 +3,9 @@ package net.rsworld.superduper.repository.api;
 import java.util.List;
 
 public interface WorkerMessageRepository {
-    List<Long> claimBatch(String workerId, int batchSize, int maxRetries);
+    long claimBatch(String workerId, int batchSize, int maxRetries);
 
-    List<ClaimedMessage> fetchClaimedByIds(List<Long> ids);
+    List<ClaimedMessage> fetchClaimedForWorker(String workerId);
 
     void markProcessed(long id);
 

@@ -1,7 +1,5 @@
 package net.rsworld.superduper.repository.r2dbc;
 
-import java.util.List;
-import java.util.stream.Collectors;
 import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -26,38 +24,20 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
     }
 
     @Override
-    public Flux<Long> claimBatch(String workerId, int batchSize, int maxRetries) {
+    public Mono<Long> claimBatch(String workerId, int batchSize, int maxRetries) {
         return tx.transactional(db.sql(dialect.claimBatchSql())
+                .bind("cid", workerId)
                 .bind("batch", batchSize)
                 .bind("maxRetries", maxRetries)
-                .map((row, metadata) -> {
-                    Number id = row.get("id", Number.class);
-                    return id == null ? null : id.longValue();
-                })
-                .all()
-                .filter(id -> id != null)
-                .collectList()
-                .flatMapMany(ids -> {
-                    if (ids.isEmpty()) {
-                        return Flux.empty();
-                    }
-                    String inClause = ids.stream().map(String::valueOf).collect(Collectors.joining(","));
-                    return db.sql(dialect.claimBatchUpdateSqlTemplate().formatted(inClause))
-                            .bind("cid", workerId)
-                            .bind("maxRetries", maxRetries)
-                            .fetch()
-                            .rowsUpdated()
-                            .thenMany(Flux.fromIterable(ids));
-                }));
+                .fetch()
+                .rowsUpdated()
+                .defaultIfEmpty(0L));
     }
 
     @Override
-    public Flux<ClaimedMessage> fetchClaimedByIds(List<Long> ids) {
-        if (ids.isEmpty()) {
-            return Flux.empty();
-        }
-        String inClause = ids.stream().map(String::valueOf).collect(Collectors.joining(","));
-        return db.sql(dialect.fetchClaimedByIdsSqlTemplate().formatted(inClause))
+    public Flux<ClaimedMessage> fetchClaimedForWorker(String workerId) {
+        return db.sql(dialect.fetchClaimedForWorkerSql())
+                .bind("cid", workerId)
                 .map((row, metadata) -> {
                     Number id = row.get("id", Number.class);
                     Number retry = row.get("retry_count", Number.class);

@@ -12,7 +12,6 @@ import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class SuperDuperWorkerReactiveServiceTest {
@@ -74,7 +73,7 @@ class SuperDuperWorkerReactiveServiceTest {
     void schedule_usesShedlockForClaimSection() {
         ReactiveWorkerMessageRepository mr = mock(ReactiveWorkerMessageRepository.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
-        when(mr.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(Flux.empty());
+        when(mr.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(Mono.just(0L));
         doAnswer(invocation -> {
                     Runnable task = invocation.getArgument(0);
                     task.run();

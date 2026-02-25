@@ -5,9 +5,7 @@ public interface JdbcSqlDialect {
 
     String claimBatchSql();
 
-    String claimBatchUpdateSql();
-
-    String fetchClaimedSql();
+    String fetchClaimedForWorkerSql();
 
     String markProcessedSql();
 

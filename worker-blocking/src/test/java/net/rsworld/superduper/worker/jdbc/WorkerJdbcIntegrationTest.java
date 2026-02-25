@@ -3,8 +3,6 @@ package net.rsworld.superduper.worker.jdbc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-import java.util.HashSet;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -85,13 +83,13 @@ class WorkerJdbcIntegrationTest {
                 10,
                 5);
 
-        List<Long> first = svc.claimBatch();
-        assertThat(first).hasSize(2);
+        long first = svc.claimBatch();
+        assertThat(first).isEqualTo(2L);
 
-        svc.process(first);
+        svc.process();
 
-        List<Long> second = svc.claimBatch();
-        assertThat(second).hasSize(1);
+        long second = svc.claimBatch();
+        assertThat(second).isEqualTo(1L);
     }
 
     @Test
@@ -146,20 +144,16 @@ class WorkerJdbcIntegrationTest {
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<List<Long>> c1 = executor.submit(svc1::claimBatch);
-            Future<List<Long>> c2 = executor.submit(svc2::claimBatch);
+            Future<Long> c1 = executor.submit(svc1::claimBatch);
+            Future<Long> c2 = executor.submit(svc2::claimBatch);
 
-            List<Long> first = c1.get(10, TimeUnit.SECONDS);
-            List<Long> second = c2.get(10, TimeUnit.SECONDS);
+            long first = c1.get(10, TimeUnit.SECONDS);
+            long second = c2.get(10, TimeUnit.SECONDS);
+            assertThat(first + second).isEqualTo(2L);
 
-            HashSet<Long> overlap = new HashSet<>(first);
-            overlap.retainAll(second);
-            assertThat(overlap).isEmpty();
-
-            HashSet<Long> allClaimed = new HashSet<>();
-            allClaimed.addAll(first);
-            allClaimed.addAll(second);
-            assertThat(allClaimed).hasSize(2);
+            Integer processing = jdbc.getJdbcTemplate()
+                    .queryForObject("SELECT COUNT(*) FROM messages WHERE status='PROCESSING'", Integer.class);
+            assertThat(processing).isEqualTo(2);
         } finally {
             executor.shutdownNow();
         }

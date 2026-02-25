@@ -3,8 +3,6 @@ package net.rsworld.superduper.worker.jdbc;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
@@ -79,29 +77,32 @@ public class SuperDuperWorkerService {
             fixedDelayString = "${superduper.worker.claim-interval-ms:5000}",
             initialDelayString = "${superduper.worker.claim-initial-delay-ms:3000}")
     public void schedule() {
-        final List<Long> ids = new ArrayList<>();
+        final long[] claimedCount = new long[] {0L};
         long claimStarted = System.nanoTime();
         try {
             lockExec.executeWithLock(
-                    (Runnable) () -> ids.addAll(claimBatch()),
+                    (Runnable) () -> claimedCount[0] = claimBatch(),
                     new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
                     new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)),
-                    ids.size());
+                    Math.toIntExact(claimedCount[0]));
         } catch (RuntimeException e) {
             observer.workerFailed(
                     new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)), e);
             return;
         }
-        if (!ids.isEmpty()) process(ids);
+        if (claimedCount[0] > 0) {
+            process();
+        }
     }
 
-    List<Long> claimBatch() {
-        return tx.execute(st -> messageRepository.claimBatch(workerId, batch, maxRetries));
+    long claimBatch() {
+        Long claimed = tx.execute(st -> messageRepository.claimBatch(workerId, batch, maxRetries));
+        return claimed == null ? 0L : claimed;
     }
 
-    void process(List<Long> ids) {
-        var rows = messageRepository.fetchClaimedByIds(ids);
+    void process() {
+        var rows = messageRepository.fetchClaimedForWorker(workerId);
 
         for (var row : rows) {
             long started = System.nanoTime();

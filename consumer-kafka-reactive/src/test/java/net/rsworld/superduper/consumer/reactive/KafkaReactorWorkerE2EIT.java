@@ -140,11 +140,10 @@ class KafkaReactorWorkerE2EIT {
                 10,
                 5);
 
-        List<Long> first =
-                messageRepository.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(first).hasSize(2);
+        Long first = messageRepository.claimBatch("w1", 10, 5).block();
+        assertThat(first).isEqualTo(2L);
 
-        var list = messageRepository.fetchClaimedByIds(first).collectList().block();
+        var list = messageRepository.fetchClaimedForWorker("w1").collectList().block();
         for (var row : list) {
             var processOne = svc.getClass()
                     .getDeclaredMethod("processOne", net.rsworld.superduper.repository.api.ClaimedMessage.class);
@@ -152,10 +151,9 @@ class KafkaReactorWorkerE2EIT {
             ((reactor.core.publisher.Mono<Void>) processOne.invoke(svc, row)).block();
         }
 
-        List<Long> second =
-                messageRepository.claimBatch("w1", 10, 5).collectList().block();
-        assertThat(second).hasSize(1);
-        list = messageRepository.fetchClaimedByIds(second).collectList().block();
+        Long second = messageRepository.claimBatch("w1", 10, 5).block();
+        assertThat(second).isEqualTo(1L);
+        list = messageRepository.fetchClaimedForWorker("w1").collectList().block();
         for (var row : list) {
             var processOne = svc.getClass()
                     .getDeclaredMethod("processOne", net.rsworld.superduper.repository.api.ClaimedMessage.class);

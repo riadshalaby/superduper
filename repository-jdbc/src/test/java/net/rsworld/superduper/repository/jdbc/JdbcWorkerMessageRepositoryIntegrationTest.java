@@ -2,6 +2,7 @@ package net.rsworld.superduper.repository.jdbc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -51,21 +52,27 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         insert("u2", "k1", "v2", "READY");
         insert("u3", "k2", "v3", "READY");
 
-        List<Long> first = repo.claimBatch("w1", 10, 5);
-        assertThat(first).hasSize(2);
+        long first = repo.claimBatch("w1", 10, 5);
+        assertThat(first).isEqualTo(2);
 
-        List<Long> second = repo.claimBatch("w1", 10, 5);
-        assertThat(second).isEmpty();
+        long second = repo.claimBatch("w1", 10, 5);
+        assertThat(second).isZero();
 
-        first.forEach(repo::markProcessed);
+        var firstRows = repo.fetchClaimedForWorker("w1");
+        assertThat(firstRows).hasSize(2);
+        List<Long> firstIds = new ArrayList<>();
+        for (var row : firstRows) {
+            firstIds.add(row.id());
+            repo.markProcessed(row.id());
+        }
         Integer processedAtCount = jdbc.getJdbcTemplate()
                 .queryForObject(
-                        "SELECT COUNT(*) FROM messages WHERE id IN (" + first.get(0) + "," + first.get(1) + ") "
+                        "SELECT COUNT(*) FROM messages WHERE id IN (" + firstIds.get(0) + "," + firstIds.get(1) + ") "
                                 + "AND processed_at IS NOT NULL",
                         Integer.class);
         assertThat(processedAtCount).isEqualTo(2);
-        List<Long> third = repo.claimBatch("w1", 10, 5);
-        assertThat(third).hasSize(1);
+        long third = repo.claimBatch("w1", 10, 5);
+        assertThat(third).isEqualTo(1);
     }
 
     @Test
@@ -73,10 +80,10 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         resetData();
         insert("u4", "k4", "v4", "READY");
 
-        List<Long> claimed = repo.claimBatch("w1", 10, 5);
-        assertThat(claimed).hasSize(1);
+        long claimed = repo.claimBatch("w1", 10, 5);
+        assertThat(claimed).isEqualTo(1);
 
-        var rows = repo.fetchClaimedByIds(claimed);
+        var rows = repo.fetchClaimedForWorker("w1");
         assertThat(rows).hasSize(1);
 
         long id = rows.getFirst().id();

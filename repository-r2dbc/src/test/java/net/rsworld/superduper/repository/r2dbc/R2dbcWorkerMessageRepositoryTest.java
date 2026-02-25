@@ -10,22 +10,22 @@ class R2dbcWorkerMessageRepositoryTest {
     void usesPostgresWorkerSql() {
         R2dbcSqlDialect dialect = new PostgresR2dbcSqlDialect();
         String claimSql = dialect.claimBatchSql();
-        String fetchTemplate = dialect.fetchClaimedByIdsSqlTemplate();
+        String fetchSql = dialect.fetchClaimedForWorkerSql();
 
         assertThat(claimSql).contains("p.key = m1.key");
         assertThat(claimSql).doesNotContain("`key`");
-        assertThat(fetchTemplate).contains("key AS message_key");
-        assertThat(fetchTemplate).doesNotContain("`key`");
+        assertThat(fetchSql).contains("key AS message_key");
+        assertThat(fetchSql).doesNotContain("`key`");
     }
 
     @Test
     void usesMariaDbWorkerSql() {
         R2dbcSqlDialect dialect = new MariaDbR2dbcSqlDialect();
         String claimSql = dialect.claimBatchSql();
-        String fetchTemplate = dialect.fetchClaimedByIdsSqlTemplate();
+        String fetchSql = dialect.fetchClaimedForWorkerSql();
 
         assertThat(claimSql).contains("p.`key` = m1.`key`");
-        assertThat(fetchTemplate).contains("`key` AS message_key");
-        assertThat(fetchTemplate).contains("ORDER BY `key`, id");
+        assertThat(fetchSql).contains("`key` AS message_key");
+        assertThat(fetchSql).contains("ORDER BY `key`, id");
     }
 }

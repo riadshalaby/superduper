@@ -21,34 +21,20 @@ public class JdbcWorkerMessageRepository implements WorkerMessageRepository {
     }
 
     @Override
-    public List<Long> claimBatch(String workerId, int batchSize, int maxRetries) {
-        var params = new MapSqlParameterSource().addValue("batch", batchSize).addValue("maxRetries", maxRetries);
-
-        List<Long> candidateIds = jdbc.query(dialect.claimBatchSql(), params, (rs, rn) -> rs.getLong(1));
-
-        if (candidateIds.isEmpty()) {
-            return candidateIds;
-        }
-
-        jdbc.update(
-                dialect.claimBatchUpdateSql(),
+    public long claimBatch(String workerId, int batchSize, int maxRetries) {
+        return jdbc.update(
+                dialect.claimBatchSql(),
                 new MapSqlParameterSource()
                         .addValue("cid", workerId)
-                        .addValue("ids", candidateIds)
+                        .addValue("batch", batchSize)
                         .addValue("maxRetries", maxRetries));
-
-        return candidateIds;
     }
 
     @Override
-    public List<ClaimedMessage> fetchClaimedByIds(List<Long> ids) {
-        if (ids.isEmpty()) {
-            return List.of();
-        }
-
+    public List<ClaimedMessage> fetchClaimedForWorker(String workerId) {
         return jdbc.query(
-                dialect.fetchClaimedSql(),
-                new MapSqlParameterSource().addValue("ids", ids),
+                dialect.fetchClaimedForWorkerSql(),
+                new MapSqlParameterSource().addValue("cid", workerId),
                 (rs, rn) -> new ClaimedMessage(
                         rs.getLong("id"),
                         rs.getString("message_key"),

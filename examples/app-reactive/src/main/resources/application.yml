@@ -5,6 +5,11 @@ spring:
     url: r2dbc:postgresql://localhost:5432/superduper
     username: superduper
     password: superduper
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    url: jdbc:postgresql://localhost:5432/superduper
+    user: superduper
+    password: superduper
 
 superduper:
   consumer:

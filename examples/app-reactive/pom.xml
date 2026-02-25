@@ -28,6 +28,14 @@
       <version>${r2dbc-postgres.version}</version>
     </dependency>
     <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.liquibase</groupId>
+      <artifactId>liquibase-core</artifactId>
+    </dependency>
+    <dependency>
       <groupId>net.rsworld</groupId>
       <artifactId>superduper-starter-autoselect</artifactId>
       <version>1.0.0-SNAPSHOT</version>

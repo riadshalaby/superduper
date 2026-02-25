@@ -20,7 +20,7 @@ class SuperDuperWorkerServiceTest {
 
         List<ClaimedMessage> claimedRows =
                 List.of(new ClaimedMessage(1L, "k1", "v1", 0, "cid"), new ClaimedMessage(2L, "k2", "v2", 1, "cid"));
-        when(messageRepository.fetchClaimedByIds(any())).thenReturn(claimedRows);
+        when(messageRepository.fetchClaimedForWorker(any())).thenReturn(claimedRows);
 
         MessageHandler handler = row -> row.id() == 1L ? ProcessingResult.SUCCESS : ProcessingResult.RETRY;
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
@@ -34,7 +34,7 @@ class SuperDuperWorkerServiceTest {
                 net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                 100,
                 2);
-        svc.process(List.of(1L, 2L));
+        svc.process();
 
         verify(messageRepository).markProcessed(1L);
         verify(messageRepository).markStopped(2L, 2);
@@ -43,7 +43,7 @@ class SuperDuperWorkerServiceTest {
     @Test
     void process_retryBelowLimit_requeuesReady() {
         WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
-        when(messageRepository.fetchClaimedByIds(any()))
+        when(messageRepository.fetchClaimedForWorker(any()))
                 .thenReturn(List.of(new ClaimedMessage(10L, "k1", "v1", 0, "cid")));
 
         MessageHandler handler = row -> ProcessingResult.RETRY;
@@ -58,7 +58,7 @@ class SuperDuperWorkerServiceTest {
                 net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                 100,
                 3);
-        svc.process(List.of(10L));
+        svc.process();
 
         verify(messageRepository).markReadyForRetry(10L, 1);
     }

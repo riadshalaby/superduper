@@ -1431,3 +1431,57 @@ Progress update (2026-02-21T19:13:21Z)
   - `mvn -q spotless:apply` (pass)
   - `mvn -q -pl worker-reactive,starter-autoselect,consumer-kafka-reactive -am -DskipTests test-compile` (pass)
   - `mvn -q -pl worker-reactive,starter-autoselect,consumer-kafka-reactive -am -Dtest=SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest,AutoSelectConfigurationTest,KafkaReactorWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
+
+Progress update (2026-02-25T06:05:34Z)
+- Worker-Claim-Algorithmus umgestellt: Eligibility-Filter bleibt nur in claimBatchSql; claimBatchUpdateSql in JDBC/R2DBC enthält keine READY/FAILED/maxRetries-Bedingung mehr.
+- Repository-API geändert: claimBatch liefert jetzt nur Count (blocking: long, reactive: Mono<Long>) statt ID-Liste; Fetch wurde auf workerbasiert umgestellt (fetchClaimedForWorker(workerId) liest status='PROCESSING' + container_id=:cid).
+- Worker-Services angepasst: blocking/reactive schedule() loggt Claim-Count, verarbeitet danach alle aktuell für den worker markierten PROCESSING-Datensätze statt ID-Listen.
+- Betroffene Tests in repository-jdbc, repository-r2dbc, worker-blocking, worker-reactive und consumer-kafka-reactive E2E auf neue API/Semantik angepasst.
+- Build-Hardening: fehlende Table-Properties-Klassen ergänzt (JdbcTableProperties, R2dbcTableProperties) und lokales Maven-Artefakt byte-buddy-agent:1.18.4 nachgeladen (war im lokalen Repo fehlend).
+- Validation:
+  - .\mvnw.cmd -q spotless:apply (pass)
+  - .\mvnw.cmd -q -pl repository-api,repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive,consumer-kafka-reactive -am -DskipTests test-compile (pass)
+  - .\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcWorkerMessageRepositoryTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcWorkerMessageRepositoryTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+  - .\mvnw.cmd -q -pl consumer-kafka-reactive -am -Dtest=KafkaReactorWorkerE2EIT -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+- Next: optional Nachschärfung, ob fetchClaimedForWorker(workerId) bei sehr langen Handler-Laufzeiten zusätzlich per Batch-Limit begrenzt werden soll.
+
+
+Progress update (2026-02-25T07:23:31Z)
+- Claim-Logik auf Single-Statement pro Dialekt umgestellt (SELECT+UPDATE zusammengeführt), um DB-spezifische Lock/Update-Semantik direkt zu nutzen.
+- JDBC/R2DBC Dialekt-Interfaces vereinfacht: claimBatchUpdateSql* entfernt; claimBatchSql() ist jetzt die atomare Claim+Mark-SQL.
+- PostgreSQL Claim nutzt CTE (WITH candidate ... FOR UPDATE ... SKIP LOCKED) + direktes UPDATE FROM candidate.
+- MariaDB Claim nutzt UPDATE ... JOIN (SELECT id FROM (SELECT ... FOR UPDATE SKIP LOCKED) candidate_ids) für atomare Selektion+Markierung gegen dieselbe Tabelle.
+- Repositories vereinfacht: claimBatch führt nur noch die eine Dialekt-SQL aus und liefert rowsUpdated als Claim-Count.
+- Keine Änderung am Worker-Vertrag nötig: Worker loggt weiterhin Claim-Count und liest danach alle PROCESSING-Rows für workerId.
+- Validation:
+  - .\mvnw.cmd -q spotless:apply (pass)
+  - .\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -DskipTests test-compile (pass)
+  - .\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcWorkerMessageRepositoryTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,R2dbcWorkerMessageRepositoryTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,SuperDuperWorkerServiceTest,WorkerJdbcIntegrationTest,SuperDuperWorkerReactiveServiceTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+- Next: optional EXPLAIN-Vergleich (Postgres/MariaDB) für Claim-SQL, um Index-/Join-Plan gegen große Datenmengen zu verifizieren.
+
+
+Progress update (2026-02-25T09:44:52Z)
+- Added Postgres-specific Liquibase index changesets for worker claim/fetch/reclaim hot paths in both example apps.
+- New changelog file: db/changelog/002-worker-claim-indexes-postgres.sql (app-jdbc + app-reactive).
+- Added partial indexes: READY claim scan, FAILED retry scan, PROCESSING key lookup, PROCESSING worker fetch, PROCESSING stale-reclaim timestamp.
+- Updated db.changelog-master.yaml in both examples to include new 002 changeset with dbms=postgresql.
+- Validation:
+  - .\\mvnw.cmd -q -pl examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile (pass)
+
+
+Progress update (2026-02-25T09:50:13Z)
+- Added MariaDB-specific Liquibase index changesets for worker claim/fetch/reclaim in both example apps.
+- New file in each app: db/changelog/003-worker-claim-indexes-mariadb.sql.
+- Updated db.changelog-master.yaml in both examples to include changeset id 003 with dbms=mariadb.
+- Added composite indexes for status/retry/id/key claim path, key+status processing existence check, worker fetch path, and stale processing reclaim path.
+- Validation:
+  - .\\mvnw.cmd -q -pl examples/app-jdbc,examples/app-reactive -am -DskipTests test-compile (pass)
+
+
+Progress update (2026-02-25T09:59:57Z)
+- Added before/after MariaDB EXPLAIN comparison in JdbcWorkerClaimExplainIntegrationTest.
+- Test now executes claim EXPLAIN once with baseline index set, then creates tuned MariaDB indexes and executes EXPLAIN again.
+- Observed plan improvement: baseline used full scans + block nested loop join; tuned plan switched to indexed ref lookups for p/prev and cost dropped strongly in the candidate subquery.
+- Validation:
+  - .\\mvnw.cmd -q -pl repository-jdbc -am '-Dtest=JdbcWorkerClaimExplainIntegrationTest#mariadb_claimBatchSingleStatement_explain' '-Dsurefire.failIfNoSpecifiedTests=false' test (pass)
+
