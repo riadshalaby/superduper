@@ -1,94 +1,7 @@
 SUPERDUPER restart context
 Generated: 2026-02-13
 
-Session rule
-- Always update `RESTART_CONTEXT.txt` whenever progress is made (code changes, decisions, test results, blockers, or next-step changes).
-- Run Spotless formatting after every code change.
-- Quick append command:
-  `printf "\nProgress update (%s)\n- <what changed>\n- <validation>\n- <next>\n" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> RESTART_CONTEXT.txt`
-- Spotless command:
-  `mvn -q spotless:apply`
-- Use English for all code comments, log/output messages, README.md, and RESTART_CONTEXT entries.
-
-Goal
-- Build a library implementing the README algorithm: Kafka ingest -> DB READY rows -> ordered per-key claim/process -> retries/STOPPED -> heartbeat -> orphan reclaim.
-
-Algorithm (from README)
-1) Consumer persists Kafka records to `messages` with deterministic `uuid` and `status=READY`.
-2) Worker claims batch atomically with per-key ordering guard:
-   - eligible: READY or FAILED with retry_count < maxRetries
-   - blocked if older row of same key is READY/FAILED/PROCESSING
-   - blocked if same key already has PROCESSING row
-   - claimed rows become PROCESSING + container_id
-3) Business handler runs per claimed row.
-4) SUCCESS => PROCESSED; RETRY => increment retry_count then READY or STOPPED.
-5) Worker heartbeats written to `container_heartbeats`.
-6) Orphan reclaimer resets stale/dead-worker PROCESSING rows to READY.
-
-What is already implemented
-- repository modules introduced and wired:
-  - `repository-api` with shared ports/models for ingest + worker (sync + reactive).
-  - `repository-jdbc` with JDBC implementations, dialect detection, Postgres/MariaDB SQL strategies.
-  - `repository-r2dbc` with R2DBC implementations, dialect detection, Postgres/MariaDB SQL strategies.
-- observability modules introduced and wired:
-  - `observability-api` with `SuperduperObserver`, event models, settings model, noop observer.
-  - `observability-logging` with structured logging observer implementation.
-  - `observability-metrics` with Micrometer observer implementation (also logs) and configurable tags/timers.
-- consumer modules refactored to repository ports (no direct SQL in consumer services):
-  - `consumer-kafka-blocking` uses `MessageIngestRepository`.
-  - `consumer-kafka-reactive` uses `ReactiveMessageIngestRepository`.
-- consumer modules instrumented via observer:
-  - receive/success/failure events emitted with mode/topic/partition/offset/payload-size/duration.
-- worker modules refactored to repository ports (no direct SQL in worker services):
-  - `worker-blocking` uses `WorkerMessageRepository` + `WorkerMaintenanceRepository`.
-  - `worker-reactive` uses `ReactiveWorkerMessageRepository` + `ReactiveWorkerMaintenanceRepository`.
-- worker and maintenance modules instrumented via observer:
-  - claim/process/retry/stop/failure + heartbeat/orphan success/failure events with durations.
-- reactive maintenance architecture aligned with blocking style:
-  - heartbeat and orphan reclaim run via dedicated services (`ReactiveHeartbeatService`, `ReactiveOrphanReclaimer`);
-    reactive worker keeps claim/process loop only.
-- starter wiring updated:
-  - `starter-autoselect` injects repository interfaces for both JDBC and reactive stacks.
-  - `starter-autoselect` now auto-creates one observer bean from `superduper.observability.*` properties:
-    - noop if disabled,
-    - metrics observer when enabled and `MeterRegistry` exists,
-    - logging observer fallback.
-- examples:
-  - `examples/app-jdbc` and `examples/app-reactive` runnable with seeded demo flow and handler-based progress tracking.
-
-Validation snapshot
-- compile passes:
-  - `mvn -q -DskipTests test-compile` (pass)
-- targeted tests for changed areas pass:
-  - `mvn -q -pl consumer-kafka-blocking,consumer-kafka-reactive,worker-blocking,worker-reactive,starter-autoselect,observability-logging,observability-metrics -am -Dtest=KafkaConsumerServiceTest,KafkaReactiveR2dbcConsumerServiceTest,SuperDuperWorkerServiceTest,SuperDuperWorkerReactiveServiceTest,AutoSelectConfigurationTest -Dsurefire.failIfNoSpecifiedTests=false test` (pass)
-- note on full-suite instability:
-  - one full run failed in `consumer-kafka-reactive` E2E due Testcontainers Kafka image startup crash
-    (`apache/kafka-native:4.1.1` segfault/container exit), not a deterministic code regression.
-
-Likely unfinished / hardening items
-1) Schema management is not library-grade yet
-- Table creation is in example code/tests; there is no packaged migration/changelog in library modules despite Liquibase deps.
-- Need official schema migration strategy (Liquibase/Flyway SQL/changelog) shipped with library.
-
-2) Timestamp semantics
-- Consumer stores `timestamp=NOW()` rather than Kafka record timestamp; README says original send-ts optional.
-- Decide if Kafka event timestamp should be persisted.
-
-3) Observability hardening
-- Add direct tests for property matrix behavior (`enabled`, per-component, per-signal, outputs + tag toggles).
-- Add optional integration test with `MeterRegistry` to validate metric names/tags end-to-end.
-
-Recommended next implementation steps
-1) Add DB migration assets to a dedicated library module (Liquibase) and document required tables/indexes per dialect.
-2) Decide timestamp behavior (`NOW()` vs Kafka event timestamp) and align code + README.
-3) Add focused observability configuration tests and, optionally, a minimal metrics integration test.
-
-Fast resume checklist for next session
-- Read `README.md`.
-- Read `starter-autoselect/src/main/java/net/rsworld/superduper/starter/AutoSelectConfiguration.java`.
-- Read `worker-blocking/src/main/java/net/rsworld/superduper/worker/jdbc/SuperDuperWorkerService.java`.
-- Read `worker-reactive/src/main/java/net/rsworld/superduper/worker/reactive/SuperDuperWorkerReactiveService.java`.
-- Run tests: `mvn -T 1C test -q`.
+Progress log only. Permanent agent instructions were moved to AGENTS.md.
 
 Progress update (2026-02-13T06:59:05Z)
 - Migrated consumer-kafka-reactive from Reactor Kafka client to Spring Kafka @KafkaListener + manual ack, while keeping reactive R2DBC persistence chain (DatabaseClient + Mono).
@@ -632,3 +545,15 @@ Progress update (2026-02-26T13:16:00Z)
   - repository-r2dbc 74.4%
   - starter-autoselect 79.5%
   - observability-api/logging/metrics currently 0.0%
+
+Progress update (2026-02-26T14:14:21Z)
+- Added AGENTS.md as the single source for permanent agent instructions and project workflow/context rules.
+- Reduced RESTART_CONTEXT.txt to chronological progress-log content only to avoid duplicated guidance across files.
+- Validation: verified file rewrite and presence of AGENTS.md.
+- Next: keep ongoing implementation/testing progress entries only in RESTART_CONTEXT.txt.
+
+Progress update (2026-02-26T14:18:57Z)
+- Updated AGENTS.md session workflow with Git rules: stage newly created files and always commit completed changes.
+- Added explicit requirement that commit messages must be short, meaningful, and follow Conventional Commits.
+- Validation: Spotless run after rule update.
+- Next: enforce this workflow for all following changes.
