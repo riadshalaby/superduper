@@ -6,7 +6,7 @@ spring:
     username: superduper
     password: superduper
   liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.yaml
+    change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
     url: jdbc:postgresql://localhost:5432/superduper
     user: superduper
     password: superduper

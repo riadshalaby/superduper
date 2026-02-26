@@ -18,6 +18,7 @@
     <module>consumer-kafka-blocking</module>
     <module>consumer-kafka-reactive</module>
     <module>starter-autoselect</module>
+    <module>schema-liquibase</module>
     <module>examples/app-jdbc</module>
     <module>examples/app-reactive</module>
   </modules>

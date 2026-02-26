@@ -39,8 +39,8 @@ import org.testcontainers.utility.DockerImageName;
 import reactor.core.publisher.Mono;
 
 @Testcontainers
-@SpringBootTest(classes = KafkaReactorE2ETest.TestConfig.class)
-class KafkaReactorE2ETest {
+@SpringBootTest(classes = KafkaReactiveE2ETest.TestConfig.class)
+class KafkaReactiveE2ETest {
 
     static final String TOPIC = "e2e.topic.reactor";
 
@@ -161,7 +161,7 @@ class KafkaReactorE2ETest {
 
     @Configuration
     @EnableKafka
-    @Import(KafkaReactorR2dbcAutoConfiguration.class)
+    @Import(KafkaReactiveR2dbcAutoConfiguration.class)
     static class TestConfig {
         @Bean
         DatabaseClient databaseClient() {
@@ -181,3 +181,4 @@ class KafkaReactorE2ETest {
         }
     }
 }
+

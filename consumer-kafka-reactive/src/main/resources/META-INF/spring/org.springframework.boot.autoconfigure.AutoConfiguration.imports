@@ -1,1 +1,2 @@
-net.rsworld.superduper.consumer.reactive.KafkaReactorR2dbcAutoConfiguration
+net.rsworld.superduper.consumer.reactive.KafkaReactiveR2dbcAutoConfiguration
+

@@ -13,7 +13,7 @@ spring:
     username: superduper
     password: superduper
   liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.yaml
+    change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
 
 superduper:
   consumer:

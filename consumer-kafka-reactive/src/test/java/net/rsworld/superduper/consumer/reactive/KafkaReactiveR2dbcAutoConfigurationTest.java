@@ -7,10 +7,10 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
 
-class KafkaReactorR2dbcAutoConfigurationTest {
+class KafkaReactiveR2dbcAutoConfigurationTest {
     @Test
     void springKafkaBeans_build() {
-        KafkaReactorR2dbcAutoConfiguration cfg = new KafkaReactorR2dbcAutoConfiguration();
+        KafkaReactiveR2dbcAutoConfiguration cfg = new KafkaReactiveR2dbcAutoConfiguration();
         ConsumerFactory<String, String> cf = cfg.reactiveConsumerFactory("localhost:9092", "g");
         assertThat(cf).isNotNull();
         ConcurrentKafkaListenerContainerFactory<String, String> factory = cfg.reactiveKafkaListenerContainerFactory(cf);
@@ -19,3 +19,4 @@ class KafkaReactorR2dbcAutoConfigurationTest {
                 .isEqualTo(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
     }
 }
+

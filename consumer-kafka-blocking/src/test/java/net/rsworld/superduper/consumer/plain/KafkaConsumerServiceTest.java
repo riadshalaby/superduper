@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.UUID;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.record.TimestampType;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.support.Acknowledgment;
@@ -103,5 +104,61 @@ class KafkaConsumerServiceTest {
                         org.mockito.ArgumentMatchers.anyString(),
                         occurredAtCap.capture());
         assertThat(occurredAtCap.getValue()).isEqualTo(Instant.parse("2026-02-21T10:15:30Z"));
+    }
+
+    @Test
+    void onMessage_fallsBackToKafkaRecordTimestamp() {
+        MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
+        KafkaConsumerService svc = new KafkaConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        long kafkaTimestamp = 1740132930000L;
+        ConsumerRecord<String, String> rec = new ConsumerRecord<>(
+                "t",
+                0,
+                12L,
+                kafkaTimestamp,
+                TimestampType.CREATE_TIME,
+                0,
+                0,
+                "key1",
+                "value1");
+
+        svc.onMessage(rec, ack);
+
+        var occurredAtCap = ArgumentCaptor.forClass(Instant.class);
+        verify(ingestRepository)
+                .upsertReadyMessage(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        occurredAtCap.capture());
+        assertThat(occurredAtCap.getValue()).isEqualTo(Instant.ofEpochMilli(kafkaTimestamp));
+    }
+
+    @Test
+    void onMessage_fallsBackToNow_whenHeaderAndKafkaTimestampInvalid() {
+        MessageIngestRepository ingestRepository = mock(MessageIngestRepository.class);
+        KafkaConsumerService svc = new KafkaConsumerService(
+                ingestRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        ConsumerRecord<String, String> rec =
+                new ConsumerRecord<>("t", 0, 13L, -1L, TimestampType.NO_TIMESTAMP_TYPE, 0, 0, "key1", "value1");
+        rec.headers().add("occurred_at", "invalid-ts".getBytes(StandardCharsets.UTF_8));
+
+        Instant before = Instant.now();
+        svc.onMessage(rec, ack);
+        Instant after = Instant.now();
+
+        var occurredAtCap = ArgumentCaptor.forClass(Instant.class);
+        verify(ingestRepository)
+                .upsertReadyMessage(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        occurredAtCap.capture());
+        assertThat(occurredAtCap.getValue()).isBetween(before, after);
     }
 }

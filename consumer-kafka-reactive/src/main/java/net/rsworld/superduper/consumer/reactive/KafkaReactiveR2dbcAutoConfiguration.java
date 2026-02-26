@@ -20,7 +20,7 @@ import org.springframework.kafka.listener.ContainerProperties;
 @AutoConfiguration
 @EnableKafka
 @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
-public class KafkaReactorR2dbcAutoConfiguration {
+public class KafkaReactiveR2dbcAutoConfiguration {
 
     @Bean
     public ConsumerFactory<String, String> reactiveConsumerFactory(
@@ -46,10 +46,11 @@ public class KafkaReactorR2dbcAutoConfiguration {
     }
 
     @Bean
-    KafkaReactorR2dbcConsumerService kafkaReactorR2dbcConsumerService(
+    KafkaReactiveR2dbcConsumerService kafkaReactorR2dbcConsumerService(
             ReactiveMessageIngestRepository messageIngestRepository,
             org.springframework.beans.factory.ObjectProvider<SuperduperObserver> observerProvider) {
-        return new KafkaReactorR2dbcConsumerService(
+        return new KafkaReactiveR2dbcConsumerService(
                 messageIngestRepository, observerProvider.getIfAvailable(() -> NoopSuperduperObserver.INSTANCE));
     }
 }
+

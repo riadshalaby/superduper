@@ -13,13 +13,13 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import reactor.core.publisher.Mono;
 
-class KafkaReactorR2dbcConsumerService {
+class KafkaReactiveR2dbcConsumerService {
     private static final String OCCURRED_AT_HEADER = "occurred_at";
 
     private final ReactiveMessageIngestRepository messageIngestRepository;
     private final SuperduperObserver observer;
 
-    KafkaReactorR2dbcConsumerService(
+    KafkaReactiveR2dbcConsumerService(
             ReactiveMessageIngestRepository messageIngestRepository, SuperduperObserver observer) {
         this.messageIngestRepository = messageIngestRepository;
         this.observer = observer;
@@ -109,3 +109,4 @@ class KafkaReactorR2dbcConsumerService {
         }
     }
 }
+
