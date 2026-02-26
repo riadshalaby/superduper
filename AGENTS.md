@@ -50,6 +50,6 @@ Build and maintain the library described in `README.md`:
 - Read `README.md`.
 - Read `starter-autoselect/src/main/java/net/rsworld/superduper/starter/AutoSelectConfiguration.java`.
 - Read worker services:
-  - `worker-blocking/src/main/java/net/rsworld/superduper/worker/jdbc/SuperDuperWorkerService.java`
+  - `worker-blocking/src/main/java/net/rsworld/superduper/worker/blocking/SuperDuperWorkerService.java`
   - `worker-reactive/src/main/java/net/rsworld/superduper/worker/reactive/SuperDuperWorkerReactiveService.java`
 - Run: `mvn -T 1C -q test`

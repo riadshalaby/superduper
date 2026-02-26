@@ -563,3 +563,9 @@ Progress update (2026-02-26T14:20:51Z)
 - New behavior: print a short Conventional Commit message proposal and wait for explicit user confirmation before committing.
 - Validation: Spotless run after rule update.
 - Next: for upcoming tasks, return proposed commit message only unless commit is explicitly requested.
+
+Progress update (2026-02-26T14:26:50Z)
+- Fixed doc drift in AGENTS quick resume checklist:
+  - Updated blocking worker path from `worker/.../worker/jdbc/SuperDuperWorkerService.java` to `worker/.../worker/blocking/SuperDuperWorkerService.java`.
+- Validation:
+  - `mvn -q spotless:apply` (pass)
