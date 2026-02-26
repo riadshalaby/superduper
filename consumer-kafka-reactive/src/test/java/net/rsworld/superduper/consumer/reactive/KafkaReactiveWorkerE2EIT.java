@@ -14,6 +14,7 @@ import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.r2dbc.R2dbcMessageIngestRepository;
 import net.rsworld.superduper.repository.r2dbc.R2dbcWorkerMessageRepository;
 import net.rsworld.superduper.repository.r2dbc.SqlDialect;
+import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import net.rsworld.superduper.worker.reactive.ProcessingResult;
 import net.rsworld.superduper.worker.reactive.ReactiveMessageHandler;
 import net.rsworld.superduper.worker.reactive.SuperDuperWorkerReactiveService;
@@ -67,28 +68,7 @@ class KafkaReactiveWorkerE2EIT {
 
     @BeforeAll
     static void initSchema() {
-        var cf = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
-                .host(pg.getHost())
-                .port(pg.getMappedPort(5432))
-                .database(pg.getDatabaseName())
-                .username(pg.getUsername())
-                .password(pg.getPassword())
-                .build());
-        DatabaseClient db = DatabaseClient.create(cf);
-        db.sql(
-                        "CREATE TABLE IF NOT EXISTS messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())")
-                .fetch()
-                .rowsUpdated()
-                .block();
-        db.sql("CREATE INDEX IF NOT EXISTS idx_messages_key_id ON messages(key, id)")
-                .fetch()
-                .rowsUpdated()
-                .block();
-        db.sql(
-                        "CREATE TABLE IF NOT EXISTS container_heartbeats (container_id VARCHAR(255) PRIMARY KEY, last_heartbeat TIMESTAMP DEFAULT NOW())")
-                .fetch()
-                .rowsUpdated()
-                .block();
+        LiquibaseTestSupport.migrate(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword());
     }
 
     @Test
@@ -227,4 +207,3 @@ class KafkaReactiveWorkerE2EIT {
         }
     }
 }
-

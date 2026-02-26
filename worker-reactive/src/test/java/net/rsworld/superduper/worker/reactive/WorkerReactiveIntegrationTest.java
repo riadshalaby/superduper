@@ -31,6 +31,7 @@ import net.rsworld.superduper.repository.r2dbc.PostgresR2dbcSqlDialect;
 import net.rsworld.superduper.repository.r2dbc.R2dbcWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.r2dbc.R2dbcWorkerMessageRepository;
 import net.rsworld.superduper.repository.r2dbc.SqlDialect;
+import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterAll;
@@ -59,6 +60,7 @@ class WorkerReactiveIntegrationTest {
     static void setup() {
         pg = new PostgreSQLContainer("postgres:16-alpine");
         pg.start();
+        LiquibaseTestSupport.migrate(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword());
 
         PostgresqlConnectionFactory cf = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
                 .host(pg.getHost())
@@ -71,21 +73,6 @@ class WorkerReactiveIntegrationTest {
         messageRepository = new R2dbcWorkerMessageRepository(
                 db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.POSTGRES);
         maintenanceRepository = new R2dbcWorkerMaintenanceRepository(db, new PostgresR2dbcSqlDialect());
-
-        Flux.concat(
-                        db.sql(
-                                        "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())")
-                                .fetch()
-                                .rowsUpdated(),
-                        db.sql(
-                                        "CREATE TABLE container_heartbeats (container_id VARCHAR(255) PRIMARY KEY, last_heartbeat TIMESTAMP DEFAULT NOW())")
-                                .fetch()
-                                .rowsUpdated(),
-                        db.sql("CREATE INDEX idx_messages_key_id ON messages(key, id)")
-                                .fetch()
-                                .rowsUpdated())
-                .then()
-                .block();
     }
 
     @AfterAll
@@ -384,7 +371,8 @@ class WorkerReactiveIntegrationTest {
 
         assertThat(processedCount()).isEqualTo(messageCount);
         assertThat(processedOrderByKey.keySet()).containsExactlyInAnyOrderElementsOf(expectedOrderByKey.keySet());
-        int processedTotal = processedOrderByKey.values().stream().mapToInt(List::size).sum();
+        int processedTotal =
+                processedOrderByKey.values().stream().mapToInt(List::size).sum();
         assertThat(processedTotal).isEqualTo(messageCount);
         expectedOrderByKey.forEach((key, expectedIds) -> assertThat(processedOrderByKey.get(key))
                 .as("processed order for key %s", key)

@@ -53,4 +53,3 @@ public class KafkaReactiveR2dbcAutoConfiguration {
                 messageIngestRepository, observerProvider.getIfAvailable(() -> NoopSuperduperObserver.INSTANCE));
     }
 }
-

@@ -114,16 +114,8 @@ class KafkaConsumerServiceTest {
         Acknowledgment ack = mock(Acknowledgment.class);
 
         long kafkaTimestamp = 1740132930000L;
-        ConsumerRecord<String, String> rec = new ConsumerRecord<>(
-                "t",
-                0,
-                12L,
-                kafkaTimestamp,
-                TimestampType.CREATE_TIME,
-                0,
-                0,
-                "key1",
-                "value1");
+        ConsumerRecord<String, String> rec =
+                new ConsumerRecord<>("t", 0, 12L, kafkaTimestamp, TimestampType.CREATE_TIME, 0, 0, "key1", "value1");
 
         svc.onMessage(rec, ack);
 

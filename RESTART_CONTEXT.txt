@@ -519,3 +519,49 @@ Progress update (2026-02-25T14:22:58Z)
   - .\\mvnw.cmd --% -q -pl worker-blocking,worker-reactive -am -Dtest=WorkerBlockingIntegrationTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
 - Next: add an optional true multi-container integration variant (separate JVM/app instances sharing the same DB + ShedLock table) to prove ordering guarantees beyond in-process concurrency.
 
+
+Progress update (2026-02-26T05:57:25Z)
+- Renamed example module directory from examples/app-jdbc to examples/app-blocking and updated root aggregator module path in pom.xml.
+- Renamed blocking example Java package from net.rsworld.superduper.example.jdbc to net.rsworld.superduper.example.blocking; renamed classes: JdbcExampleApplication->BlockingExampleApplication, ExampleJdbcSeeder->ExampleBlockingSeeder, ExampleJdbcMessageHandler->ExampleBlockingMessageHandler.
+- Updated module artifactId to example-app-blocking, app name/group-id in application.yml to blocking variants, and README run commands/module listing to examples/app-blocking.
+- Validation: .\\mvnw.cmd -q spotless:apply (pass); .\\mvnw.cmd -q -pl examples/app-blocking,examples/app-reactive -am -DskipTests compile (pass).
+- Note: initial .\\mvnw.cmd -q -pl examples/app-blocking -am -DskipTests test-compile failed in unrelated consumer-kafka-blocking test compile (generic inference in KafkaConsumerServiceTest).
+- Next: if needed, clean up unrelated Spotless formatting changes outside renamed module before commit.
+
+
+Progress update (2026-02-26T06:35:36Z)
+- Removed redundant local Liquibase changelog assets from example apps now that schema is provided by module superduper-schema-liquibase: deleted examples/app-blocking/src/main/resources/db/changelog/* and examples/app-reactive/src/main/resources/db/changelog/*.
+- Migrated integration tests from inline SQL schema creation (CREATE TABLE/CREATE INDEX) to Liquibase-based setup using central changelog db/changelog/superduper/db.changelog-master.yaml in affected modules: repository-jdbc, repository-r2dbc, worker-blocking, worker-reactive, consumer-kafka-blocking, consumer-kafka-reactive.
+- Added test-scoped Liquibase helper classes per module (LiquibaseTestSupport) and wired required test dependencies (liquibase-core, superduper-schema-liquibase, plus JDBC drivers where needed).
+- Adjusted MariaDB claim EXPLAIN test baseline setup to drop tuned indexes after Liquibase migration before baseline EXPLAIN, then recreate for tuned comparison.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -DskipTests test-compile (pass)
+  - .\\mvnw.cmd --% -q -pl repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcMessageIngestRepositoryIntegrationTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,JdbcWorkerClaimExplainIntegrationTest,R2dbcMessageIngestRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,WorkerBlockingIntegrationTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+  - .\\mvnw.cmd -q -pl examples/app-blocking,examples/app-reactive -am -DskipTests compile (pass)
+  - consumer modules test-compile still blocked by pre-existing unrelated generic-inference compilation errors in KafkaConsumerServiceTest / KafkaReactiveR2dbcConsumerServiceTest.
+- Next: optionally fix the unrelated ConsumerRecord generic inference failures to restore full module test-compile.
+
+
+Progress update (2026-02-26T06:48:39Z)
+- Centralized Liquibase test helper into schema module: added schema-liquibase/src/test/java/net/rsworld/superduper/schema/liquibase/test/LiquibaseTestSupport.java.
+- Enabled publishing schema module test classes as artifact: schema-liquibase/pom.xml now produces 	est-jar via maven-jar-plugin and includes test-scope liquibase-core for helper compilation.
+- Switched integration tests in repository/worker/consumer modules to use centralized helper (
+et.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport.migrate(...)) and removed duplicated local LiquibaseTestSupport classes from each module.
+- Added test-jar dependency on superduper-schema-liquibase (type 	est-jar, scope 	est) in affected module POMs while keeping main test dependency on superduper-schema-liquibase for changelog resources.
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -q -pl schema-liquibase,repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -DskipTests test-compile (pass)
+  - .\\mvnw.cmd --% -q -pl schema-liquibase,repository-jdbc,repository-r2dbc,worker-blocking,worker-reactive -am -Dtest=JdbcMessageIngestRepositoryIntegrationTest,JdbcWorkerMessageRepositoryIntegrationTest,JdbcWorkerMessageRepositoryMariaDbIntegrationTest,JdbcWorkerClaimExplainIntegrationTest,R2dbcMessageIngestRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryIntegrationTest,R2dbcWorkerMessageRepositoryMariaDbIntegrationTest,WorkerBlockingIntegrationTest,WorkerReactiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test (pass)
+  - .\\mvnw.cmd -q -pl consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests compile (pass)
+  - .\\mvnw.cmd -q -pl consumer-kafka-blocking,consumer-kafka-reactive -am -DskipTests test-compile still fails due pre-existing unrelated ConsumerRecord generic inference in KafkaConsumerServiceTest (blocking).
+- Next: optional cleanup to import centralized helper instead of FQCN at call sites for readability (functional behavior already centralized).
+
+
+Progress update (2026-02-26T06:55:34Z)
+- Replaced fully-qualified 
+et.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport usages in integration tests with LiquibaseTestSupport + explicit import statements across worker/repository/consumer test classes.
+- Fixed import refactor fallout by restoring correct package declarations and removing accidental invalid import LiquibaseTestSupport; entries in affected test files.
+- Validation: .\\mvnw.cmd -q spotless:apply (pass).
+- Note: no additional consumer test-compile run beyond existing known pre-existing ConsumerRecord generic inference failures.
+

@@ -19,4 +19,3 @@ class KafkaReactiveR2dbcAutoConfigurationTest {
                 .isEqualTo(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
     }
 }
-

@@ -3,6 +3,7 @@ package net.rsworld.superduper.repository.jdbc;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -22,11 +23,7 @@ class JdbcWorkerClaimExplainIntegrationTest {
             ds.setUsername(pg.getUsername());
             ds.setPassword(pg.getPassword());
             NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(ds);
-
-            jdbc.getJdbcTemplate()
-                    .execute(
-                            "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())");
-            jdbc.getJdbcTemplate().execute("CREATE INDEX idx_messages_key_id ON messages(key, id)");
+            LiquibaseTestSupport.migrate(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword());
             jdbc.getJdbcTemplate()
                     .execute("INSERT INTO messages(uuid,key,content,status,retry_count,last_updated) "
                             + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 500), 'v', "
@@ -67,11 +64,7 @@ class JdbcWorkerClaimExplainIntegrationTest {
             ds.setUsername(mariadb.getUsername());
             ds.setPassword(mariadb.getPassword());
             NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(ds);
-
-            jdbc.getJdbcTemplate()
-                    .execute(
-                            "CREATE TABLE messages (id BIGINT AUTO_INCREMENT PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, `key` VARCHAR(255) NOT NULL, content TEXT, status VARCHAR(32) NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)");
-            jdbc.getJdbcTemplate().execute("CREATE INDEX idx_messages_key_id ON messages(`key`, id)");
+            LiquibaseTestSupport.migrate(mariadb.getJdbcUrl(), mariadb.getUsername(), mariadb.getPassword());
             jdbc.getJdbcTemplate()
                     .execute("INSERT INTO messages(uuid,`key`,content,status,retry_count,last_updated) "
                             + "SELECT UUID(), CONCAT('k', MOD(t.n, 500)), 'v', "
@@ -98,6 +91,16 @@ class JdbcWorkerClaimExplainIntegrationTest {
                     .addValue("cid", "w1")
                     .addValue("batch", 200)
                     .addValue("maxRetries", 5);
+
+            jdbc.getJdbcTemplate().execute("DROP INDEX IF EXISTS idx_messages_claim_status_id_key ON messages");
+            jdbc.getJdbcTemplate()
+                    .execute("DROP INDEX IF EXISTS idx_messages_claim_failed_status_retry_id_key ON messages");
+            jdbc.getJdbcTemplate()
+                    .execute("DROP INDEX IF EXISTS idx_messages_processing_exists_key_status ON messages");
+            jdbc.getJdbcTemplate()
+                    .execute("DROP INDEX IF EXISTS idx_messages_processing_worker_status_container_key_id ON messages");
+            jdbc.getJdbcTemplate()
+                    .execute("DROP INDEX IF EXISTS idx_messages_processing_stale_status_last_updated ON messages");
 
             List<String> baselinePlan = jdbc.queryForList(explainSql, params, String.class);
             String baselinePlanText = String.join(System.lineSeparator(), baselinePlan);

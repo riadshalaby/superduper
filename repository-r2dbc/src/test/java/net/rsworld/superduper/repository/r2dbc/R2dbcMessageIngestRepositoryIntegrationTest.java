@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionFactory;
 import java.time.Instant;
+import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ class R2dbcMessageIngestRepositoryIntegrationTest {
     static void beforeAll() {
         postgres = new PostgreSQLContainer("postgres:16-alpine");
         postgres.start();
+        LiquibaseTestSupport.migrate(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
 
         PostgresqlConnectionFactory cf = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
                 .host(postgres.getHost())
@@ -29,13 +31,6 @@ class R2dbcMessageIngestRepositoryIntegrationTest {
                 .password(postgres.getPassword())
                 .build());
         db = DatabaseClient.create(cf);
-
-        db.sql("DROP TABLE IF EXISTS messages").fetch().rowsUpdated().block();
-        db.sql(
-                        "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())")
-                .fetch()
-                .rowsUpdated()
-                .block();
     }
 
     @AfterAll

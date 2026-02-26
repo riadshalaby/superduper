@@ -1,6 +1,6 @@
 spring:
   application:
-    name: superduper-example-jdbc
+    name: superduper-example-blocking
   autoconfigure:
     exclude:
       - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
@@ -20,7 +20,7 @@ superduper:
     type: spring
   kafka:
     bootstrap-servers: localhost:9092
-    group-id: example-jdbc
+    group-id: example-blocking
     topic: superduper.example
   worker:
     max-retries: 3

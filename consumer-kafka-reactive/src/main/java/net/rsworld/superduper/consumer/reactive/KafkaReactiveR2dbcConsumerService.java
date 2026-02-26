@@ -109,4 +109,3 @@ class KafkaReactiveR2dbcConsumerService {
         }
     }
 }
-

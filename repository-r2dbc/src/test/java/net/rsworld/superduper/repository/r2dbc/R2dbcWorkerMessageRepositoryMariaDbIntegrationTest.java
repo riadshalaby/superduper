@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.r2dbc.spi.ConnectionFactories;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryOptions;
+import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ class R2dbcWorkerMessageRepositoryMariaDbIntegrationTest {
     static void beforeAll() {
         mariadb = new MariaDBContainer("mariadb:11.4");
         mariadb.start();
+        LiquibaseTestSupport.migrate(mariadb.getJdbcUrl(), mariadb.getUsername(), mariadb.getPassword());
 
         ConnectionFactory cf = ConnectionFactories.get(ConnectionFactoryOptions.builder()
                 .option(ConnectionFactoryOptions.DRIVER, "mariadb")
@@ -35,16 +37,6 @@ class R2dbcWorkerMessageRepositoryMariaDbIntegrationTest {
         db = DatabaseClient.create(cf);
         repo = new R2dbcWorkerMessageRepository(
                 db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.MARIADB);
-
-        db.sql(
-                        "CREATE TABLE messages (id BIGINT AUTO_INCREMENT PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, `key` VARCHAR(255) NOT NULL, content TEXT, status VARCHAR(32) NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)")
-                .fetch()
-                .rowsUpdated()
-                .block();
-        db.sql("CREATE INDEX idx_messages_key_id ON messages(`key`, id)")
-                .fetch()
-                .rowsUpdated()
-                .block();
     }
 
     @AfterAll

@@ -97,16 +97,8 @@ class KafkaReactiveR2dbcConsumerServiceTest {
                 .thenReturn(Mono.empty());
 
         long kafkaTimestamp = 1740132930000L;
-        ConsumerRecord<String, String> record = new ConsumerRecord<>(
-                "t",
-                0,
-                14L,
-                kafkaTimestamp,
-                TimestampType.CREATE_TIME,
-                0,
-                0,
-                "k",
-                "v");
+        ConsumerRecord<String, String> record =
+                new ConsumerRecord<>("t", 0, 14L, kafkaTimestamp, TimestampType.CREATE_TIME, 0, 0, "k", "v");
 
         svc.onMessage(record, ack);
 
@@ -152,4 +144,3 @@ class KafkaReactiveR2dbcConsumerServiceTest {
         assertThat(occurredAtCap.getValue()).isBetween(before, after);
     }
 }
-

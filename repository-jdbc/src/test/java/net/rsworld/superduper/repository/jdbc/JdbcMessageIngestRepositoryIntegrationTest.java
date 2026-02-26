@@ -3,6 +3,7 @@ package net.rsworld.superduper.repository.jdbc;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -20,9 +21,11 @@ class JdbcMessageIngestRepositoryIntegrationTest {
     static void beforeAll() {
         postgres = new PostgreSQLContainer("postgres:16-alpine");
         postgres.start();
+        LiquibaseTestSupport.migrate(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
 
         mariadb = new MariaDBContainer("mariadb:11.4");
         mariadb.start();
+        LiquibaseTestSupport.migrate(mariadb.getJdbcUrl(), mariadb.getUsername(), mariadb.getPassword());
     }
 
     @AfterAll
@@ -44,9 +47,6 @@ class JdbcMessageIngestRepositoryIntegrationTest {
         ds.setPassword(postgres.getPassword());
 
         JdbcTemplate jdbc = new JdbcTemplate(ds);
-        jdbc.execute("DROP TABLE IF EXISTS messages");
-        jdbc.execute(
-                "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())");
 
         JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
                 new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.POSTGRES);
@@ -67,9 +67,6 @@ class JdbcMessageIngestRepositoryIntegrationTest {
         ds.setPassword(mariadb.getPassword());
 
         JdbcTemplate jdbc = new JdbcTemplate(ds);
-        jdbc.execute("DROP TABLE IF EXISTS messages");
-        jdbc.execute(
-                "CREATE TABLE messages (id BIGINT AUTO_INCREMENT PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, `key` VARCHAR(255) NOT NULL, content TEXT, status VARCHAR(32) NOT NULL, retry_count INT DEFAULT 0, occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)");
 
         JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
                 new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.MARIADB);

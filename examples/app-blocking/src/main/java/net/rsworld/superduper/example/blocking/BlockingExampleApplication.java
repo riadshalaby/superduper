@@ -1,11 +1,11 @@
-package net.rsworld.superduper.example.jdbc;
+package net.rsworld.superduper.example.blocking;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class JdbcExampleApplication {
+public class BlockingExampleApplication {
     public static void main(String[] args) {
-        SpringApplication.run(JdbcExampleApplication.class, args);
+        SpringApplication.run(BlockingExampleApplication.class, args);
     }
 }

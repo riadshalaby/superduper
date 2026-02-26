@@ -1,4 +1,4 @@
-package net.rsworld.superduper.example.jdbc;
+package net.rsworld.superduper.example.blocking;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -24,8 +24,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(name = "superduper.example.seed.enabled", havingValue = "true")
-class ExampleJdbcSeeder {
-    private static final Logger log = LoggerFactory.getLogger(ExampleJdbcSeeder.class);
+class ExampleBlockingSeeder {
+    private static final Logger log = LoggerFactory.getLogger(ExampleBlockingSeeder.class);
 
     private final String bootstrapServers;
     private final String topic;
@@ -38,7 +38,7 @@ class ExampleJdbcSeeder {
     private final ObjectProvider<KafkaListenerEndpointRegistry> listenerRegistryProvider;
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    ExampleJdbcSeeder(
+    ExampleBlockingSeeder(
             @Value("${superduper.kafka.bootstrap-servers}") String bootstrapServers,
             @Value("${superduper.kafka.topics:${superduper.kafka.topic}}") String configuredTopics,
             @Value("${superduper.example.seed.count:1000}") int count,
@@ -75,7 +75,7 @@ class ExampleJdbcSeeder {
         SuperDuperWorkerService worker = workerProvider.getIfAvailable();
         if (worker == null) {
             throw new IllegalStateException(
-                    "JDBC worker bean is missing. Ensure superduper.consumer.type=spring and JDBC is configured.");
+                    "Blocking worker bean is missing. Ensure superduper.consumer.type=spring and JDBC is configured.");
         }
         log.info(
                 "[Seeder] Application ready. Worker bean active: {}",

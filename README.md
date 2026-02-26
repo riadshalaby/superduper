@@ -369,7 +369,7 @@ Metrics emitted (when enabled):
    ```
 2. Run **JDBC example app**:
    ```bash
-   mvn -pl examples/app-jdbc -am spring-boot:run
+   mvn -pl examples/app-blocking -am spring-boot:run
    ```
 3. Or run **Reactive example app**:
    ```bash
@@ -396,7 +396,7 @@ Use this to clearly observe consumer ingest + worker processing behavior.
    ```
 2. Run one example app with built-in load seeding enabled:
    ```bash
-   mvn -pl examples/app-jdbc -am spring-boot:run \
+   mvn -pl examples/app-blocking -am spring-boot:run \
      -Dspring-boot.run.jvmArguments="-Dsuperduper.example.seed.enabled=true"
    # or
    mvn -pl examples/app-reactive -am spring-boot:run \
@@ -486,7 +486,7 @@ mvn -T 1C test
 
 Two runnable apps are included:
 
-- `examples/app-jdbc` — classic, blocking JDBC + Spring Kafka.
+- `examples/app-blocking` — classic, blocking JDBC + Spring Kafka.
 - `examples/app-reactive` — reactive processing with Spring Kafka + R2DBC.
 
 See each module’s `application.yml` and the root `docker-compose.yml` for local setup.

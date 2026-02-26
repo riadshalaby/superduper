@@ -29,6 +29,7 @@ import net.rsworld.superduper.repository.jdbc.JdbcWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.jdbc.JdbcWorkerMessageRepository;
 import net.rsworld.superduper.repository.jdbc.PostgresJdbcSqlDialect;
 import net.rsworld.superduper.repository.jdbc.SqlDialect;
+import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterAll;
@@ -69,14 +70,7 @@ class WorkerBlockingIntegrationTest {
         lockExec = mock(LockingTaskExecutor.class);
         messageRepository = new JdbcWorkerMessageRepository(jdbc, SqlDialect.POSTGRES);
         maintenanceRepository = new JdbcWorkerMaintenanceRepository(jdbc, new PostgresJdbcSqlDialect());
-
-        jdbc.getJdbcTemplate()
-                .execute(
-                        "CREATE TABLE messages (id BIGSERIAL PRIMARY KEY, uuid VARCHAR(36) UNIQUE NOT NULL, key VARCHAR(255) NOT NULL, content TEXT, status TEXT NOT NULL, retry_count INT DEFAULT 0, container_id VARCHAR(255), occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, processed_at TIMESTAMP NULL, last_updated TIMESTAMP DEFAULT NOW())");
-        jdbc.getJdbcTemplate()
-                .execute(
-                        "CREATE TABLE container_heartbeats (container_id VARCHAR(255) PRIMARY KEY, last_heartbeat TIMESTAMP DEFAULT NOW())");
-        jdbc.getJdbcTemplate().execute("CREATE INDEX idx_messages_key_id ON messages(key, id)");
+        LiquibaseTestSupport.migrate(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword());
     }
 
     @AfterAll
@@ -386,7 +380,8 @@ class WorkerBlockingIntegrationTest {
 
         assertThat(processedCount()).isEqualTo(messageCount);
         assertThat(processedOrderByKey.keySet()).containsExactlyInAnyOrderElementsOf(expectedOrderByKey.keySet());
-        int processedTotal = processedOrderByKey.values().stream().mapToInt(List::size).sum();
+        int processedTotal =
+                processedOrderByKey.values().stream().mapToInt(List::size).sum();
         assertThat(processedTotal).isEqualTo(messageCount);
         expectedOrderByKey.forEach((key, expectedIds) -> assertThat(processedOrderByKey.get(key))
                 .as("processed order for key %s", key)

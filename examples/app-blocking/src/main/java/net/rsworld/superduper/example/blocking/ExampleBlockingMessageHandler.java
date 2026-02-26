@@ -1,4 +1,4 @@
-package net.rsworld.superduper.example.jdbc;
+package net.rsworld.superduper.example.blocking;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,13 +10,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
-class ExampleJdbcMessageHandler implements MessageHandler {
-    private static final Logger log = LoggerFactory.getLogger(ExampleJdbcMessageHandler.class);
+class ExampleBlockingMessageHandler implements MessageHandler {
+    private static final Logger log = LoggerFactory.getLogger(ExampleBlockingMessageHandler.class);
 
     private final SeedProgress progress;
     private final Map<Long, Integer> attempts = new ConcurrentHashMap<>();
 
-    ExampleJdbcMessageHandler(SeedProgress progress) {
+    ExampleBlockingMessageHandler(SeedProgress progress) {
         this.progress = progress;
     }
 
@@ -28,20 +28,25 @@ class ExampleJdbcMessageHandler implements MessageHandler {
         String content = row.content() == null ? "" : row.content();
 
         if (content.contains("always-fail")) {
-            log.warn("[JDBC Worker] id={} key={} attempt={} -> RETRY (always-fail)", row.id(), row.key(), attempt);
+            log.warn("[Blocking Worker] id={} key={} attempt={} -> RETRY (always-fail)", row.id(), row.key(), attempt);
             return ProcessingResult.RETRY;
         }
 
         if (content.contains("retry-once") && attempt == 1) {
             log.info(
-                    "[JDBC Worker] id={} key={} attempt={} -> RETRY (retry-once first attempt)",
+                    "[Blocking Worker] id={} key={} attempt={} -> RETRY (retry-once first attempt)",
                     row.id(),
                     row.key(),
                     attempt);
             return ProcessingResult.RETRY;
         }
 
-        log.info("[JDBC Worker] id={} key={} attempt={} -> SUCCESS content={}", row.id(), row.key(), attempt, content);
+        log.info(
+                "[Blocking Worker] id={} key={} attempt={} -> SUCCESS content={}",
+                row.id(),
+                row.key(),
+                attempt,
+                content);
         return ProcessingResult.SUCCESS;
     }
 

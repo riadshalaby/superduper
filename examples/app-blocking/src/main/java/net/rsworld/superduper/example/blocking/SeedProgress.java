@@ -1,4 +1,4 @@
-package net.rsworld.superduper.example.jdbc;
+package net.rsworld.superduper.example.blocking;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;

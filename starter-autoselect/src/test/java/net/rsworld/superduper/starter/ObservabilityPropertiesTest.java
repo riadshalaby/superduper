@@ -20,7 +20,8 @@ class ObservabilityPropertiesTest {
         assertThat(settings.metricsExceptionTagEnabled()).isTrue();
         assertThat(settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.LIFECYCLE))
                 .isTrue();
-        assertThat(settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.SUCCESS)).isTrue();
+        assertThat(settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.SUCCESS))
+                .isTrue();
         assertThat(settings.allows(ObservabilityComponent.MAINTENANCE, ObservabilitySignal.FAILURE))
                 .isTrue();
     }
