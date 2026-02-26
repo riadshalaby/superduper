@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.LockSupport;
 import javax.sql.DataSource;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
 import net.rsworld.superduper.repository.jdbc.JdbcMessageIngestRepository;
@@ -94,7 +95,7 @@ class KafkaConsumerE2ETest {
             found = jdbc.queryForObject(
                     "SELECT COUNT(*) FROM messages WHERE key='k-e2e' AND content='hello-jdbc'", Integer.class);
             if (found != null && found > 0) break;
-            Thread.sleep(250);
+            pauseMillis(250);
         }
         assertThat(found).isNotNull();
         assertThat(found).isGreaterThan(0);
@@ -131,10 +132,14 @@ class KafkaConsumerE2ETest {
                         throw e;
                     }
                 }
-                Thread.sleep(200);
+                pauseMillis(200);
             }
             throw new IllegalStateException("Topic leader not ready for topic " + topic);
         }
+    }
+
+    private static void pauseMillis(long millis) {
+        LockSupport.parkNanos(Duration.ofMillis(millis).toNanos());
     }
 
     @Configuration

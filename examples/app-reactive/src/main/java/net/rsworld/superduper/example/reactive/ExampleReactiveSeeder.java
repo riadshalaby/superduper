@@ -3,6 +3,7 @@ package net.rsworld.superduper.example.reactive;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import net.rsworld.superduper.worker.reactive.SuperDuperWorkerReactiveService;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -49,7 +50,7 @@ class ExampleReactiveSeeder {
             KafkaListenerEndpointRegistry listenerRegistry,
             DatabaseClient db) {
         this.bootstrapServers = bootstrapServers;
-        this.topic = configuredTopics.split("\\s*,\\s*")[0];
+        this.topic = firstConfiguredTopic(configuredTopics);
         this.count = count;
         this.keyCount = keyCount;
         this.awaitTimeoutSeconds = awaitTimeoutSeconds;
@@ -61,7 +62,7 @@ class ExampleReactiveSeeder {
     }
 
     @EventListener(ApplicationReadyEvent.class)
-    public void onReady() throws Exception {
+    public void onReady() throws InterruptedException, ExecutionException {
         ensureWorkerAvailable();
         waitForConsumerReadiness();
         prepareForNewSeedRun();
@@ -120,7 +121,7 @@ class ExampleReactiveSeeder {
                 count);
     }
 
-    private void publishSeedMessages(int run) throws Exception {
+    private void publishSeedMessages(int run) throws InterruptedException, ExecutionException {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
@@ -170,5 +171,14 @@ class ExampleReactiveSeeder {
             return "retry-once run=" + run + " #" + i;
         }
         return "ok run=" + run + " #" + i;
+    }
+
+    private static String firstConfiguredTopic(String configuredTopics) {
+        if (configuredTopics == null) {
+            return "";
+        }
+        int comma = configuredTopics.indexOf(',');
+        String candidate = comma < 0 ? configuredTopics : configuredTopics.substring(0, comma);
+        return candidate.trim();
     }
 }

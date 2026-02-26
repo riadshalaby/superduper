@@ -15,6 +15,7 @@ import reactor.core.publisher.Mono;
 
 class KafkaReactiveR2dbcConsumerService {
     private static final String OCCURRED_AT_HEADER = "occurred_at";
+    private static final String MODE_REACTIVE = "reactive";
 
     private final ReactiveMessageIngestRepository messageIngestRepository;
     private final SuperduperObserver observer;
@@ -28,28 +29,35 @@ class KafkaReactiveR2dbcConsumerService {
     @KafkaListener(
             topics = "#{'${superduper.kafka.topics:${superduper.kafka.topic}}'.split('\\\\s*,\\\\s*')}",
             containerFactory = "reactiveKafkaListenerContainerFactory")
-    public void onMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
+    public void onMessage(ConsumerRecord<String, String> consumerRecord, Acknowledgment ack) {
         long started = System.nanoTime();
-        String key = record.key() != null ? record.key() : "default";
-        int payloadSize = record.value() == null ? 0 : record.value().getBytes(StandardCharsets.UTF_8).length;
+        String key = consumerRecord.key() != null ? consumerRecord.key() : "default";
+        int payloadSize =
+                consumerRecord.value() == null ? 0 : consumerRecord.value().getBytes(StandardCharsets.UTF_8).length;
         observer.consumerReceived(new ConsumerObservation(
-                "reactive", record.topic(), record.partition(), record.offset(), key, payloadSize, 0));
-        String seed = record.topic() + ":" + record.partition() + ":" + record.offset();
-        Instant occurredAt = resolveOccurredAt(record);
+                MODE_REACTIVE,
+                consumerRecord.topic(),
+                consumerRecord.partition(),
+                consumerRecord.offset(),
+                key,
+                payloadSize,
+                0));
+        String seed = consumerRecord.topic() + ":" + consumerRecord.partition() + ":" + consumerRecord.offset();
+        Instant occurredAt = resolveOccurredAt(consumerRecord);
         messageIngestRepository
                 .upsertReadyMessage(
                         UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8))
                                 .toString(),
                         key,
-                        record.value(),
+                        consumerRecord.value(),
                         occurredAt)
-                .doOnSuccess(x -> {
+                .doOnSuccess(unused -> {
                     ack.acknowledge();
                     observer.consumerSucceeded(new ConsumerObservation(
-                            "reactive",
-                            record.topic(),
-                            record.partition(),
-                            record.offset(),
+                            MODE_REACTIVE,
+                            consumerRecord.topic(),
+                            consumerRecord.partition(),
+                            consumerRecord.offset(),
                             key,
                             payloadSize,
                             elapsedMs(started)));
@@ -57,10 +65,10 @@ class KafkaReactiveR2dbcConsumerService {
                 .onErrorResume(e -> {
                     observer.consumerFailed(
                             new ConsumerObservation(
-                                    "reactive",
-                                    record.topic(),
-                                    record.partition(),
-                                    record.offset(),
+                                    MODE_REACTIVE,
+                                    consumerRecord.topic(),
+                                    consumerRecord.partition(),
+                                    consumerRecord.offset(),
                                     key,
                                     payloadSize,
                                     elapsedMs(started)),
@@ -74,15 +82,15 @@ class KafkaReactiveR2dbcConsumerService {
         return (System.nanoTime() - startedNanos) / 1_000_000;
     }
 
-    private static Instant resolveOccurredAt(ConsumerRecord<String, String> record) {
-        Header header = record.headers().lastHeader(OCCURRED_AT_HEADER);
+    private static Instant resolveOccurredAt(ConsumerRecord<String, String> consumerRecord) {
+        Header header = consumerRecord.headers().lastHeader(OCCURRED_AT_HEADER);
         if (header != null) {
             Instant parsed = parseOccurredAtHeader(header.value());
             if (parsed != null) {
                 return parsed;
             }
         }
-        long timestamp = record.timestamp();
+        long timestamp = consumerRecord.timestamp();
         if (timestamp > 0) {
             return Instant.ofEpochMilli(timestamp);
         }

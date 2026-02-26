@@ -4,7 +4,6 @@ import java.lang.management.ManagementFactory;
 import net.rsworld.superduper.observability.api.MaintenanceObservation;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -15,9 +14,7 @@ public class ReactiveHeartbeatService {
     private final String workerId;
 
     public ReactiveHeartbeatService(
-            ReactiveWorkerMaintenanceRepository maintenanceRepository,
-            SuperduperObserver observer,
-            @Value("${superduper.worker.heartbeat-interval-ms:30000}") long hb) {
+            ReactiveWorkerMaintenanceRepository maintenanceRepository, SuperduperObserver observer) {
         this.maintenanceRepository = maintenanceRepository;
         this.observer = observer;
         this.workerId = ManagementFactory.getRuntimeMXBean().getName();

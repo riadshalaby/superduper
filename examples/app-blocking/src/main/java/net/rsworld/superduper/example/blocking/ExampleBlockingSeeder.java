@@ -4,7 +4,9 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 import net.rsworld.superduper.worker.blocking.SuperDuperWorkerService;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -50,7 +52,7 @@ class ExampleBlockingSeeder {
             ObjectProvider<KafkaListenerEndpointRegistry> listenerRegistryProvider,
             NamedParameterJdbcTemplate jdbcTemplate) {
         this.bootstrapServers = bootstrapServers;
-        this.topic = configuredTopics.split("\\s*,\\s*")[0];
+        this.topic = firstConfiguredTopic(configuredTopics);
         this.count = count;
         this.keyCount = keyCount;
         this.awaitTimeoutSeconds = awaitTimeoutSeconds;
@@ -62,7 +64,7 @@ class ExampleBlockingSeeder {
     }
 
     @EventListener(ApplicationReadyEvent.class)
-    public void onReady() throws Exception {
+    public void onReady() throws InterruptedException, ExecutionException {
         ensureWorkerAvailable();
         waitForConsumerReadiness();
         prepareForNewSeedRun();
@@ -103,27 +105,35 @@ class ExampleBlockingSeeder {
                 log.info("[Seeder] Kafka listener container(s) are running with partition assignments; starting seed.");
                 return;
             }
-            if (allRunning) {
-                if (runningSince < 0) {
-                    runningSince = System.nanoTime();
-                }
+            runningSince = updateRunningSince(allRunning, runningSince);
+            if (isReadinessGraceElapsed(runningSince)) {
                 long runningMillis =
                         Duration.ofNanos(System.nanoTime() - runningSince).toMillis();
-                if (runningMillis >= 2_000) {
-                    log.warn(
-                            "[Seeder] Kafka listener container(s) are running but partition assignment is still empty. "
-                                    + "Proceeding with seed after {}ms readiness grace period.",
-                            runningMillis);
-                    return;
-                }
-            } else {
-                runningSince = -1L;
+                log.warn(
+                        "[Seeder] Kafka listener container(s) are running but partition assignment is still empty. "
+                                + "Proceeding with seed after {}ms readiness grace period.",
+                        runningMillis);
+                return;
             }
-            Thread.sleep(200);
+            pauseMillis(200);
         }
 
         throw new IllegalStateException(
                 "Timed out waiting for Kafka listener container readiness and partition assignment.");
+    }
+
+    private static long updateRunningSince(boolean allRunning, long runningSince) {
+        if (!allRunning) {
+            return -1L;
+        }
+        return runningSince < 0 ? System.nanoTime() : runningSince;
+    }
+
+    private static boolean isReadinessGraceElapsed(long runningSince) {
+        if (runningSince < 0) {
+            return false;
+        }
+        return Duration.ofNanos(System.nanoTime() - runningSince).toMillis() >= 2_000;
     }
 
     private boolean hasAssignedPartitions(MessageListenerContainer container) {
@@ -143,7 +153,7 @@ class ExampleBlockingSeeder {
         log.info("[Seeder] Cleared messages table and initialized seed runToken={} expected={}.", runToken, count);
     }
 
-    private void publishSeedMessages(String runToken) throws Exception {
+    private void publishSeedMessages(String runToken) throws InterruptedException, ExecutionException {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
@@ -194,5 +204,18 @@ class ExampleBlockingSeeder {
             return "retry-once runToken=" + runToken + " #" + i;
         }
         return "ok runToken=" + runToken + " #" + i;
+    }
+
+    private static String firstConfiguredTopic(String configuredTopics) {
+        if (configuredTopics == null) {
+            return "";
+        }
+        int comma = configuredTopics.indexOf(',');
+        String candidate = comma < 0 ? configuredTopics : configuredTopics.substring(0, comma);
+        return candidate.trim();
+    }
+
+    private static void pauseMillis(long millis) {
+        LockSupport.parkNanos(Duration.ofMillis(millis).toNanos());
     }
 }

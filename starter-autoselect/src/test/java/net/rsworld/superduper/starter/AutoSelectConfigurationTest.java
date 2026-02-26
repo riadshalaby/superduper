@@ -54,7 +54,7 @@ class AutoSelectConfigurationTest {
         var observer = NoopSuperduperObserver.INSTANCE;
 
         SuperDuperWorkerService svc = cfg.jdbcWorker(mr, txm, exec, handler, observer, workerProperties);
-        HeartbeatService hb = cfg.jdbcHeartbeatService(maintenanceRepository, observer, workerProperties);
+        HeartbeatService hb = cfg.jdbcHeartbeatService(maintenanceRepository, observer);
         OrphanReclaimer rec = cfg.jdbcOrphanReclaimer(maintenanceRepository, observer, workerProperties);
 
         assertThat(lp).isNotNull();
@@ -81,7 +81,7 @@ class AutoSelectConfigurationTest {
                 reactor.core.publisher.Mono.just(net.rsworld.superduper.worker.reactive.ProcessingResult.SUCCESS);
         var observer = NoopSuperduperObserver.INSTANCE;
         SuperDuperWorkerReactiveService svc = cfg.reactiveWorker(mr, lockExec, h, observer, workerProperties);
-        ReactiveHeartbeatService hb = cfg.reactiveHeartbeatService(maintenanceRepository, observer, workerProperties);
+        ReactiveHeartbeatService hb = cfg.reactiveHeartbeatService(maintenanceRepository, observer);
         ReactiveOrphanReclaimer rec = cfg.reactiveOrphanReclaimer(maintenanceRepository, observer, workerProperties);
         assertThat(svc).isNotNull();
         assertThat(hb).isNotNull();

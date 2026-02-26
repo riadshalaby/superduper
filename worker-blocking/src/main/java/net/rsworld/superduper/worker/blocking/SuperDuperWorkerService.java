@@ -14,7 +14,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
+@SuppressWarnings("java:S107")
 public class SuperDuperWorkerService {
+    private static final String MODE_BLOCKING = "blocking";
 
     private final WorkerMessageRepository messageRepository;
     private final TransactionTemplate tx;
@@ -110,11 +112,11 @@ public class SuperDuperWorkerService {
                     (Runnable) () -> claimedCount[0] = claimBatch(),
                     new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
-                    new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)),
+                    new WorkerObservation(MODE_BLOCKING, workerId, null, null, batch, elapsedMs(claimStarted)),
                     Math.toIntExact(claimedCount[0]));
         } catch (RuntimeException e) {
             observer.workerFailed(
-                    new WorkerObservation("blocking", workerId, null, null, batch, elapsedMs(claimStarted)), e);
+                    new WorkerObservation(MODE_BLOCKING, workerId, null, null, batch, elapsedMs(claimStarted)), e);
             return;
         }
         if (claimedCount[0] > 0) {
@@ -136,27 +138,27 @@ public class SuperDuperWorkerService {
             try {
                 res = handler.handle(new MessageRow(
                         row.id(), null, row.key(), row.content(), "PROCESSING", row.retryCount(), row.containerId()));
-            } catch (Exception e) {
+            } catch (RuntimeException | MessageHandlingException e) {
                 observer.workerFailed(
                         new WorkerObservation(
-                                "blocking", workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
+                                MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
                         e);
             }
             int retry = row.retryCount() == null ? 0 : row.retryCount();
             if (res == ProcessingResult.SUCCESS) {
                 messageRepository.markProcessed(row.id());
                 observer.workerProcessed(
-                        new WorkerObservation("blocking", workerId, row.id(), retry, batch, elapsedMs(started)));
+                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
             } else {
                 retry++;
                 if (retry < maxRetries) {
                     messageRepository.markReadyForRetry(row.id(), retry);
                     observer.workerRetried(
-                            new WorkerObservation("blocking", workerId, row.id(), retry, batch, elapsedMs(started)));
+                            new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
                 } else {
                     messageRepository.markStopped(row.id(), retry);
                     observer.workerStopped(
-                            new WorkerObservation("blocking", workerId, row.id(), retry, batch, elapsedMs(started)));
+                            new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
                 }
             }
         }

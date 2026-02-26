@@ -28,25 +28,35 @@ class ExampleBlockingMessageHandler implements MessageHandler {
         String content = row.content() == null ? "" : row.content();
 
         if (content.contains("always-fail")) {
-            log.warn("[Blocking Worker] id={} key={} attempt={} -> RETRY (always-fail)", row.id(), row.key(), attempt);
+            if (log.isWarnEnabled()) {
+                log.warn(
+                        "[Blocking Worker] id={} key={} attempt={} -> RETRY (always-fail)",
+                        row.id(),
+                        row.key(),
+                        attempt);
+            }
             return ProcessingResult.RETRY;
         }
 
         if (content.contains("retry-once") && attempt == 1) {
-            log.info(
-                    "[Blocking Worker] id={} key={} attempt={} -> RETRY (retry-once first attempt)",
-                    row.id(),
-                    row.key(),
-                    attempt);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[Blocking Worker] id={} key={} attempt={} -> RETRY (retry-once first attempt)",
+                        row.id(),
+                        row.key(),
+                        attempt);
+            }
             return ProcessingResult.RETRY;
         }
 
-        log.info(
-                "[Blocking Worker] id={} key={} attempt={} -> SUCCESS content={}",
-                row.id(),
-                row.key(),
-                attempt,
-                content);
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "[Blocking Worker] id={} key={} attempt={} -> SUCCESS content={}",
+                    row.id(),
+                    row.key(),
+                    attempt,
+                    content);
+        }
         return ProcessingResult.SUCCESS;
     }
 

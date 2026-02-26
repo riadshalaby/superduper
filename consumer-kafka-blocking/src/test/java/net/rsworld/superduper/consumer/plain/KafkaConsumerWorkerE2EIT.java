@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.LockSupport;
 import javax.sql.DataSource;
 import net.javacrumbs.shedlock.core.DefaultLockingTaskExecutor;
 import net.javacrumbs.shedlock.core.LockProvider;
@@ -102,7 +103,7 @@ class KafkaConsumerWorkerE2EIT {
         while (System.currentTimeMillis() < deadline) {
             count = jdbc.queryForObject("SELECT COUNT(*) FROM messages", Integer.class);
             if (count >= 3) break;
-            Thread.sleep(200);
+            pauseMillis(200);
         }
         assertThat(count).isGreaterThanOrEqualTo(3);
 
@@ -177,10 +178,14 @@ class KafkaConsumerWorkerE2EIT {
                         throw e;
                     }
                 }
-                Thread.sleep(200);
+                pauseMillis(200);
             }
             throw new IllegalStateException("Topic leader not ready for topic " + topic);
         }
+    }
+
+    private static void pauseMillis(long millis) {
+        LockSupport.parkNanos(Duration.ofMillis(millis).toNanos());
     }
 
     @Configuration

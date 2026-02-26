@@ -25,14 +25,23 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
                 || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String topic = observation.topic();
+        int partition = observation.partition();
+        long offset = observation.offset();
+        String key = observation.key();
+        int payloadSize = observation.payloadSize();
         log.info(
                 "consumer.received mode={} topic={} partition={} offset={} key={} payloadSize={}",
-                observation.mode(),
-                observation.topic(),
-                observation.partition(),
-                observation.offset(),
-                observation.key(),
-                observation.payloadSize());
+                mode,
+                topic,
+                partition,
+                offset,
+                key,
+                payloadSize);
     }
 
     @Override
@@ -41,20 +50,30 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         if (settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.TIMING)) {
+            if (!log.isInfoEnabled()) {
+                return;
+            }
+            String mode = observation.mode();
+            String topic = observation.topic();
+            int partition = observation.partition();
+            long offset = observation.offset();
+            long durationMs = observation.durationMs();
             log.info(
                     "consumer.persisted mode={} topic={} partition={} offset={} durationMs={}",
-                    observation.mode(),
-                    observation.topic(),
-                    observation.partition(),
-                    observation.offset(),
-                    observation.durationMs());
+                    mode,
+                    topic,
+                    partition,
+                    offset,
+                    durationMs);
         } else {
-            log.info(
-                    "consumer.persisted mode={} topic={} partition={} offset={}",
-                    observation.mode(),
-                    observation.topic(),
-                    observation.partition(),
-                    observation.offset());
+            if (!log.isInfoEnabled()) {
+                return;
+            }
+            String mode = observation.mode();
+            String topic = observation.topic();
+            int partition = observation.partition();
+            long offset = observation.offset();
+            log.info("consumer.persisted mode={} topic={} partition={} offset={}", mode, topic, partition, offset);
         }
     }
 
@@ -63,13 +82,21 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
         if (!settings.logEnabled() || !settings.allows(ObservabilityComponent.CONSUMER, ObservabilitySignal.FAILURE)) {
             return;
         }
+        if (!log.isErrorEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String topic = observation.topic();
+        int partition = observation.partition();
+        long offset = observation.offset();
+        long durationMs = observation.durationMs();
         log.error(
                 "consumer.failed mode={} topic={} partition={} offset={} durationMs={}",
-                observation.mode(),
-                observation.topic(),
-                observation.partition(),
-                observation.offset(),
-                observation.durationMs(),
+                mode,
+                topic,
+                partition,
+                offset,
+                durationMs,
                 error);
     }
 
@@ -78,21 +105,28 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
         if (!settings.logEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String workerId = observation.workerId();
+        int batchSize = observation.batchSize();
         if (settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.TIMING)) {
+            long durationMs = observation.durationMs();
             log.info(
                     "worker.claimed mode={} workerId={} claimedCount={} batchSize={} durationMs={}",
-                    observation.mode(),
-                    observation.workerId(),
+                    mode,
+                    workerId,
                     claimedCount,
-                    observation.batchSize(),
-                    observation.durationMs());
+                    batchSize,
+                    durationMs);
         } else {
             log.info(
                     "worker.claimed mode={} workerId={} claimedCount={} batchSize={}",
-                    observation.mode(),
-                    observation.workerId(),
+                    mode,
+                    workerId,
                     claimedCount,
-                    observation.batchSize());
+                    batchSize);
         }
     }
 
@@ -101,13 +135,21 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
         if (!settings.logEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.SUCCESS)) {
             return;
         }
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String workerId = observation.workerId();
+        Long messageId = observation.messageId();
+        Integer retryCount = observation.retryCount();
+        long durationMs = observation.durationMs();
         log.info(
                 "worker.processed mode={} workerId={} messageId={} retryCount={} durationMs={}",
-                observation.mode(),
-                observation.workerId(),
-                observation.messageId(),
-                observation.retryCount(),
-                observation.durationMs());
+                mode,
+                workerId,
+                messageId,
+                retryCount,
+                durationMs);
     }
 
     @Override
@@ -115,13 +157,21 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
         if (!settings.logEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.RETRY)) {
             return;
         }
+        if (!log.isWarnEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String workerId = observation.workerId();
+        Long messageId = observation.messageId();
+        Integer retryCount = observation.retryCount();
+        long durationMs = observation.durationMs();
         log.warn(
                 "worker.retry mode={} workerId={} messageId={} retryCount={} durationMs={}",
-                observation.mode(),
-                observation.workerId(),
-                observation.messageId(),
-                observation.retryCount(),
-                observation.durationMs());
+                mode,
+                workerId,
+                messageId,
+                retryCount,
+                durationMs);
     }
 
     @Override
@@ -129,13 +179,21 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
         if (!settings.logEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.FAILURE)) {
             return;
         }
+        if (!log.isErrorEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String workerId = observation.workerId();
+        Long messageId = observation.messageId();
+        Integer retryCount = observation.retryCount();
+        long durationMs = observation.durationMs();
         log.error(
                 "worker.stopped mode={} workerId={} messageId={} retryCount={} durationMs={}",
-                observation.mode(),
-                observation.workerId(),
-                observation.messageId(),
-                observation.retryCount(),
-                observation.durationMs());
+                mode,
+                workerId,
+                messageId,
+                retryCount,
+                durationMs);
     }
 
     @Override
@@ -143,13 +201,21 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
         if (!settings.logEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.FAILURE)) {
             return;
         }
+        if (!log.isErrorEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String workerId = observation.workerId();
+        Long messageId = observation.messageId();
+        Integer retryCount = observation.retryCount();
+        long durationMs = observation.durationMs();
         log.error(
                 "worker.failed mode={} workerId={} messageId={} retryCount={} durationMs={}",
-                observation.mode(),
-                observation.workerId(),
-                observation.messageId(),
-                observation.retryCount(),
-                observation.durationMs(),
+                mode,
+                workerId,
+                messageId,
+                retryCount,
+                durationMs,
                 error);
     }
 
@@ -159,12 +225,15 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
                 || !settings.allows(ObservabilityComponent.MAINTENANCE, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String workerId = observation.workerId();
+        String operation = observation.operation();
+        long durationMs = observation.durationMs();
         log.info(
-                "maintenance.ok mode={} workerId={} operation={} durationMs={}",
-                observation.mode(),
-                observation.workerId(),
-                observation.operation(),
-                observation.durationMs());
+                "maintenance.ok mode={} workerId={} operation={} durationMs={}", mode, workerId, operation, durationMs);
     }
 
     @Override
@@ -173,12 +242,19 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
                 || !settings.allows(ObservabilityComponent.MAINTENANCE, ObservabilitySignal.FAILURE)) {
             return;
         }
+        if (!log.isErrorEnabled()) {
+            return;
+        }
+        String mode = observation.mode();
+        String workerId = observation.workerId();
+        String operation = observation.operation();
+        long durationMs = observation.durationMs();
         log.error(
                 "maintenance.failed mode={} workerId={} operation={} durationMs={}",
-                observation.mode(),
-                observation.workerId(),
-                observation.operation(),
-                observation.durationMs(),
+                mode,
+                workerId,
+                operation,
+                durationMs,
                 error);
     }
 }

@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.LockSupport;
 import net.rsworld.superduper.repository.api.ReactiveMessageIngestRepository;
 import net.rsworld.superduper.repository.r2dbc.R2dbcMessageIngestRepository;
 import net.rsworld.superduper.repository.r2dbc.SqlDialect;
@@ -102,7 +103,7 @@ class KafkaReactiveE2ETest {
                 found = cnt;
                 break;
             }
-            Thread.sleep(250);
+            pauseMillis(250);
         }
         assertThat(found).isGreaterThan(0);
     }
@@ -138,10 +139,14 @@ class KafkaReactiveE2ETest {
                         throw e;
                     }
                 }
-                Thread.sleep(200);
+                pauseMillis(200);
             }
             throw new IllegalStateException("Topic leader not ready for topic " + topic);
         }
+    }
+
+    private static void pauseMillis(long millis) {
+        LockSupport.parkNanos(Duration.ofMillis(millis).toNanos());
     }
 
     @Configuration

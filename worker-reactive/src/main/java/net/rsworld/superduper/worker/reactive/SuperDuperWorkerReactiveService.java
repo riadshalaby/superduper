@@ -14,7 +14,10 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 @Service
+@SuppressWarnings("java:S107")
 public class SuperDuperWorkerReactiveService {
+    private static final String MODE_REACTIVE = "reactive";
+
     private final ReactiveWorkerMessageRepository messageRepository;
     private final LockingTaskExecutor lockExec;
     private final ReactiveMessageHandler handler;
@@ -102,11 +105,11 @@ public class SuperDuperWorkerReactiveService {
                     (Runnable) () -> claimedCount[0] = claimBatch(),
                     new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
-                    new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)),
+                    new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)),
                     Math.toIntExact(claimedCount[0]));
         } catch (RuntimeException e) {
             observer.workerFailed(
-                    new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), e);
+                    new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)), e);
             return;
         }
 
@@ -119,7 +122,8 @@ public class SuperDuperWorkerReactiveService {
                 .concatMap(this::processOne)
                 .onErrorResume(e -> {
                     observer.workerFailed(
-                            new WorkerObservation("reactive", workerId, null, null, batchSize, elapsedMs(started)), e);
+                            new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)),
+                            e);
                     return Mono.empty();
                 })
                 .then()
@@ -141,7 +145,8 @@ public class SuperDuperWorkerReactiveService {
         return handler.handle(mr)
                 .onErrorResume(e -> {
                     observer.workerFailed(
-                            new WorkerObservation("reactive", workerId, id, retry, batchSize, elapsedMs(started)), e);
+                            new WorkerObservation(MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)),
+                            e);
                     return Mono.just(ProcessingResult.RETRY);
                 })
                 .flatMap(result -> {
@@ -149,19 +154,19 @@ public class SuperDuperWorkerReactiveService {
                         return messageRepository
                                 .markProcessed(id)
                                 .then(Mono.fromRunnable(() -> observer.workerProcessed(new WorkerObservation(
-                                        "reactive", workerId, id, retry, batchSize, elapsedMs(started)))));
+                                        MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)))));
                     } else {
                         int next = retry + 1;
                         if (next < maxRetries) {
                             return messageRepository
                                     .markReadyForRetry(id, next)
                                     .then(Mono.fromRunnable(() -> observer.workerRetried(new WorkerObservation(
-                                            "reactive", workerId, id, next, batchSize, elapsedMs(started)))));
+                                            MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)))));
                         } else {
                             return messageRepository
                                     .markStopped(id, next)
                                     .then(Mono.fromRunnable(() -> observer.workerStopped(new WorkerObservation(
-                                            "reactive", workerId, id, next, batchSize, elapsedMs(started)))));
+                                            MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)))));
                         }
                     }
                 });

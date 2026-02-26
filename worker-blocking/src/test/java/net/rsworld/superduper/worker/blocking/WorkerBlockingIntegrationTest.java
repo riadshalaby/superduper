@@ -114,9 +114,7 @@ class WorkerBlockingIntegrationTest {
                 new MapSqlParameterSource("uuid", "ju3"));
 
         HeartbeatService hb = new HeartbeatService(
-                maintenanceRepository,
-                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
-                10_000);
+                maintenanceRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
         hb.heartbeat();
 
         OrphanReclaimer rec = new OrphanReclaimer(

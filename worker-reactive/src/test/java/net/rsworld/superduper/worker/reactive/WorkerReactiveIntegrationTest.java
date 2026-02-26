@@ -121,9 +121,7 @@ class WorkerReactiveIntegrationTest {
                 .block();
 
         ReactiveHeartbeatService hb = new ReactiveHeartbeatService(
-                maintenanceRepository,
-                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
-                10_000);
+                maintenanceRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
         hb.heartbeat();
 
         ReactiveOrphanReclaimer rec = new ReactiveOrphanReclaimer(

@@ -111,10 +111,8 @@ public class AutoSelectConfiguration {
     @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "spring", matchIfMissing = true)
     @ConditionalOnMissingBean
     public HeartbeatService jdbcHeartbeatService(
-            WorkerMaintenanceRepository maintenanceRepository,
-            SuperduperObserver observer,
-            WorkerProperties workerProperties) {
-        return new HeartbeatService(maintenanceRepository, observer, workerProperties.getHeartbeatIntervalMs());
+            WorkerMaintenanceRepository maintenanceRepository, SuperduperObserver observer) {
+        return new HeartbeatService(maintenanceRepository, observer);
     }
 
     @Bean
@@ -153,10 +151,8 @@ public class AutoSelectConfiguration {
     @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
     @ConditionalOnMissingBean
     public ReactiveHeartbeatService reactiveHeartbeatService(
-            ReactiveWorkerMaintenanceRepository maintenanceRepository,
-            SuperduperObserver observer,
-            WorkerProperties workerProperties) {
-        return new ReactiveHeartbeatService(maintenanceRepository, observer, workerProperties.getHeartbeatIntervalMs());
+            ReactiveWorkerMaintenanceRepository maintenanceRepository, SuperduperObserver observer) {
+        return new ReactiveHeartbeatService(maintenanceRepository, observer);
     }
 
     @Bean

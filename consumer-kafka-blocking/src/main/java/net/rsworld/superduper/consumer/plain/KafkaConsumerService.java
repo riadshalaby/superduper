@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 @Service
 class KafkaConsumerService {
     private static final String OCCURRED_AT_HEADER = "occurred_at";
+    private static final String MODE_BLOCKING = "blocking";
 
     private final MessageIngestRepository messageIngestRepository;
     private final SuperduperObserver observer;
@@ -28,38 +29,45 @@ class KafkaConsumerService {
     @KafkaListener(
             topics = "#{'${superduper.kafka.topics:${superduper.kafka.topic}}'.split('\\\\s*,\\\\s*')}",
             containerFactory = "kafkaListenerContainerFactory")
-    public void onMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
+    public void onMessage(ConsumerRecord<String, String> consumerRecord, Acknowledgment ack) {
         long started = System.nanoTime();
-        String k = record.key() != null ? record.key() : "default";
-        int payloadSize = record.value() == null ? 0 : record.value().getBytes(StandardCharsets.UTF_8).length;
+        String messageKey = consumerRecord.key() != null ? consumerRecord.key() : "default";
+        int payloadSize =
+                consumerRecord.value() == null ? 0 : consumerRecord.value().getBytes(StandardCharsets.UTF_8).length;
         observer.consumerReceived(new ConsumerObservation(
-                "blocking", record.topic(), record.partition(), record.offset(), k, payloadSize, 0));
-        String seed = record.topic() + ":" + record.partition() + ":" + record.offset();
-        Instant occurredAt = resolveOccurredAt(record);
+                MODE_BLOCKING,
+                consumerRecord.topic(),
+                consumerRecord.partition(),
+                consumerRecord.offset(),
+                messageKey,
+                payloadSize,
+                0));
+        String seed = consumerRecord.topic() + ":" + consumerRecord.partition() + ":" + consumerRecord.offset();
+        Instant occurredAt = resolveOccurredAt(consumerRecord);
         try {
             messageIngestRepository.upsertReadyMessage(
                     UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8))
                             .toString(),
-                    k,
-                    record.value(),
+                    messageKey,
+                    consumerRecord.value(),
                     occurredAt);
             ack.acknowledge();
             observer.consumerSucceeded(new ConsumerObservation(
-                    "blocking",
-                    record.topic(),
-                    record.partition(),
-                    record.offset(),
-                    k,
+                    MODE_BLOCKING,
+                    consumerRecord.topic(),
+                    consumerRecord.partition(),
+                    consumerRecord.offset(),
+                    messageKey,
                     payloadSize,
                     elapsedMs(started)));
         } catch (RuntimeException e) {
             observer.consumerFailed(
                     new ConsumerObservation(
-                            "blocking",
-                            record.topic(),
-                            record.partition(),
-                            record.offset(),
-                            k,
+                            MODE_BLOCKING,
+                            consumerRecord.topic(),
+                            consumerRecord.partition(),
+                            consumerRecord.offset(),
+                            messageKey,
                             payloadSize,
                             elapsedMs(started)),
                     e);
@@ -71,15 +79,15 @@ class KafkaConsumerService {
         return (System.nanoTime() - startedNanos) / 1_000_000;
     }
 
-    private static Instant resolveOccurredAt(ConsumerRecord<String, String> record) {
-        Header header = record.headers().lastHeader(OCCURRED_AT_HEADER);
+    private static Instant resolveOccurredAt(ConsumerRecord<String, String> consumerRecord) {
+        Header header = consumerRecord.headers().lastHeader(OCCURRED_AT_HEADER);
         if (header != null) {
             Instant parsed = parseOccurredAtHeader(header.value());
             if (parsed != null) {
                 return parsed;
             }
         }
-        long timestamp = record.timestamp();
+        long timestamp = consumerRecord.timestamp();
         if (timestamp > 0) {
             return Instant.ofEpochMilli(timestamp);
         }

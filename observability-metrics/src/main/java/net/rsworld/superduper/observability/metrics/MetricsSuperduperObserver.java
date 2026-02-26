@@ -17,6 +17,8 @@ import net.rsworld.superduper.observability.api.WorkerObservation;
 import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 
 public class MetricsSuperduperObserver implements SuperduperObserver {
+    private static final String WORKER_PROCESS_DURATION = "superduper.worker.process.duration";
+
     private final MeterRegistry meterRegistry;
     private final ObservabilitySettings settings;
     private final LoggingSuperduperObserver loggingDelegate;
@@ -92,8 +94,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         }
         Tags tags = workerTags(observation, null);
         counter("superduper.worker.processed.total", tags).increment();
-        recordDuration(
-                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(WORKER_PROCESS_DURATION, tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override
@@ -104,8 +105,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         }
         Tags tags = workerTags(observation, null);
         counter("superduper.worker.retried.total", tags).increment();
-        recordDuration(
-                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(WORKER_PROCESS_DURATION, tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override
@@ -117,8 +117,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         }
         Tags tags = workerTags(observation, null);
         counter("superduper.worker.stopped.total", tags).increment();
-        recordDuration(
-                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(WORKER_PROCESS_DURATION, tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override
@@ -130,8 +129,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         }
         Tags tags = workerTags(observation, error);
         counter("superduper.worker.failed.total", tags).increment();
-        recordDuration(
-                "superduper.worker.process.duration", tags, observation.durationMs(), ObservabilityComponent.WORKER);
+        recordDuration(WORKER_PROCESS_DURATION, tags, observation.durationMs(), ObservabilityComponent.WORKER);
     }
 
     @Override

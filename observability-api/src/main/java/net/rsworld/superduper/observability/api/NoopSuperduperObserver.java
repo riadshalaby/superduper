@@ -6,32 +6,52 @@ public final class NoopSuperduperObserver implements SuperduperObserver {
     private NoopSuperduperObserver() {}
 
     @Override
-    public void consumerReceived(ConsumerObservation observation) {}
+    public void consumerReceived(ConsumerObservation observation) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void consumerSucceeded(ConsumerObservation observation) {}
+    public void consumerSucceeded(ConsumerObservation observation) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void consumerFailed(ConsumerObservation observation, Throwable error) {}
+    public void consumerFailed(ConsumerObservation observation, Throwable error) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void workerClaimed(WorkerObservation observation, int claimedCount) {}
+    public void workerClaimed(WorkerObservation observation, int claimedCount) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void workerProcessed(WorkerObservation observation) {}
+    public void workerProcessed(WorkerObservation observation) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void workerRetried(WorkerObservation observation) {}
+    public void workerRetried(WorkerObservation observation) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void workerStopped(WorkerObservation observation) {}
+    public void workerStopped(WorkerObservation observation) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void workerFailed(WorkerObservation observation, Throwable error) {}
+    public void workerFailed(WorkerObservation observation, Throwable error) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void maintenanceSucceeded(MaintenanceObservation observation) {}
+    public void maintenanceSucceeded(MaintenanceObservation observation) {
+        // Intentionally no-op.
+    }
 
     @Override
-    public void maintenanceFailed(MaintenanceObservation observation, Throwable error) {}
+    public void maintenanceFailed(MaintenanceObservation observation, Throwable error) {
+        // Intentionally no-op.
+    }
 }

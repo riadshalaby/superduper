@@ -168,26 +168,14 @@
             <phase>compile</phase>
             <configuration>
               <rules>
-                <!-- Mindest-Maven-Version -->
+                <!-- Minimum Maven version -->
                 <requireMavenVersion>
                   <version>[3.9,)</version>
                 </requireMavenVersion>
-                <!-- optional, sehr sinnvoll: Mindest-Java-Version -->
+                <!-- Optional but strongly recommended: minimum Java version -->
                 <requireJavaVersion>
                   <version>[21,)</version>
                 </requireJavaVersion>
-                <!-- since even testcontainer 2.x still needs junit4, we cant disallow it
-                newer version might finally fix this. See https://github.com/testcontainers/testcontainers-java/issues/970
-                as of now even the 2.0.1 version still needs junit4 -->
-                <!--
-                <bannedDependencies>
-                  <excludes>
-                    <exclude>junit:junit</exclude>
-                    <exclude>org.junit.vintage:junit-vintage-engine</exclude>
-                  </excludes>
-                  <searchTransitive>true</searchTransitive>
-                </bannedDependencies>
-                -->
               </rules>
               <fail>true</fail>
             </configuration>
