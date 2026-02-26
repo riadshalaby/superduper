@@ -593,3 +593,42 @@ Progress update (2026-02-26T09:48:30+01:00)
   - HOTSPOT_TO_REVIEW=0
   - Quality Gate still ERROR only because new_coverage=0.0 against threshold 80 (no JaCoCo report imported).
 - Note: left untracked file qodana.yaml unchanged.
+
+Progress update (2026-02-26T11:41:14Z)
+- Checked Sonar Quality Gate on local SonarQube (http://localhost:9000) and reproduced analysis pipeline end-to-end.
+- Fixed build/quality configuration in root pom.xml:
+  - Added JaCoCo plugin management + inherited executions (prepare-agent + report at verify) to generate XML coverage for Sonar import.
+  - Updated Surefire argLine to prepend ${argLine} so JaCoCo agent and existing ByteBuddy agent both apply.
+  - Added managed version for maven-jar-plugin to remove effective-model warning in schema-liquibase.
+- Ran Spotless after edits (session rule).
+- Validation:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -T 1C verify (pass)
+  - .\\mvnw.cmd --% org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin -Dsonar.projectKey=superduper -Dsonar.projectName=superduper (pass)
+  - Sonar API: quality gate status = OK; major+ issues = 0; hotspots to review = 0.
+- Notes:
+  - Sonar scanner now imports JaCoCo XML reports where tests exist (no more global "No report imported" situation).
+  - Remaining scanner warning about sonar.password is due deprecated credential style; token-based auth is recommended for CI.
+
+Progress update (2026-02-26T13:16:00Z)
+- Excluded example modules from Sonar analysis by setting sonar.skip=true in:
+  - examples/app-blocking/pom.xml
+  - examples/app-reactive/pom.xml
+- Ran formatting and verification:
+  - .\\mvnw.cmd -q spotless:apply (pass)
+  - .\\mvnw.cmd -T 1C verify (pass)
+- Re-ran Sonar scan on fresh local SonarQube instance:
+  - .\\mvnw.cmd --% org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin -Dsonar.projectKey=superduper -Dsonar.projectName=superduper (pass)
+  - Scan log confirms both example modules skipped via sonar.skip.
+- Coverage result after excluding examples:
+  - Overall coverage (Sonar): 61.6% (below 80%)
+  - Quality Gate: OK
+- Notable module coverages from Sonar:
+  - consumer-kafka-blocking 91.6%
+  - consumer-kafka-reactive 90.7%
+  - worker-blocking 81.9%
+  - worker-reactive 85.8%
+  - repository-jdbc 79.7%
+  - repository-r2dbc 74.4%
+  - starter-autoselect 79.5%
+  - observability-api/logging/metrics currently 0.0%
