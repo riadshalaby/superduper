@@ -8,8 +8,10 @@ import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Optional;
 import net.rsworld.superduper.repository.api.ReactiveMessageIngestRepository;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -97,8 +99,18 @@ class KafkaReactiveR2dbcConsumerServiceTest {
                 .thenReturn(Mono.empty());
 
         long kafkaTimestamp = 1740132930000L;
-        ConsumerRecord<String, String> record =
-                new ConsumerRecord<>("t", 0, 14L, kafkaTimestamp, TimestampType.CREATE_TIME, 0, 0, "k", "v");
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "t",
+                0,
+                14L,
+                kafkaTimestamp,
+                TimestampType.CREATE_TIME,
+                0,
+                0,
+                "k",
+                "v",
+                new RecordHeaders(),
+                Optional.empty());
 
         svc.onMessage(record, ack);
 
@@ -126,8 +138,18 @@ class KafkaReactiveR2dbcConsumerServiceTest {
                         org.mockito.ArgumentMatchers.any(Instant.class)))
                 .thenReturn(Mono.empty());
 
-        ConsumerRecord<String, String> record =
-                new ConsumerRecord<>("t", 0, 15L, -1L, TimestampType.NO_TIMESTAMP_TYPE, 0, 0, "k", "v");
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "t",
+                0,
+                15L,
+                -1L,
+                TimestampType.NO_TIMESTAMP_TYPE,
+                0,
+                0,
+                "k",
+                "v",
+                new RecordHeaders(),
+                Optional.empty());
         record.headers().add("occurred_at", "invalid-ts".getBytes(StandardCharsets.UTF_8));
 
         Instant before = Instant.now();
