@@ -11,8 +11,9 @@
   - `mvn -q spotless:apply`
 - Stage newly created files explicitly:
   - `git add <new-file>`
-- When changes are complete, create a commit:
-  - Use a short, meaningful message following Conventional Commits.
+- When changes are complete, do not commit automatically:
+  - Print a short, meaningful Conventional Commit message proposal.
+  - Create the commit only after explicit user confirmation.
 - Prefer targeted validation while iterating; run broader validation before finishing:
   - Fast compile: `mvn -q -DskipTests test-compile`
   - Full tests: `mvn -T 1C -q test`

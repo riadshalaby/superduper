@@ -557,3 +557,9 @@ Progress update (2026-02-26T14:18:57Z)
 - Added explicit requirement that commit messages must be short, meaningful, and follow Conventional Commits.
 - Validation: Spotless run after rule update.
 - Next: enforce this workflow for all following changes.
+
+Progress update (2026-02-26T14:20:51Z)
+- Updated AGENTS.md Git workflow: do not auto-commit after changes.
+- New behavior: print a short Conventional Commit message proposal and wait for explicit user confirmation before committing.
+- Validation: Spotless run after rule update.
+- Next: for upcoming tasks, return proposed commit message only unless commit is explicitly requested.
