@@ -569,3 +569,37 @@ Progress update (2026-02-26T14:26:50Z)
   - Updated blocking worker path from `worker/.../worker/jdbc/SuperDuperWorkerService.java` to `worker/.../worker/blocking/SuperDuperWorkerService.java`.
 - Validation:
   - `mvn -q spotless:apply` (pass)
+
+Progress update (2026-02-26T14:36:10Z)
+- Re-ran validation and Sonar analysis for current workspace state.
+- Full verify attempt failed in `superduper-consumer-kafka-reactive` due Testcontainers Ryuk connectivity:
+  - `KafkaReactiveE2ETest` error: `Could not connect to Ryuk at localhost:55334`.
+- SonarQube on `http://localhost:9000` was initially unavailable; started local container `superduper-sonar` (`sonarqube:community`) and waited until status `UP`.
+- Sonar authentication with `sonar.login/sonar.password` failed (`Not authorized`); generated user token via Sonar API and reran scanner with `sonar.token` successfully.
+- Sonar results (project `superduper`):
+  - Coverage: `55.4%` (`lines_to_cover=1122`, `uncovered_lines=527`)
+  - Quality Gate: `OK`
+- Conclusion: coverage is below the requested 80% threshold.
+
+Progress update (2026-02-26T15:02:46Z)
+- Implemented coverage uplift focused on low-performing modules.
+- Added new tests:
+  - `observability-api/src/test/java/net/rsworld/superduper/observability/api/ObservabilitySettingsTest.java`
+  - `observability-logging/src/test/java/net/rsworld/superduper/observability/logging/LoggingSuperduperObserverTest.java`
+  - `observability-metrics/src/test/java/net/rsworld/superduper/observability/metrics/MetricsSuperduperObserverTest.java`
+- Added missing test dependencies (`spring-boot-starter-test`, scope `test`) in:
+  - `observability-api/pom.xml`
+  - `observability-logging/pom.xml`
+  - `observability-metrics/pom.xml`
+- Validation and analysis:
+  - `mvn -q spotless:apply` (pass)
+  - `mvn -q -pl observability-api,observability-logging,observability-metrics,consumer-kafka-reactive -am -Dtest=ObservabilitySettingsTest,LoggingSuperduperObserverTest,MetricsSuperduperObserverTest,KafkaReactiveR2dbcAutoConfigurationTest,KafkaReactiveR2dbcConsumerServiceTest -Dsurefire.failIfNoSpecifiedTests=false verify` (pass)
+  - `mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<temp-token> -Dsonar.projectKey=superduper -Dsonar.projectName=superduper` (pass)
+- Sonar results after uplift:
+  - Coverage: `82.2%` (`lines_to_cover=1113`, `uncovered_lines=179`)
+  - Notable module coverages:
+    - `observability-api`: `100.0%`
+    - `observability-logging`: `77.9%`
+    - `observability-metrics`: `85.0%`
+    - `consumer-kafka-reactive`: `88.4%`
+  - Quality Gate: `ERROR` due `new_violations=3` (coverage target met).
