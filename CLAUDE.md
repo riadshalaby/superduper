@@ -25,7 +25,7 @@ Build and maintain the library described in `README.md`:
 - Worker claims eligible rows atomically with strict per-key ordering.
 - Processing result transitions:
   - `SUCCESS` -> `PROCESSED`
-  - `RETRY` -> increment retry count, then `READY` or `STOPPED` at max retries.
+  - `FAILURE` -> increment retry count, then `FAILED` or `STOPPED` at max retries.
 - Heartbeats are written to `container_heartbeats`.
 - Orphan reclaimer resets stale/dead-worker `PROCESSING` rows to `READY`.
 

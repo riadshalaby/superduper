@@ -92,7 +92,11 @@ class WorkerReactiveIntegrationTest {
                 handler,
                 net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                 10,
-                5);
+                5,
+                "superduper-claim-batch",
+                15000,
+                2000,
+                "w1");
 
         Long first = messageRepository.claimBatch("w1", 10, 5).block();
         StepVerifier.create(Mono.just(first == null ? 0L : first))
@@ -135,6 +139,71 @@ class WorkerReactiveIntegrationTest {
                 .map((r, m) -> r.get("status", String.class))
                 .one();
         StepVerifier.create(status).expectNext("READY").verifyComplete();
+    }
+
+    @Test
+    void orphanReclaimer_defaultWindow_doesNotReclaim31SecondHeartbeat() {
+        resetData();
+        seedRows("rhb1", "k-hb", "v-hb", "READY");
+
+        db.sql("UPDATE messages SET status='PROCESSING', container_id='w-hb', last_updated=NOW() WHERE uuid='rhb1'")
+                .fetch()
+                .rowsUpdated()
+                .block();
+        db.sql("INSERT INTO container_heartbeats(container_id, last_heartbeat) "
+                        + "VALUES ('w-hb', NOW() - INTERVAL '31 seconds')")
+                .fetch()
+                .rowsUpdated()
+                .block();
+
+        ReactiveOrphanReclaimer rec = new ReactiveOrphanReclaimer(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                120_000,
+                90_000);
+        rec.reclaim();
+
+        String status = db.sql("SELECT status FROM messages WHERE uuid='rhb1'")
+                .map((r, m) -> r.get("status", String.class))
+                .one()
+                .block();
+        assertThat(status).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void orphanReclaimer_reclaimRefreshesLastUpdated() {
+        resetData();
+        seedRows("rstale1", "k-stale", "v-stale", "READY");
+
+        db.sql("UPDATE messages SET status='PROCESSING', container_id='w-stale', "
+                        + "last_updated=NOW() - INTERVAL '10 minutes' WHERE uuid='rstale1'")
+                .fetch()
+                .rowsUpdated()
+                .block();
+        Double beforeEpoch = db.sql("SELECT EXTRACT(EPOCH FROM last_updated) AS e FROM messages WHERE uuid='rstale1'")
+                .map((r, m) -> r.get("e", Double.class))
+                .one()
+                .block();
+
+        ReactiveOrphanReclaimer rec = new ReactiveOrphanReclaimer(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                120_000,
+                90_000);
+        rec.reclaim();
+
+        String status = db.sql("SELECT status FROM messages WHERE uuid='rstale1'")
+                .map((r, m) -> r.get("status", String.class))
+                .one()
+                .block();
+        Double afterEpoch = db.sql("SELECT EXTRACT(EPOCH FROM last_updated) AS e FROM messages WHERE uuid='rstale1'")
+                .map((r, m) -> r.get("e", Double.class))
+                .one()
+                .block();
+        assertThat(status).isEqualTo("READY");
+        assertThat(afterEpoch).isNotNull();
+        assertThat(beforeEpoch).isNotNull();
+        assertThat(afterEpoch).isGreaterThan(beforeEpoch);
     }
 
     @Test

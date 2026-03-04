@@ -19,11 +19,11 @@ public class ReactiveOrphanReclaimer {
             ReactiveWorkerMaintenanceRepository maintenanceRepository,
             SuperduperObserver observer,
             @Value("${superduper.worker.orphan-timeout-ms:120000}") int orphanTimeoutMs,
-            @Value("${superduper.worker.heartbeat-interval-ms:30000}") int hbMs) {
+            @Value("${superduper.worker.heartbeat-window-ms:90000}") int heartbeatWindowMs) {
         this.maintenanceRepository = maintenanceRepository;
         this.observer = observer;
         this.orphanTimeoutSec = orphanTimeoutMs / 1000;
-        this.heartbeatWindowSec = hbMs / 1000;
+        this.heartbeatWindowSec = heartbeatWindowMs / 1000;
     }
 
     @Scheduled(
@@ -41,7 +41,7 @@ public class ReactiveOrphanReclaimer {
                             new MaintenanceObservation("reactive", "n/a", "orphan-reclaim", elapsedMs(started)), e);
                     return Mono.empty();
                 })
-                .subscribe();
+                .block();
     }
 
     private static long elapsedMs(long startedNanos) {

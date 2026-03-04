@@ -44,21 +44,32 @@ public class JdbcWorkerMessageRepository implements WorkerMessageRepository {
     }
 
     @Override
-    public void markProcessed(long id) {
-        jdbc.update(dialect.markProcessedSql(), new MapSqlParameterSource().addValue("id", id));
+    public boolean markProcessed(long id, String containerId) {
+        return jdbc.update(
+                        dialect.markProcessedSql(),
+                        new MapSqlParameterSource().addValue("id", id).addValue("cid", containerId))
+                > 0;
     }
 
     @Override
-    public void markReadyForRetry(long id, int retryCount) {
-        jdbc.update(
-                dialect.markReadyForRetrySql(),
-                new MapSqlParameterSource().addValue("r", retryCount).addValue("id", id));
+    public boolean markFailed(long id, int retryCount, String containerId) {
+        return jdbc.update(
+                        dialect.markFailedSql(),
+                        new MapSqlParameterSource()
+                                .addValue("r", retryCount)
+                                .addValue("id", id)
+                                .addValue("cid", containerId))
+                > 0;
     }
 
     @Override
-    public void markStopped(long id, int retryCount) {
-        jdbc.update(
-                dialect.markStoppedSql(),
-                new MapSqlParameterSource().addValue("r", retryCount).addValue("id", id));
+    public boolean markStopped(long id, int retryCount, String containerId) {
+        return jdbc.update(
+                        dialect.markStoppedSql(),
+                        new MapSqlParameterSource()
+                                .addValue("r", retryCount)
+                                .addValue("id", id)
+                                .addValue("cid", containerId))
+                > 0;
     }
 }

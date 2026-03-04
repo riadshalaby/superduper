@@ -9,7 +9,7 @@ public interface JdbcSqlDialect {
 
     String markProcessedSql();
 
-    String markReadyForRetrySql();
+    String markFailedSql();
 
     String markStoppedSql();
 

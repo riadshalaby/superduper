@@ -7,9 +7,9 @@ public interface WorkerMessageRepository {
 
     List<ClaimedMessage> fetchClaimedForWorker(String workerId);
 
-    void markProcessed(long id);
+    boolean markProcessed(long id, String containerId);
 
-    void markReadyForRetry(long id, int retryCount);
+    boolean markFailed(long id, int retryCount, String containerId);
 
-    void markStopped(long id, int retryCount);
+    boolean markStopped(long id, int retryCount, String containerId);
 }

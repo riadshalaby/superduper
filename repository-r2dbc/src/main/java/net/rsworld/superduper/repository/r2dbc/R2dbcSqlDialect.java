@@ -9,7 +9,7 @@ public interface R2dbcSqlDialect {
 
     String markProcessedSql();
 
-    String markReadyForRetrySql();
+    String markFailedSql();
 
     String markStoppedSql();
 

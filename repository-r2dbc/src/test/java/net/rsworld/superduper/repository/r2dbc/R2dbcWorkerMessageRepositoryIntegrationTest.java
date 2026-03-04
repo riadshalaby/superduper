@@ -60,7 +60,8 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         var firstRows = repo.fetchClaimedForWorker("w1").collectList().block();
         assertThat(firstRows).isNotNull();
         assertThat(firstRows).hasSize(2);
-        firstRows.forEach(row -> repo.markProcessed(row.id()).block());
+        firstRows.forEach(
+                row -> assertThat(repo.markProcessed(row.id(), "w1").block()).isTrue());
         Integer processedAtCount = db.sql("SELECT COUNT(*) AS c FROM messages WHERE status='PROCESSED' "
                         + "AND container_id='w1' AND processed_at IS NOT NULL")
                 .map((row, md) -> row.get("c", Integer.class))
@@ -72,7 +73,7 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
     }
 
     @Test
-    void fetchAndRetryTransitions_work() {
+    void fetchAndFailureTransitions_work() {
         resetData();
         insert("u4", "k4", "v4", "READY");
 
@@ -83,14 +84,27 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         assertThat(rows).hasSize(1);
 
         long id = rows.getFirst().id();
-        repo.markReadyForRetry(id, 1).block();
+        Boolean failed = repo.markFailed(id, 1, "w1").block();
+        assertThat(failed).isTrue();
+        String failedStatus = db.sql("SELECT status FROM messages WHERE id=" + id)
+                .map((r, m) -> r.get("status", String.class))
+                .one()
+                .block();
+        assertThat(failedStatus).isEqualTo("FAILED");
         Integer retry = db.sql("SELECT retry_count AS c FROM messages WHERE id=" + id)
                 .map((r, m) -> r.get("c", Integer.class))
                 .one()
                 .block();
         assertThat(retry).isEqualTo(1);
 
-        repo.markStopped(id, 2).block();
+        Long reclaimed = repo.claimBatch("w2", 10, 5).block();
+        assertThat(reclaimed).isEqualTo(1L);
+
+        Boolean staleUpdateAccepted = repo.markStopped(id, 2, "w1").block();
+        assertThat(staleUpdateAccepted).isFalse();
+
+        Boolean stopByOwner = repo.markStopped(id, 2, "w2").block();
+        assertThat(stopByOwner).isTrue();
         String status = db.sql("SELECT status FROM messages WHERE id=" + id)
                 .map((r, m) -> r.get("status", String.class))
                 .one()

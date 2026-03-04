@@ -2,7 +2,7 @@
 # SUPERDUPER — Secure, Uninterrupted Processing of Events with Robust Delivery and Ultra Persistent Error Recovery
 
 > A **resilient**, **ordered**, and **database-backed** Kafka consumption pattern with pluggable workers (JDBC or Reactive),
-> strict per-key ordering, retries with backoff, heartbeats, and orphan recovery.
+> strict per-key ordering, failure retries, heartbeats, and orphan recovery.
 >
 > Group: `net.rsworld` · Modules: `superduper-*`
 
@@ -50,12 +50,12 @@ graph LR
   W1 -->|ShedLock claim batch| L
   W1 -->|UPDATE ... PROCESSING| M
   W1 -->|business logic| W1B[MessageHandler] --> W1
-  W1 -->|UPDATE PROCESSED / READY / STOPPED| M
+  W1 -->|UPDATE PROCESSED / FAILED / STOPPED| M
   W1 -->|upsert| H
 
   W2 -->|claim batch (reactive)| M
   W2 -->|business logic (Reactive)| W2B[ReactiveMessageHandler] --> W2
-  W2 -->|UPDATE PROCESSED / READY / STOPPED| M
+  W2 -->|UPDATE PROCESSED / FAILED / STOPPED| M
   W2 -->|upsert| H
 
   ORP[Orphan Reclaimer] -->|RESET stale PROCESSING -> READY| M
@@ -177,13 +177,13 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
    ORDER BY key, id;
    ```
    - Then it invokes your business function:
-     - **JDBC:** `MessageHandler` -> returns `SUCCESS` or `RETRY`.
-     - **Reactive:** `ReactiveMessageHandler` -> `Mono<SUCCESS|RETRY>`.
+     - **JDBC:** `MessageHandler` -> returns `SUCCESS` or `FAILURE`.
+     - **Reactive:** `ReactiveMessageHandler` -> `Mono<SUCCESS|FAILURE>`.
 
 4. **On Success or Failure**
    - `SUCCESS` → `status='PROCESSED'`, `processed_at=NOW()`.
-   - `RETRY` → `retry_count = retry_count + 1`.
-     - If `retry_count < max` → `status='READY'` (will be retried later; **per-key ordering** is preserved).
+   - `FAILURE` (explicit return or thrown exception) → `retry_count = retry_count + 1`.
+     - If `retry_count < max` → `status='FAILED'` (will be retried later; **per-key ordering** is preserved).
      - Else → `status='STOPPED'` (manual intervention required).
 
 5. **Heartbeat**
@@ -197,6 +197,16 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
 
 7. **Ordering Guarantee**
    - Using **auto-increment `id`** as the **order marker** per key (not `occurred_at`/`received_at`), combined with the **candidate filter** that blocks later rows while an earlier row is pending.
+
+---
+
+## Delivery & Processing Guarantees
+
+- **At-least-once ingest:** Kafka offsets are acknowledged only after the consumer persists to `messages`, so a crash before persist acknowledgement can cause redelivery.
+- **Ingest deduplication on redelivery:** `uuid` is deterministic from `topic:partition:offset`, and consumer writes use upsert semantics, so the same Kafka record does not create duplicate rows.
+- **Ownership-safe processing updates:** Worker status updates (`PROCESSED`/`FAILED`/`STOPPED`) require both `id` and `container_id` to match. A stale worker cannot overwrite a row after another worker reclaims it.
+- **At-least-once processing overall:** Each claim cycle processes a row at most once for the owning worker, but orphan reclaim can reassign and reprocess messages after failures/timeouts.
+- **Handler contract:** user handlers should be idempotent because reprocessing can occur.
 
 ---
 
@@ -254,7 +264,7 @@ superduper:
 MessageHandler superduperWorker() {
   return row -> {
     // do your processing...
-    return ProcessingResult.SUCCESS; // or RETRY
+    return ProcessingResult.SUCCESS; // or FAILURE
   };
 }
 ```
@@ -265,7 +275,7 @@ MessageHandler superduperWorker() {
 ReactiveMessageHandler superduperWorkerReactive() {
   return row -> Mono.fromCallable(() -> {
     // reactive processing, I/O, etc.
-    return ProcessingResult.SUCCESS; // or RETRY
+    return ProcessingResult.SUCCESS; // or FAILURE
   });
 }
 ```

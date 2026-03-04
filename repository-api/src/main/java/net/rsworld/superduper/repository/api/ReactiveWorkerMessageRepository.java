@@ -8,9 +8,9 @@ public interface ReactiveWorkerMessageRepository {
 
     Flux<ClaimedMessage> fetchClaimedForWorker(String workerId);
 
-    Mono<Void> markProcessed(long id);
+    Mono<Boolean> markProcessed(long id, String containerId);
 
-    Mono<Void> markReadyForRetry(long id, int retryCount);
+    Mono<Boolean> markFailed(long id, int retryCount, String containerId);
 
-    Mono<Void> markStopped(long id, int retryCount);
+    Mono<Boolean> markStopped(long id, int retryCount, String containerId);
 }

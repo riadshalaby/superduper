@@ -11,7 +11,6 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
-import reactor.core.publisher.Mono;
 
 class KafkaReactiveR2dbcConsumerService {
     private static final String OCCURRED_AT_HEADER = "occurred_at";
@@ -62,20 +61,17 @@ class KafkaReactiveR2dbcConsumerService {
                             payloadSize,
                             elapsedMs(started)));
                 })
-                .onErrorResume(e -> {
-                    observer.consumerFailed(
-                            new ConsumerObservation(
-                                    MODE_REACTIVE,
-                                    consumerRecord.topic(),
-                                    consumerRecord.partition(),
-                                    consumerRecord.offset(),
-                                    key,
-                                    payloadSize,
-                                    elapsedMs(started)),
-                            e);
-                    return Mono.empty();
-                })
-                .subscribe();
+                .doOnError(e -> observer.consumerFailed(
+                        new ConsumerObservation(
+                                MODE_REACTIVE,
+                                consumerRecord.topic(),
+                                consumerRecord.partition(),
+                                consumerRecord.offset(),
+                                key,
+                                payloadSize,
+                                elapsedMs(started)),
+                        e))
+                .block();
     }
 
     private static long elapsedMs(long startedNanos) {

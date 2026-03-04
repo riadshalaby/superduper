@@ -31,20 +31,20 @@ class ExampleReactiveMessageHandler implements ReactiveMessageHandler {
 
             if (content.contains("always-fail")) {
                 log.warn(
-                        "[Reactive Worker] id={} key={} attempt={} -> RETRY (always-fail)",
+                        "[Reactive Worker] id={} key={} attempt={} -> FAILURE (always-fail)",
                         row.id(),
                         row.key(),
                         attempt);
-                return ProcessingResult.RETRY;
+                return ProcessingResult.FAILURE;
             }
 
             if (content.contains("retry-once") && attempt == 1) {
                 log.info(
-                        "[Reactive Worker] id={} key={} attempt={} -> RETRY (retry-once first attempt)",
+                        "[Reactive Worker] id={} key={} attempt={} -> FAILURE (retry-once first attempt)",
                         row.id(),
                         row.key(),
                         attempt);
-                return ProcessingResult.RETRY;
+                return ProcessingResult.FAILURE;
             }
 
             log.info(
