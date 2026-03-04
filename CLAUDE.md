@@ -1,11 +1,9 @@
-# SUPERDUPER Agent Instructions
+# CLAUDE
 
 ## Scope
 - This file is the single source of truth for agent working rules and project context.
-- `RESTART_CONTEXT.txt` is progress history only (no duplicated permanent instructions).
 
 ## Session Workflow
-- Update `RESTART_CONTEXT.txt` whenever progress is made (code changes, decisions, test results, blockers, next steps).
 - Keep entries concise and timestamped in UTC.
 - Run formatting after every code change:
   - `mvn -q spotless:apply`
@@ -19,7 +17,7 @@
   - Full tests: `mvn -T 1C -q test`
 
 ## Language Rules
-- Use English for code comments, log/output messages, `README.md`, and `RESTART_CONTEXT.txt` entries.
+- Use English for code comments, log/output messages, `README.md`.
 
 ## Project Goal
 Build and maintain the library described in `README.md`:
@@ -53,3 +51,40 @@ Build and maintain the library described in `README.md`:
   - `worker-blocking/src/main/java/net/rsworld/superduper/worker/blocking/SuperDuperWorkerService.java`
   - `worker-reactive/src/main/java/net/rsworld/superduper/worker/reactive/SuperDuperWorkerReactiveService.java`
 - Run: `mvn -T 1C -q test`
+
+## AI Workflow Rules
+- Plan Mode:
+  - writes `.ai/PLAN.md`
+  - never edits code
+- Review Mode:
+  - writes `.ai/REVIEW.md`
+  - never edits code
+- Implement Mode:
+  - implements `.ai/PLAN.md`
+  - updates tests
+  - must not invent requirements
+
+## AI Operating Mode
+- Mode is selected by the launcher prompt/context:
+  - Generic launcher: `scripts/ai-launch.sh <role> <agent> [agent-options...]`
+    - roles: `plan`, `implement`, `review`
+    - agents: `claude`, `codex`
+  - Convenience wrappers:
+    - `scripts/ai-plan.sh [agent] [agent-options...]` (default agent: `claude`)
+    - `scripts/ai-implement.sh [agent] [agent-options...]` (default agent: `codex`)
+    - `scripts/ai-review.sh [agent] [agent-options...]` (default agent: `claude`)
+- No `.ai/MODE` file is used.
+
+## Release Rules
+- Never release directly from a feature branch.
+- A feature is releasable only after it is merged into `main` via PR and required checks/tests pass.
+- Create tag `vX.Y.Z` on the corresponding merge commit in `main` (no unrelated extra commit between merge and tag).
+- After the release is done:
+  - reset `.ai/PLAN.md` for the next cycle,
+  - reset `.ai/REVIEW.md` for the next cycle,
+  - rework `ROADMAP.md` to prepare scope and priorities for the next version.
+
+## Git Rules
+- Work in the current branch.
+- Never auto commit.
+- Human reviews diffs before commit.
