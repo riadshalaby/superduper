@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -127,6 +128,69 @@ class WorkerBlockingIntegrationTest {
         String status = jdbc.queryForObject(
                 "SELECT status FROM messages WHERE uuid=:uuid", new MapSqlParameterSource("uuid", "ju3"), String.class);
         assertThat(status).isEqualTo("READY");
+    }
+
+    @Test
+    void orphanReclaimer_defaultWindow_doesNotReclaim31SecondHeartbeat() {
+        resetData();
+        seedRows("hb1", "k-hb", "v-hb", "READY");
+
+        jdbc.update(
+                "UPDATE messages "
+                        + "SET status='PROCESSING', container_id='w-hb', last_updated=NOW() "
+                        + "WHERE uuid=:uuid",
+                new MapSqlParameterSource("uuid", "hb1"));
+        jdbc.update(
+                "INSERT INTO container_heartbeats(container_id, last_heartbeat) "
+                        + "VALUES ('w-hb', NOW() - INTERVAL '31 seconds')",
+                new MapSqlParameterSource());
+
+        OrphanReclaimer rec = new OrphanReclaimer(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                120_000,
+                90_000);
+        rec.reclaim();
+
+        String status = jdbc.queryForObject(
+                "SELECT status FROM messages WHERE uuid=:uuid", new MapSqlParameterSource("uuid", "hb1"), String.class);
+        assertThat(status).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void orphanReclaimer_reclaimRefreshesLastUpdated() {
+        resetData();
+        seedRows("stale1", "k-stale", "v-stale", "READY");
+
+        jdbc.update(
+                "UPDATE messages "
+                        + "SET status='PROCESSING', container_id='w-stale', last_updated=NOW() - INTERVAL '10 minutes' "
+                        + "WHERE uuid=:uuid",
+                new MapSqlParameterSource("uuid", "stale1"));
+        Timestamp before = jdbc.queryForObject(
+                "SELECT last_updated FROM messages WHERE uuid=:uuid",
+                new MapSqlParameterSource("uuid", "stale1"),
+                Timestamp.class);
+
+        OrphanReclaimer rec = new OrphanReclaimer(
+                maintenanceRepository,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                120_000,
+                90_000);
+        rec.reclaim();
+
+        String status = jdbc.queryForObject(
+                "SELECT status FROM messages WHERE uuid=:uuid",
+                new MapSqlParameterSource("uuid", "stale1"),
+                String.class);
+        Timestamp after = jdbc.queryForObject(
+                "SELECT last_updated FROM messages WHERE uuid=:uuid",
+                new MapSqlParameterSource("uuid", "stale1"),
+                Timestamp.class);
+        assertThat(status).isEqualTo("READY");
+        assertThat(before).isNotNull();
+        assertThat(after).isNotNull();
+        assertThat(after).isAfter(before);
     }
 
     @Test

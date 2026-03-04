@@ -30,23 +30,23 @@ class ExampleBlockingMessageHandler implements MessageHandler {
         if (content.contains("always-fail")) {
             if (log.isWarnEnabled()) {
                 log.warn(
-                        "[Blocking Worker] id={} key={} attempt={} -> RETRY (always-fail)",
+                        "[Blocking Worker] id={} key={} attempt={} -> FAILURE (always-fail)",
                         row.id(),
                         row.key(),
                         attempt);
             }
-            return ProcessingResult.RETRY;
+            return ProcessingResult.FAILURE;
         }
 
         if (content.contains("retry-once") && attempt == 1) {
             if (log.isInfoEnabled()) {
                 log.info(
-                        "[Blocking Worker] id={} key={} attempt={} -> RETRY (retry-once first attempt)",
+                        "[Blocking Worker] id={} key={} attempt={} -> FAILURE (retry-once first attempt)",
                         row.id(),
                         row.key(),
                         attempt);
             }
-            return ProcessingResult.RETRY;
+            return ProcessingResult.FAILURE;
         }
 
         if (log.isInfoEnabled()) {

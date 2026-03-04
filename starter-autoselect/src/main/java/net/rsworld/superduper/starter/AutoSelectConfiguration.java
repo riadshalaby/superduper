@@ -123,7 +123,7 @@ public class AutoSelectConfiguration {
             SuperduperObserver observer,
             WorkerProperties workerProperties) {
         return new OrphanReclaimer(maintenanceRepository, observer, workerProperties.getOrphanTimeoutMs(), (int)
-                workerProperties.getHeartbeatIntervalMs());
+                workerProperties.getHeartbeatWindowMs());
     }
 
     @Bean
@@ -163,6 +163,6 @@ public class AutoSelectConfiguration {
             SuperduperObserver observer,
             WorkerProperties workerProperties) {
         return new ReactiveOrphanReclaimer(maintenanceRepository, observer, workerProperties.getOrphanTimeoutMs(), (int)
-                workerProperties.getHeartbeatIntervalMs());
+                workerProperties.getHeartbeatWindowMs());
     }
 }

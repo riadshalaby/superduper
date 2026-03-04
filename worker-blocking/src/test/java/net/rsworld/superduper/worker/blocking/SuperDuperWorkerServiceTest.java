@@ -1,6 +1,10 @@
 package net.rsworld.superduper.worker.blocking;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -17,12 +21,14 @@ class SuperDuperWorkerServiceTest {
     @Test
     void process_successAndRetryPaths() {
         WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
+        when(messageRepository.markProcessed(anyLong(), anyString())).thenReturn(true);
+        when(messageRepository.markStopped(anyLong(), anyInt(), anyString())).thenReturn(true);
 
         List<ClaimedMessage> claimedRows =
                 List.of(new ClaimedMessage(1L, "k1", "v1", 0, "cid"), new ClaimedMessage(2L, "k2", "v2", 1, "cid"));
         when(messageRepository.fetchClaimedForWorker(any())).thenReturn(claimedRows);
 
-        MessageHandler handler = row -> row.id() == 1L ? ProcessingResult.SUCCESS : ProcessingResult.RETRY;
+        MessageHandler handler = row -> row.id() == 1L ? ProcessingResult.SUCCESS : ProcessingResult.FAILURE;
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
 
@@ -36,17 +42,18 @@ class SuperDuperWorkerServiceTest {
                 2);
         svc.process();
 
-        verify(messageRepository).markProcessed(1L);
-        verify(messageRepository).markStopped(2L, 2);
+        verify(messageRepository).markProcessed(eq(1L), anyString());
+        verify(messageRepository).markStopped(eq(2L), eq(2), anyString());
     }
 
     @Test
-    void process_retryBelowLimit_requeuesReady() {
+    void process_failureBelowLimit_marksFailed() {
         WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
         when(messageRepository.fetchClaimedForWorker(any()))
                 .thenReturn(List.of(new ClaimedMessage(10L, "k1", "v1", 0, "cid")));
+        when(messageRepository.markFailed(anyLong(), anyInt(), anyString())).thenReturn(true);
 
-        MessageHandler handler = row -> ProcessingResult.RETRY;
+        MessageHandler handler = row -> ProcessingResult.FAILURE;
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
 
@@ -60,6 +67,6 @@ class SuperDuperWorkerServiceTest {
                 3);
         svc.process();
 
-        verify(messageRepository).markReadyForRetry(10L, 1);
+        verify(messageRepository).markFailed(eq(10L), eq(1), anyString());
     }
 }

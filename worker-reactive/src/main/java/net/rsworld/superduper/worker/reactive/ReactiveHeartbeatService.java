@@ -21,7 +21,7 @@ public class ReactiveHeartbeatService {
     }
 
     @Scheduled(
-            fixedRateString = "${superduper.worker.heartbeat-interval-ms:30000}",
+            fixedDelayString = "${superduper.worker.heartbeat-interval-ms:30000}",
             initialDelayString = "${superduper.worker.heartbeat-initial-delay-ms:0}")
     public void heartbeat() {
         long started = System.nanoTime();

@@ -1,6 +1,7 @@
 package net.rsworld.superduper.consumer.reactive;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -53,7 +54,9 @@ class KafkaReactiveR2dbcConsumerServiceTest {
                         org.mockito.ArgumentMatchers.any(Instant.class)))
                 .thenReturn(Mono.error(new RuntimeException("db fail")));
 
-        svc.onMessage(new ConsumerRecord<>("t", 0, 0L, "k", "v"), ack);
+        assertThatThrownBy(() -> svc.onMessage(new ConsumerRecord<>("t", 0, 0L, "k", "v"), ack))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("db fail");
 
         verify(ack, never()).acknowledge();
     }

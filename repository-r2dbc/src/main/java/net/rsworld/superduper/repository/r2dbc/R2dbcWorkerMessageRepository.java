@@ -52,31 +52,37 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
     }
 
     @Override
-    public Mono<Void> markProcessed(long id) {
+    public Mono<Boolean> markProcessed(long id, String containerId) {
         return db.sql(dialect.markProcessedSql())
                 .bind("id", id)
+                .bind("cid", containerId)
                 .fetch()
                 .rowsUpdated()
-                .then();
+                .map(updated -> updated > 0)
+                .defaultIfEmpty(false);
     }
 
     @Override
-    public Mono<Void> markReadyForRetry(long id, int retryCount) {
-        return db.sql(dialect.markReadyForRetrySql())
+    public Mono<Boolean> markFailed(long id, int retryCount, String containerId) {
+        return db.sql(dialect.markFailedSql())
                 .bind("id", id)
                 .bind("r", retryCount)
+                .bind("cid", containerId)
                 .fetch()
                 .rowsUpdated()
-                .then();
+                .map(updated -> updated > 0)
+                .defaultIfEmpty(false);
     }
 
     @Override
-    public Mono<Void> markStopped(long id, int retryCount) {
+    public Mono<Boolean> markStopped(long id, int retryCount, String containerId) {
         return db.sql(dialect.markStoppedSql())
                 .bind("id", id)
                 .bind("r", retryCount)
+                .bind("cid", containerId)
                 .fetch()
                 .rowsUpdated()
-                .then();
+                .map(updated -> updated > 0)
+                .defaultIfEmpty(false);
     }
 }

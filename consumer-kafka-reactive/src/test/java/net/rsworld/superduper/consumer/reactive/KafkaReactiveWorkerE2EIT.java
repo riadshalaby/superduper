@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionFactory;
+import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
@@ -120,11 +121,13 @@ class KafkaReactiveWorkerE2EIT {
                 net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                 10,
                 5);
+        String workerId = ManagementFactory.getRuntimeMXBean().getName();
 
-        Long first = messageRepository.claimBatch("w1", 10, 5).block();
+        Long first = messageRepository.claimBatch(workerId, 10, 5).block();
         assertThat(first).isEqualTo(2L);
 
-        var list = messageRepository.fetchClaimedForWorker("w1").collectList().block();
+        var list =
+                messageRepository.fetchClaimedForWorker(workerId).collectList().block();
         for (var row : list) {
             var processOne = svc.getClass()
                     .getDeclaredMethod("processOne", net.rsworld.superduper.repository.api.ClaimedMessage.class);
@@ -132,9 +135,9 @@ class KafkaReactiveWorkerE2EIT {
             ((reactor.core.publisher.Mono<Void>) processOne.invoke(svc, row)).block();
         }
 
-        Long second = messageRepository.claimBatch("w1", 10, 5).block();
+        Long second = messageRepository.claimBatch(workerId, 10, 5).block();
         assertThat(second).isEqualTo(1L);
-        list = messageRepository.fetchClaimedForWorker("w1").collectList().block();
+        list = messageRepository.fetchClaimedForWorker(workerId).collectList().block();
         for (var row : list) {
             var processOne = svc.getClass()
                     .getDeclaredMethod("processOne", net.rsworld.superduper.repository.api.ClaimedMessage.class);

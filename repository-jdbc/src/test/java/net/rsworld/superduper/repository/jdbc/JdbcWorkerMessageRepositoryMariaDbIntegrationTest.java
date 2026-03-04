@@ -52,13 +52,14 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         long second = repo.claimBatch("w1", 10, 5);
         assertThat(second).isZero();
 
-        repo.fetchClaimedForWorker("w1").forEach(row -> repo.markProcessed(row.id()));
+        repo.fetchClaimedForWorker("w1")
+                .forEach(row -> assertThat(repo.markProcessed(row.id(), "w1")).isTrue());
         long third = repo.claimBatch("w1", 10, 5);
         assertThat(third).isEqualTo(1);
     }
 
     @Test
-    void fetchAndRetryTransitions_work_onMariaDb() {
+    void fetchAndFailureTransitions_work_onMariaDb() {
         resetData();
         insert("u4", "k4", "v4", "READY");
 
@@ -69,12 +70,23 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         assertThat(rows).hasSize(1);
 
         long id = rows.getFirst().id();
-        repo.markReadyForRetry(id, 1);
+        boolean failed = repo.markFailed(id, 1, "w1");
+        assertThat(failed).isTrue();
+        String failedStatus =
+                jdbc.getJdbcTemplate().queryForObject("SELECT status FROM messages WHERE id=" + id, String.class);
+        assertThat(failedStatus).isEqualTo("FAILED");
         Integer retry =
                 jdbc.getJdbcTemplate().queryForObject("SELECT retry_count FROM messages WHERE id=" + id, Integer.class);
         assertThat(retry).isEqualTo(1);
 
-        repo.markStopped(id, 2);
+        long reclaimed = repo.claimBatch("w2", 10, 5);
+        assertThat(reclaimed).isEqualTo(1L);
+
+        boolean staleUpdateAccepted = repo.markStopped(id, 2, "w1");
+        assertThat(staleUpdateAccepted).isFalse();
+
+        boolean stopByOwner = repo.markStopped(id, 2, "w2");
+        assertThat(stopByOwner).isTrue();
         String status =
                 jdbc.getJdbcTemplate().queryForObject("SELECT status FROM messages WHERE id=" + id, String.class);
         assertThat(status).isEqualTo("STOPPED");

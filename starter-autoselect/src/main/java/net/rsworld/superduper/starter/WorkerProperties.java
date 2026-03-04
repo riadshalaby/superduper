@@ -9,6 +9,7 @@ public class WorkerProperties {
     private long claimIntervalMs = 5000;
     private long claimInitialDelayMs = 3000;
     private long heartbeatIntervalMs = 30000;
+    private long heartbeatWindowMs = 90000;
     private long heartbeatInitialDelayMs = 0;
     private int orphanTimeoutMs = 120000;
     private long orphanInitialDelayMs = 15000;
@@ -52,6 +53,14 @@ public class WorkerProperties {
 
     public void setHeartbeatIntervalMs(long heartbeatIntervalMs) {
         this.heartbeatIntervalMs = heartbeatIntervalMs;
+    }
+
+    public long getHeartbeatWindowMs() {
+        return heartbeatWindowMs;
+    }
+
+    public void setHeartbeatWindowMs(long heartbeatWindowMs) {
+        this.heartbeatWindowMs = heartbeatWindowMs;
     }
 
     public long getHeartbeatInitialDelayMs() {

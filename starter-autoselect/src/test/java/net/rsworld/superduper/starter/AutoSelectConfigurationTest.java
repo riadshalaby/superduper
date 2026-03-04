@@ -35,6 +35,7 @@ class AutoSelectConfigurationTest {
         p.setBatchSize(100);
         p.setMaxRetries(5);
         p.setHeartbeatIntervalMs(30_000);
+        p.setHeartbeatWindowMs(90_000);
         p.setOrphanTimeoutMs(120_000);
         return p;
     }

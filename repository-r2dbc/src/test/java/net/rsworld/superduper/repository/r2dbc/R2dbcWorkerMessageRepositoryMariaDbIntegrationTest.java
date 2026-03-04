@@ -61,7 +61,8 @@ class R2dbcWorkerMessageRepositoryMariaDbIntegrationTest {
 
         var firstRows = repo.fetchClaimedForWorker("w1").collectList().block();
         assertThat(firstRows).isNotNull();
-        firstRows.forEach(row -> repo.markProcessed(row.id()).block());
+        firstRows.forEach(
+                row -> assertThat(repo.markProcessed(row.id(), "w1").block()).isTrue());
         Long third = repo.claimBatch("w1", 10, 5).block();
         assertThat(third).isEqualTo(1L);
     }

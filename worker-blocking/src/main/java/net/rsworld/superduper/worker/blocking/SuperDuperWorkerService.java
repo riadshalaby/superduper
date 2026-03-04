@@ -3,11 +3,14 @@ package net.rsworld.superduper.worker.blocking;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicLong;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.api.WorkerObservation;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -17,6 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @SuppressWarnings("java:S107")
 public class SuperDuperWorkerService {
     private static final String MODE_BLOCKING = "blocking";
+    private static final Logger log = LoggerFactory.getLogger(SuperDuperWorkerService.class);
 
     private final WorkerMessageRepository messageRepository;
     private final TransactionTemplate tx;
@@ -105,21 +109,21 @@ public class SuperDuperWorkerService {
             fixedDelayString = "${superduper.worker.claim-interval-ms:5000}",
             initialDelayString = "${superduper.worker.claim-initial-delay-ms:3000}")
     public void schedule() {
-        final long[] claimedCount = new long[] {0L};
+        AtomicLong claimedCount = new AtomicLong(0L);
         long claimStarted = System.nanoTime();
         try {
             lockExec.executeWithLock(
-                    (Runnable) () -> claimedCount[0] = claimBatch(),
+                    (Runnable) () -> claimedCount.set(claimBatch()),
                     new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
                     new WorkerObservation(MODE_BLOCKING, workerId, null, null, batch, elapsedMs(claimStarted)),
-                    Math.toIntExact(claimedCount[0]));
+                    Math.toIntExact(claimedCount.get()));
         } catch (RuntimeException e) {
             observer.workerFailed(
                     new WorkerObservation(MODE_BLOCKING, workerId, null, null, batch, elapsedMs(claimStarted)), e);
             return;
         }
-        if (claimedCount[0] > 0) {
+        if (claimedCount.get() > 0) {
             process();
         }
     }
@@ -134,11 +138,13 @@ public class SuperDuperWorkerService {
 
         for (var row : rows) {
             long started = System.nanoTime();
-            ProcessingResult res = ProcessingResult.RETRY;
+            ProcessingResult res = ProcessingResult.FAILURE;
+            Throwable failureCause = null;
             try {
                 res = handler.handle(new MessageRow(
                         row.id(), null, row.key(), row.content(), "PROCESSING", row.retryCount(), row.containerId()));
             } catch (RuntimeException | MessageHandlingException e) {
+                failureCause = e;
                 observer.workerFailed(
                         new WorkerObservation(
                                 MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
@@ -146,22 +152,52 @@ public class SuperDuperWorkerService {
             }
             int retry = row.retryCount() == null ? 0 : row.retryCount();
             if (res == ProcessingResult.SUCCESS) {
-                messageRepository.markProcessed(row.id());
-                observer.workerProcessed(
-                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                boolean updated = messageRepository.markProcessed(row.id(), workerId);
+                if (!updated) {
+                    warnOwnershipLost(row.id(), "markProcessed");
+                } else {
+                    observer.workerProcessed(
+                            new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                }
             } else {
+                if (failureCause == null) {
+                    observer.workerFailed(
+                            new WorkerObservation(
+                                    MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
+                            new IllegalStateException("Message handler returned FAILURE"));
+                }
                 retry++;
                 if (retry < maxRetries) {
-                    messageRepository.markReadyForRetry(row.id(), retry);
-                    observer.workerRetried(
-                            new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                    boolean updated = messageRepository.markFailed(row.id(), retry, workerId);
+                    if (!updated) {
+                        warnOwnershipLost(row.id(), "markFailed");
+                    } else {
+                        observer.workerRetried(new WorkerObservation(
+                                MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                    }
                 } else {
-                    messageRepository.markStopped(row.id(), retry);
-                    observer.workerStopped(
-                            new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                    boolean updated = messageRepository.markStopped(row.id(), retry, workerId);
+                    if (!updated) {
+                        warnOwnershipLost(row.id(), "markStopped");
+                    } else {
+                        observer.workerStopped(new WorkerObservation(
+                                MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                    }
                 }
             }
         }
+    }
+
+    private void warnOwnershipLost(long messageId, String operation) {
+        if (!log.isWarnEnabled()) {
+            return;
+        }
+        log.warn(
+                "worker.ownership.lost mode={} workerId={} messageId={} operation={}",
+                MODE_BLOCKING,
+                workerId,
+                messageId,
+                operation);
     }
 
     private static long elapsedMs(long startedNanos) {

@@ -46,19 +46,22 @@ public final class MariaDbR2dbcSqlDialect implements R2dbcSqlDialect {
 
     @Override
     public String markProcessedSql() {
-        return "UPDATE %s SET status='PROCESSED', processed_at=NOW(), last_updated=NOW() WHERE id=:id"
+        return ("UPDATE %s SET status='PROCESSED', processed_at=NOW(), last_updated=NOW() "
+                        + "WHERE id=:id AND container_id=:cid")
                 .formatted(messagesTable);
     }
 
     @Override
-    public String markReadyForRetrySql() {
-        return "UPDATE %s SET status='READY', retry_count=:r, container_id=NULL, last_updated=NOW() WHERE id=:id"
+    public String markFailedSql() {
+        return ("UPDATE %s SET status='FAILED', retry_count=:r, container_id=NULL, last_updated=NOW() "
+                        + "WHERE id=:id AND container_id=:cid")
                 .formatted(messagesTable);
     }
 
     @Override
     public String markStoppedSql() {
-        return "UPDATE %s SET status='STOPPED', retry_count=:r, container_id=NULL, last_updated=NOW() WHERE id=:id"
+        return ("UPDATE %s SET status='STOPPED', retry_count=:r, container_id=NULL, last_updated=NOW() "
+                        + "WHERE id=:id AND container_id=:cid")
                 .formatted(messagesTable);
     }
 
@@ -71,14 +74,14 @@ public final class MariaDbR2dbcSqlDialect implements R2dbcSqlDialect {
 
     @Override
     public String reclaimStaleProcessingSql() {
-        return ("UPDATE %s SET status='READY', container_id=NULL "
+        return ("UPDATE %s SET status='READY', container_id=NULL, last_updated=NOW() "
                         + "WHERE status='PROCESSING' AND last_updated < TIMESTAMPADD(SECOND, -:t, NOW())")
                 .formatted(messagesTable);
     }
 
     @Override
     public String reclaimMissingHeartbeatsSql() {
-        return ("UPDATE %s SET status='READY', container_id=NULL WHERE status='PROCESSING' "
+        return ("UPDATE %s SET status='READY', container_id=NULL, last_updated=NOW() WHERE status='PROCESSING' "
                         + "AND (container_id IS NULL OR container_id NOT IN ("
                         + "SELECT container_id FROM %s "
                         + "WHERE last_heartbeat >= TIMESTAMPADD(SECOND, -:hb, NOW())))")

@@ -59,7 +59,8 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         List<Long> firstIds = new ArrayList<>();
         for (var row : firstRows) {
             firstIds.add(row.id());
-            repo.markProcessed(row.id());
+            boolean processed = repo.markProcessed(row.id(), "w1");
+            assertThat(processed).isTrue();
         }
         Integer processedAtCount = jdbc.getJdbcTemplate()
                 .queryForObject(
@@ -72,7 +73,7 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
     }
 
     @Test
-    void fetchAndRetryTransitions_work() {
+    void fetchAndFailureTransitions_work() {
         resetData();
         insert("u4", "k4", "v4", "READY");
 
@@ -83,12 +84,26 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         assertThat(rows).hasSize(1);
 
         long id = rows.getFirst().id();
-        repo.markReadyForRetry(id, 1);
+        boolean failed = repo.markFailed(id, 1, "w1");
+        assertThat(failed).isTrue();
+        String failedStatus =
+                jdbc.getJdbcTemplate().queryForObject("SELECT status FROM messages WHERE id=" + id, String.class);
+        assertThat(failedStatus).isEqualTo("FAILED");
         Integer retry =
                 jdbc.getJdbcTemplate().queryForObject("SELECT retry_count FROM messages WHERE id=" + id, Integer.class);
         assertThat(retry).isEqualTo(1);
 
-        repo.markStopped(id, 2);
+        boolean stopped = repo.markStopped(id, 2, "w1");
+        assertThat(stopped).isFalse();
+
+        long reclaimed = repo.claimBatch("w2", 10, 5);
+        assertThat(reclaimed).isEqualTo(1L);
+
+        boolean staleUpdateAccepted = repo.markStopped(id, 2, "w1");
+        assertThat(staleUpdateAccepted).isFalse();
+
+        boolean stopByOwner = repo.markStopped(id, 2, "w2");
+        assertThat(stopByOwner).isTrue();
         String status =
                 jdbc.getJdbcTemplate().queryForObject("SELECT status FROM messages WHERE id=" + id, String.class);
         assertThat(status).isEqualTo("STOPPED");
