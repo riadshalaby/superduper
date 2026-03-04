@@ -34,7 +34,7 @@ public class ReactiveHeartbeatService {
                             new MaintenanceObservation("reactive", workerId, "heartbeat", elapsedMs(started)), e);
                     return reactor.core.publisher.Mono.empty();
                 })
-                .subscribe();
+                .block();
     }
 
     private static long elapsedMs(long startedNanos) {

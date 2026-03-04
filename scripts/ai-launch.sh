@@ -65,7 +65,7 @@ echo "Expected output: $expected_output"
 case "$agent" in
   claude)
     exec claude \
-      --permission-mode dontAsk \
+      --permission-mode acceptEdits \
       --add-dir "$REPO_ROOT" \
       "$@" --system-prompt-file "$prompt_file"
     ;;

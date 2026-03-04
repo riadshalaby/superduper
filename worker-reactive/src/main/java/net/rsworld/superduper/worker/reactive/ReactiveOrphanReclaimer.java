@@ -41,7 +41,7 @@ public class ReactiveOrphanReclaimer {
                             new MaintenanceObservation("reactive", "n/a", "orphan-reclaim", elapsedMs(started)), e);
                     return Mono.empty();
                 })
-                .subscribe();
+                .block();
     }
 
     private static long elapsedMs(long startedNanos) {
