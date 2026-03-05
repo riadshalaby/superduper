@@ -19,6 +19,7 @@ import org.springframework.transaction.reactive.TransactionalOperator;
 public class R2dbcRepositoryAutoConfiguration {
 
     @Bean
+    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public SqlDialect r2dbcSqlDialect(
             @Value("${superduper.db.dialect:}") String configuredDialect,
@@ -45,12 +46,14 @@ public class R2dbcRepositoryAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public R2dbcSqlDialect r2dbcSqlDialectStrategy(SqlDialect dialect, R2dbcTableProperties tableProperties) {
         return R2dbcSqlDialects.from(dialect, tableProperties);
     }
 
     @Bean
+    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public ReactiveMessageIngestRepository reactiveMessageIngestRepository(DatabaseClient db, R2dbcSqlDialect dialect) {
         return new R2dbcMessageIngestRepository(db, dialect);
@@ -64,7 +67,7 @@ public class R2dbcRepositoryAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(TransactionalOperator.class)
+    @ConditionalOnBean({DatabaseClient.class, TransactionalOperator.class})
     @ConditionalOnMissingBean
     public ReactiveWorkerMessageRepository reactiveWorkerMessageRepository(
             DatabaseClient db, TransactionalOperator tx, R2dbcSqlDialect dialect) {
@@ -72,6 +75,7 @@ public class R2dbcRepositoryAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public ReactiveWorkerMaintenanceRepository reactiveWorkerMaintenanceRepository(
             DatabaseClient db, R2dbcSqlDialect dialect) {

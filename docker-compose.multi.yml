@@ -128,6 +128,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      SPRING_LIQUIBASE_ENABLED: "true"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
       SPRING_DATASOURCE_USERNAME: superduper
       SPRING_DATASOURCE_PASSWORD: superduper
@@ -145,6 +146,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
       SPRING_DATASOURCE_USERNAME: superduper
       SPRING_DATASOURCE_PASSWORD: superduper
@@ -162,6 +164,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
       SPRING_DATASOURCE_USERNAME: superduper
       SPRING_DATASOURCE_PASSWORD: superduper

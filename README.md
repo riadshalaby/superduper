@@ -411,6 +411,8 @@ mvn -DskipTests -q package
 Start everything:
 ```bash
 ./examples/run-multi.sh
+# optional: override per-seeder message count
+./examples/run-multi.sh 5000
 # or manually:
 # docker compose -f docker-compose.multi.yml up --build -d
 ```

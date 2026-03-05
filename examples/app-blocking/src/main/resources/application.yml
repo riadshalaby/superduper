@@ -16,6 +16,8 @@ spring:
     change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
 
 superduper:
+  db:
+    dialect: ${SUPERDUPER_DB_DIALECT:postgres}
   consumer:
     type: spring
   kafka:
