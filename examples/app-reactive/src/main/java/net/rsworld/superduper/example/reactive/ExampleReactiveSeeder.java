@@ -19,7 +19,6 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.listener.MessageListenerContainer;
-import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -36,7 +35,6 @@ class ExampleReactiveSeeder {
     private final SeedProgress progress;
     private final ObjectProvider<SuperDuperWorkerReactiveService> workerProvider;
     private final KafkaListenerEndpointRegistry listenerRegistry;
-    private final DatabaseClient db;
 
     ExampleReactiveSeeder(
             @Value("${superduper.kafka.bootstrap-servers}") String bootstrapServers,
@@ -47,8 +45,7 @@ class ExampleReactiveSeeder {
             @Value("${superduper.example.seed.readiness-timeout-seconds:30}") long readinessTimeoutSeconds,
             SeedProgress progress,
             ObjectProvider<SuperDuperWorkerReactiveService> workerProvider,
-            KafkaListenerEndpointRegistry listenerRegistry,
-            DatabaseClient db) {
+            KafkaListenerEndpointRegistry listenerRegistry) {
         this.bootstrapServers = bootstrapServers;
         this.topic = firstConfiguredTopic(configuredTopics);
         this.count = count;
@@ -58,14 +55,14 @@ class ExampleReactiveSeeder {
         this.progress = progress;
         this.workerProvider = workerProvider;
         this.listenerRegistry = listenerRegistry;
-        this.db = db;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() throws InterruptedException, ExecutionException {
         ensureWorkerAvailable();
         waitForConsumerReadiness();
-        prepareForNewSeedRun();
+        progress.startRun(count);
+        log.info("[Seeder] Initialized seed run={} expected={}.", progress.activeRun(), count);
         int run = progress.activeRun();
         publishSeedMessages(run);
         waitForHandlerCompletion();
@@ -110,15 +107,6 @@ class ExampleReactiveSeeder {
         } catch (ReflectiveOperationException ex) {
             return container.isRunning();
         }
-    }
-
-    private void prepareForNewSeedRun() {
-        db.sql("TRUNCATE TABLE messages RESTART IDENTITY").fetch().rowsUpdated().block();
-        progress.startRun(count);
-        log.info(
-                "[Seeder] Cleared messages table and initialized seed run={} expected={}.",
-                progress.activeRun(),
-                count);
     }
 
     private void publishSeedMessages(int run) throws InterruptedException, ExecutionException {

@@ -84,7 +84,28 @@ Build and maintain the library described in `README.md`:
   - reset `.ai/REVIEW.md` for the next cycle,
   - rework `ROADMAP.md` to prepare scope and priorities for the next version.
 
+## Strict PR Flow (Agent-Executable)
+- The agent may execute the full release sequence only after explicit user approval in that session.
+- Required order:
+  1. Commit approved changes on the feature branch (never on `main` directly).
+  2. Push feature branch to remote.
+  3. Open or update a PR targeting `main`.
+  4. Ensure required checks pass.
+  5. Merge PR into `main` (merge commit preferred unless repository policy enforces another method).
+  6. Switch to `main` and fast-forward/pull latest remote.
+  7. Create release tag `vX.Y.Z` on the PR merge commit in `main`.
+  8. Push the tag to remote.
+  9. Perform post-release housekeeping (`.ai/PLAN.md`, `.ai/REVIEW.md`, `ROADMAP.md`).
+- Tagging constraints:
+  - Tag must point to the merge commit that introduced the released feature.
+  - Do not add unrelated commits between merge and release tag.
+  - Never tag from a feature branch.
+- Safety constraints:
+  - Never force-push `main`.
+  - Never bypass PR checks.
+  - Never amend published release commits or tags unless explicitly requested.
+
 ## Git Rules
 - Work in the current branch.
-- Never auto commit.
+- Never auto commit (commit only when user explicitly asks).
 - Human reviews diffs before commit.

@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: superduper-seeder
+
+superduper:
+  seeder:
+    bootstrap-servers: kafka:29092
+    topic: superduper.example
+    count: 1000
+    keys: 20
+    instance-id: ${HOSTNAME:seeder-unknown}

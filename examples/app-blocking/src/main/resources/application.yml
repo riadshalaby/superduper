@@ -9,9 +9,9 @@ spring:
       - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcAutoConfiguration
       - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcRepositoriesAutoConfiguration
   datasource:
-    url: jdbc:postgresql://localhost:5432/superduper
-    username: superduper
-    password: superduper
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/superduper}
+    username: ${SPRING_DATASOURCE_USERNAME:superduper}
+    password: ${SPRING_DATASOURCE_PASSWORD:superduper}
   liquibase:
     change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
 
@@ -19,7 +19,7 @@ superduper:
   consumer:
     type: spring
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     group-id: example-blocking
     topic: superduper.example
   worker:
@@ -27,7 +27,7 @@ superduper:
     claim-interval-ms: 2000
   example:
     seed:
-      enabled: true
+      enabled: false
       count: 1000
       keys: 20
       await-timeout-seconds: 180
