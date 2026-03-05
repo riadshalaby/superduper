@@ -21,6 +21,7 @@
     <module>schema-liquibase</module>
     <module>examples/app-blocking</module>
     <module>examples/app-reactive</module>
+    <module>examples/seeder</module>
   </modules>
 
   <properties>

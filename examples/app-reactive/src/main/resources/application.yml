@@ -2,20 +2,20 @@ spring:
   application:
     name: superduper-example-reactive
   r2dbc:
-    url: r2dbc:postgresql://localhost:5432/superduper
-    username: superduper
-    password: superduper
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/superduper}
+    username: ${SPRING_R2DBC_USERNAME:superduper}
+    password: ${SPRING_R2DBC_PASSWORD:superduper}
   liquibase:
     change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
-    url: jdbc:postgresql://localhost:5432/superduper
-    user: superduper
-    password: superduper
+    url: ${SPRING_LIQUIBASE_URL:jdbc:postgresql://localhost:5432/superduper}
+    user: ${SPRING_LIQUIBASE_USER:superduper}
+    password: ${SPRING_LIQUIBASE_PASSWORD:superduper}
 
 superduper:
   consumer:
     type: reactor # selects reactive worker stack; Kafka consumer is still Spring Kafka
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     group-id: example-reactive
     topic: superduper.example
   worker:
@@ -24,7 +24,7 @@ superduper:
     claim-interval-ms: 500
   example:
     seed:
-      enabled: true
+      enabled: false
       count: 1000
       keys: 20
       await-timeout-seconds: 180

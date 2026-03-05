@@ -396,6 +396,60 @@ Metrics emitted (when enabled):
 
 ---
 
+## Running locally (multi-container demo)
+
+This mode runs:
+- 3 one-shot seeder containers (`seeder-1..3`) producing messages
+- 3 worker containers (`worker-1..3`) consuming and processing cooperatively
+- Kafka UI + Adminer for manual verification
+
+Prerequisite (pre-built jar images):
+```bash
+mvn -DskipTests -q package
+```
+
+Start everything:
+```bash
+./examples/run-multi.sh
+# or manually:
+# docker compose -f docker-compose.multi.yml up --build -d
+```
+
+Inspect services:
+- Kafka UI: `http://localhost:8089`
+- Adminer: `http://localhost:8090`
+  - System: `PostgreSQL`
+  - Server: `postgres`
+  - Username: `superduper`
+  - Password: `superduper`
+  - Database: `superduper`
+
+Follow logs:
+```bash
+docker compose -f docker-compose.multi.yml logs -f seeder-1 seeder-2 seeder-3
+docker compose -f docker-compose.multi.yml logs -f worker-1 worker-2 worker-3
+```
+
+Verify results in SQL:
+```sql
+SELECT COUNT(*) AS total_ingested FROM messages;
+SELECT status, COUNT(*) AS c FROM messages GROUP BY status ORDER BY status;
+SELECT id, key, status FROM messages WHERE key='order-7' ORDER BY id;
+SELECT container_id, last_heartbeat FROM container_heartbeats ORDER BY container_id;
+```
+
+Customize seeded volume (example):
+```bash
+SUPERDUPER_SEEDER_COUNT=500 docker compose -f docker-compose.multi.yml up --build seeder-1
+```
+
+Stop and cleanup:
+```bash
+docker compose -f docker-compose.multi.yml down -v
+```
+
+---
+
 ## Simple Use Case (1000 Messages Demo)
 
 Use this to clearly observe consumer ingest + worker processing behavior.

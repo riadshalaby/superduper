@@ -19,7 +19,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.stereotype.Component;
@@ -38,7 +37,6 @@ class ExampleBlockingSeeder {
     private final SeedProgress progress;
     private final ObjectProvider<SuperDuperWorkerService> workerProvider;
     private final ObjectProvider<KafkaListenerEndpointRegistry> listenerRegistryProvider;
-    private final NamedParameterJdbcTemplate jdbcTemplate;
 
     ExampleBlockingSeeder(
             @Value("${superduper.kafka.bootstrap-servers}") String bootstrapServers,
@@ -49,8 +47,7 @@ class ExampleBlockingSeeder {
             @Value("${superduper.example.seed.readiness-timeout-seconds:30}") long readinessTimeoutSeconds,
             SeedProgress progress,
             ObjectProvider<SuperDuperWorkerService> workerProvider,
-            ObjectProvider<KafkaListenerEndpointRegistry> listenerRegistryProvider,
-            NamedParameterJdbcTemplate jdbcTemplate) {
+            ObjectProvider<KafkaListenerEndpointRegistry> listenerRegistryProvider) {
         this.bootstrapServers = bootstrapServers;
         this.topic = firstConfiguredTopic(configuredTopics);
         this.count = count;
@@ -60,15 +57,15 @@ class ExampleBlockingSeeder {
         this.progress = progress;
         this.workerProvider = workerProvider;
         this.listenerRegistryProvider = listenerRegistryProvider;
-        this.jdbcTemplate = jdbcTemplate;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() throws InterruptedException, ExecutionException {
         ensureWorkerAvailable();
         waitForConsumerReadiness();
-        prepareForNewSeedRun();
-        String runToken = progress.activeRunToken();
+        String runToken = UUID.randomUUID().toString();
+        progress.startRun(count, runToken);
+        log.info("[Seeder] Initialized seed runToken={} expected={}.", runToken, count);
         publishSeedMessages(runToken);
         waitForHandlerCompletion();
     }
@@ -144,13 +141,6 @@ class ExampleBlockingSeeder {
         } catch (ReflectiveOperationException ex) {
             return container.isRunning();
         }
-    }
-
-    private void prepareForNewSeedRun() {
-        jdbcTemplate.getJdbcOperations().execute("TRUNCATE TABLE messages RESTART IDENTITY");
-        String runToken = UUID.randomUUID().toString();
-        progress.startRun(count, runToken);
-        log.info("[Seeder] Cleared messages table and initialized seed runToken={} expected={}.", runToken, count);
     }
 
     private void publishSeedMessages(String runToken) throws InterruptedException, ExecutionException {
