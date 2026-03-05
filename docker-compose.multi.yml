@@ -118,9 +118,39 @@ services:
       SUPERDUPER_SEEDER_INSTANCE_ID: seeder-3
     restart: "no"
 
+  seeder-4:
+    build:
+      context: ./examples/seeder
+      dockerfile: Dockerfile
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SUPERDUPER_SEEDER_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_SEEDER_TOPIC: superduper.example
+      SUPERDUPER_SEEDER_COUNT: ${SUPERDUPER_SEEDER_COUNT:-1000}
+      SUPERDUPER_SEEDER_KEYS: 20
+      SUPERDUPER_SEEDER_INSTANCE_ID: seeder-4
+    restart: "no"
+
+  seeder-5:
+    build:
+      context: ./examples/seeder
+      dockerfile: Dockerfile
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SUPERDUPER_SEEDER_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_SEEDER_TOPIC: superduper.example
+      SUPERDUPER_SEEDER_COUNT: ${SUPERDUPER_SEEDER_COUNT:-1000}
+      SUPERDUPER_SEEDER_KEYS: 20
+      SUPERDUPER_SEEDER_INSTANCE_ID: seeder-5
+    restart: "no"
+
   worker-1:
     build:
-      context: ./examples/app-blocking
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-blocking}
       dockerfile: Dockerfile
     depends_on:
       postgres:
@@ -132,13 +162,19 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
       SPRING_DATASOURCE_USERNAME: superduper
       SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
       SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SUPERDUPER_KAFKA_GROUP_ID: example-blocking
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-blocking}
       SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
 
   worker-2:
     build:
-      context: ./examples/app-blocking
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-blocking}
       dockerfile: Dockerfile
     depends_on:
       postgres:
@@ -150,13 +186,19 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
       SPRING_DATASOURCE_USERNAME: superduper
       SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
       SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SUPERDUPER_KAFKA_GROUP_ID: example-blocking
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-blocking}
       SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
 
   worker-3:
     build:
-      context: ./examples/app-blocking
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-blocking}
       dockerfile: Dockerfile
     depends_on:
       postgres:
@@ -168,6 +210,60 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
       SPRING_DATASOURCE_USERNAME: superduper
       SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
       SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SUPERDUPER_KAFKA_GROUP_ID: example-blocking
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-blocking}
+      SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
+
+  worker-4:
+    build:
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-blocking}
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_DATASOURCE_USERNAME: superduper
+      SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
+      SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-blocking}
+      SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
+
+  worker-5:
+    build:
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-blocking}
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_DATASOURCE_USERNAME: superduper
+      SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
+      SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-blocking}
       SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"

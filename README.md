@@ -399,8 +399,8 @@ Metrics emitted (when enabled):
 ## Running locally (multi-container demo)
 
 This mode runs:
-- 3 one-shot seeder containers (`seeder-1..3`) producing messages
-- 3 worker containers (`worker-1..3`) consuming and processing cooperatively
+- Up to 5 one-shot seeder containers (`seeder-1..5`) producing messages
+- Up to 5 worker containers (`worker-1..5`) consuming and processing cooperatively
 - Kafka UI + Adminer for manual verification
 
 Prerequisite (pre-built jar images):
@@ -410,11 +410,11 @@ mvn -DskipTests -q package
 
 Start everything:
 ```bash
-./examples/run-multi.sh
-# optional: override per-seeder message count
-./examples/run-multi.sh 5000
-# or manually:
-# docker compose -f docker-compose.multi.yml up --build -d
+./examples/run-multi.sh start
+# 2 worker + 2 seeder instances, blocking mode, 5000 messages per seeder
+./examples/run-multi.sh start --count 2 --mode blocking --seeder-count 5000
+# 2 worker + 2 seeder instances, reactive mode
+./examples/run-multi.sh start --count 2 --mode reactive --seeder-count 5000
 ```
 
 Inspect services:
@@ -428,8 +428,8 @@ Inspect services:
 
 Follow logs:
 ```bash
-docker compose -f docker-compose.multi.yml logs -f seeder-1 seeder-2 seeder-3
-docker compose -f docker-compose.multi.yml logs -f worker-1 worker-2 worker-3
+docker compose -f docker-compose.multi.yml logs -f seeder-1 seeder-2
+docker compose -f docker-compose.multi.yml logs -f worker-1 worker-2
 ```
 
 Verify results in SQL:
@@ -440,14 +440,11 @@ SELECT id, key, status FROM messages WHERE key='order-7' ORDER BY id;
 SELECT container_id, last_heartbeat FROM container_heartbeats ORDER BY container_id;
 ```
 
-Customize seeded volume (example):
-```bash
-SUPERDUPER_SEEDER_COUNT=500 docker compose -f docker-compose.multi.yml up --build seeder-1
-```
-
 Stop and cleanup:
 ```bash
-docker compose -f docker-compose.multi.yml down -v
+./examples/run-multi.sh stop
+./examples/run-multi.sh down
+./examples/run-multi.sh down --volumes
 ```
 
 ---

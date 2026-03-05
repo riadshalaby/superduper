@@ -6,8 +6,9 @@ import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -15,11 +16,11 @@ import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.reactive.TransactionalOperator;
 
 @AutoConfiguration
+@ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
 @EnableConfigurationProperties(R2dbcTableProperties.class)
 public class R2dbcRepositoryAutoConfiguration {
 
     @Bean
-    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public SqlDialect r2dbcSqlDialect(
             @Value("${superduper.db.dialect:}") String configuredDialect,
@@ -46,28 +47,24 @@ public class R2dbcRepositoryAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public R2dbcSqlDialect r2dbcSqlDialectStrategy(SqlDialect dialect, R2dbcTableProperties tableProperties) {
         return R2dbcSqlDialects.from(dialect, tableProperties);
     }
 
     @Bean
-    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public ReactiveMessageIngestRepository reactiveMessageIngestRepository(DatabaseClient db, R2dbcSqlDialect dialect) {
         return new R2dbcMessageIngestRepository(db, dialect);
     }
 
     @Bean
-    @ConditionalOnBean(ReactiveTransactionManager.class)
     @ConditionalOnMissingBean
     public TransactionalOperator transactionalOperator(ReactiveTransactionManager txManager) {
         return TransactionalOperator.create(txManager);
     }
 
     @Bean
-    @ConditionalOnBean({DatabaseClient.class, TransactionalOperator.class})
     @ConditionalOnMissingBean
     public ReactiveWorkerMessageRepository reactiveWorkerMessageRepository(
             DatabaseClient db, TransactionalOperator tx, R2dbcSqlDialect dialect) {
@@ -75,7 +72,6 @@ public class R2dbcRepositoryAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(DatabaseClient.class)
     @ConditionalOnMissingBean
     public ReactiveWorkerMaintenanceRepository reactiveWorkerMaintenanceRepository(
             DatabaseClient db, R2dbcSqlDialect dialect) {
