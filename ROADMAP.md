@@ -1,13 +1,8 @@
 # ROADMAP
 
-- why does the Workerservices use a claimedCount Array even if claimCount is always a single long value ?
-- When Processing of a message fails The result should be Failure not retry. The message should then be marked as failed with a retry count until max retry count is reached. then the message should be marked as stopped
-- Onwershipt check in status update SQL is missing
-- Heartbeat window equals heartbeat interval → false orphan detection 
-- Reactive consumer silently swallows DB write errors
-- `ReactiveOrphanReclaimer` uses `subscribe()` with `fixedDelay` → overlapping runs
-- Heartbeat uses `fixedRate` instead of `fixedDelay`
-- SuperDuperWorkerReactiveService.schedule() should use a Scheduler with virttual threads 
-- At-least-once semantics undocumented 
-- When messages are reclaimed from `PROCESSING` → `READY`, `last_updated` is not refreshed
-- 
+Goal: prepare scope for `v0.3.0`
+
+1. Add release notes automation for tagged versions (`vX.Y.Z`) to improve traceability.
+2. Add CI workflow checks for multi-container smoke validation (`docker-compose.multi.yml`).
+3. Expand example verification docs with reproducible SQL assertions for status distribution and ordering.
+4. Improve developer ergonomics for strict PR release flow (PR template + checklist).
