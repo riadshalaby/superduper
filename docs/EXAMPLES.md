@@ -22,9 +22,9 @@
    - Value: `{ "hello": "world" }`
 5. Inspect the database:
    ```sql
-   SELECT id, key, content, status, retry_count
+   SELECT id, message_key, content, status, retry_count
    FROM messages
-   ORDER BY key, id;
+   ORDER BY message_key, id;
    ```
 
 ## Running Locally (Multi-Container Demo)
@@ -200,14 +200,14 @@ This query must return no rows. If it returns any row, ordering for that key has
 WITH ordered AS (
   SELECT
     id,
-    key,
+    message_key,
     status,
     retry_count,
-    LAG(id) OVER (PARTITION BY key ORDER BY id) AS prev_id
+    LAG(id) OVER (PARTITION BY message_key ORDER BY id) AS prev_id
   FROM messages
-  WHERE key = 'order-7'
+  WHERE message_key = 'order-7'
 )
-SELECT id, key, status, retry_count, prev_id
+SELECT id, message_key, status, retry_count, prev_id
 FROM ordered
 WHERE prev_id IS NOT NULL
   AND id <= prev_id;
@@ -216,17 +216,17 @@ WHERE prev_id IS NOT NULL
 Expected output example:
 
 ```text
- id | key | status | retry_count | prev_id
-----+-----+--------+-------------+---------
+ id | message_key | status | retry_count | prev_id
+----+-------------+--------+-------------+---------
 (0 rows)
 ```
 
 For a positive spot-check of the ordered sequence:
 
 ```sql
-SELECT id, key, content, status, retry_count
+SELECT id, message_key, content, status, retry_count
 FROM messages
-WHERE key = 'order-7'
+WHERE message_key = 'order-7'
 ORDER BY id
 LIMIT 5;
 ```

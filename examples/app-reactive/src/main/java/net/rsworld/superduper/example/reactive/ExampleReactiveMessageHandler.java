@@ -33,7 +33,7 @@ class ExampleReactiveMessageHandler implements ReactiveMessageHandler {
                 log.warn(
                         "[Reactive Worker] id={} key={} attempt={} -> FAILURE (always-fail)",
                         row.id(),
-                        row.key(),
+                        row.messageKey(),
                         attempt);
                 return ProcessingResult.FAILURE;
             }
@@ -42,7 +42,7 @@ class ExampleReactiveMessageHandler implements ReactiveMessageHandler {
                 log.info(
                         "[Reactive Worker] id={} key={} attempt={} -> FAILURE (retry-once first attempt)",
                         row.id(),
-                        row.key(),
+                        row.messageKey(),
                         attempt);
                 return ProcessingResult.FAILURE;
             }
@@ -50,7 +50,7 @@ class ExampleReactiveMessageHandler implements ReactiveMessageHandler {
             log.info(
                     "[Reactive Worker] id={} key={} attempt={} -> SUCCESS content={}",
                     row.id(),
-                    row.key(),
+                    row.messageKey(),
                     attempt,
                     content);
             return ProcessingResult.SUCCESS;

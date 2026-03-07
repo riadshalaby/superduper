@@ -54,7 +54,7 @@ class R2dbcWorkerMessageRepositoryMariaDbIntegrationTest {
         insert("u3", "k2", "v3", "READY");
 
         Long first = repo.claimBatch("w1", 10, 5).block();
-        assertThat(first).isEqualTo(2L);
+        assertThat(first).isEqualTo(3L);
 
         Long second = repo.claimBatch("w1", 10, 5).block();
         assertThat(second).isZero();
@@ -64,19 +64,20 @@ class R2dbcWorkerMessageRepositoryMariaDbIntegrationTest {
         firstRows.forEach(
                 row -> assertThat(repo.markProcessed(row.id(), "w1").block()).isTrue());
         Long third = repo.claimBatch("w1", 10, 5).block();
-        assertThat(third).isEqualTo(1L);
+        assertThat(third).isZero();
     }
 
     private static void resetData() {
         db.sql("TRUNCATE TABLE messages").fetch().rowsUpdated().block();
     }
 
-    private static void insert(String uuid, String key, String content, String status) {
-        db.sql("INSERT INTO messages(uuid,`key`,content,status) VALUES (:u,:k,:c,:s)")
-                .bind("u", uuid)
-                .bind("k", key)
-                .bind("c", content)
-                .bind("s", status)
+    private static void insert(String messageId, String messageKey, String content, String status) {
+        db.sql("INSERT INTO messages(message_id,message_key,content,status) "
+                        + "VALUES (:messageId,:messageKey,:content,:status)")
+                .bind("messageId", messageId)
+                .bind("messageKey", messageKey)
+                .bind("content", content)
+                .bind("status", status)
                 .fetch()
                 .rowsUpdated()
                 .block();

@@ -93,8 +93,8 @@ class KafkaReactiveE2ETest {
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(20).toMillis();
         int found = 0;
         while (System.currentTimeMillis() < deadline) {
-            Integer cnt = db.sql(
-                            "SELECT COUNT(*) AS c FROM messages WHERE key='k-e2e-reactive' AND content='hello-reactor'")
+            Integer cnt = db.sql("SELECT COUNT(*) AS c FROM messages "
+                            + "WHERE message_key='k-e2e-reactive' AND content='hello-reactor'")
                     .map((row, meta) -> row.get("c", Integer.class))
                     .one()
                     .onErrorResume(e -> Mono.just(0))

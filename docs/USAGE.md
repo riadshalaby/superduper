@@ -167,13 +167,25 @@ Metrics emitted when enabled:
   - claim lock name: `superduper.worker.shedlock.claim-lock-name`
   - lock windows: `superduper.worker.shedlock.lock-at-most-for-ms`, `superduper.worker.shedlock.lock-at-least-for-ms`
 - Max retries: alert on `STOPPED`, then requeue manually if appropriate
-- Indexes: keep `messages(key, id)` and add claim/fetch/reclaim indexes from the example Liquibase SQL
-- Idempotency: `uuid` is deterministic from Kafka `topic:partition:offset`
+- Indexes: keep `messages(message_key, id)` and add claim/fetch/reclaim indexes from the example Liquibase SQL
+- Idempotency: `message_id` is deterministic from Kafka `topic:partition:offset` by default
 
 ## Security & Consistency Notes
 
 - Claiming is a single SQL statement per dialect to minimize race windows.
-- Only the oldest pending row per key can be claimed.
+- A batch can claim multiple rows for the same key when no row for that key is already `PROCESSING`.
+- Workers still process each key in `id` order and release later same-key rows in the batch when an earlier row fails.
 - ShedLock ensures one claim section runs at a time across shared infrastructure.
 - In Kubernetes, claim coordination remains cluster-wide as long as pods share the same database and `superduper.worker.shedlock.claim-lock-name`.
 - Reactive processing still scales horizontally; lock coordination only guards the claim entry point.
+
+## Consumer Metadata SPI
+
+`starter-autoselect` registers a default `ConsumerMetadataResolver` bean. It resolves:
+
+- `message_id` from header `message_id`, otherwise deterministic UUID from `topic:partition:offset`
+- `occurred_at` from header `occurred_at`, otherwise Kafka record timestamp
+- `correlation_id` from header `correlationId`, otherwise a random UUID
+- `message_type` from header `message_type`, otherwise `null`
+
+Override it with your own bean if you want custom metadata mapping.

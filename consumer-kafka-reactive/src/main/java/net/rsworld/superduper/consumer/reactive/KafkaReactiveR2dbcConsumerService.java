@@ -1,28 +1,36 @@
 package net.rsworld.superduper.consumer.reactive;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.format.DateTimeParseException;
-import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
 import net.rsworld.superduper.observability.api.ConsumerObservation;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
+import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
+import net.rsworld.superduper.repository.api.DefaultConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.ReactiveMessageIngestRepository;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.header.Header;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 
 class KafkaReactiveR2dbcConsumerService {
-    private static final String OCCURRED_AT_HEADER = "occurred_at";
     private static final String MODE_REACTIVE = "reactive";
 
     private final ReactiveMessageIngestRepository messageIngestRepository;
     private final SuperduperObserver observer;
+    private final ConsumerMetadataResolver metadataResolver;
 
     KafkaReactiveR2dbcConsumerService(
             ReactiveMessageIngestRepository messageIngestRepository, SuperduperObserver observer) {
+        this(messageIngestRepository, observer, new DefaultConsumerMetadataResolver());
+    }
+
+    KafkaReactiveR2dbcConsumerService(
+            ReactiveMessageIngestRepository messageIngestRepository,
+            SuperduperObserver observer,
+            ConsumerMetadataResolver metadataResolver) {
         this.messageIngestRepository = messageIngestRepository;
         this.observer = observer;
+        this.metadataResolver = metadataResolver == null ? new DefaultConsumerMetadataResolver() : metadataResolver;
     }
 
     @KafkaListener(
@@ -30,26 +38,27 @@ class KafkaReactiveR2dbcConsumerService {
             containerFactory = "reactiveKafkaListenerContainerFactory")
     public void onMessage(ConsumerRecord<String, String> consumerRecord, Acknowledgment ack) {
         long started = System.nanoTime();
-        String key = consumerRecord.key() != null ? consumerRecord.key() : "default";
-        int payloadSize =
-                consumerRecord.value() == null ? 0 : consumerRecord.value().getBytes(StandardCharsets.UTF_8).length;
+        String messageKey = consumerRecord.key() != null ? consumerRecord.key() : "default";
+        int payloadSize = consumerRecord.value() == null
+                ? 0
+                : consumerRecord.value().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
         observer.consumerReceived(new ConsumerObservation(
                 MODE_REACTIVE,
                 consumerRecord.topic(),
                 consumerRecord.partition(),
                 consumerRecord.offset(),
-                key,
+                messageKey,
                 payloadSize,
                 0));
-        String seed = consumerRecord.topic() + ":" + consumerRecord.partition() + ":" + consumerRecord.offset();
-        Instant occurredAt = resolveOccurredAt(consumerRecord);
+        Map<String, byte[]> headers = toHeaderMap(consumerRecord);
+        String messageId = metadataResolver.resolveMessageId(
+                consumerRecord.topic(), consumerRecord.partition(), consumerRecord.offset(), headers);
+        Instant occurredAt = metadataResolver.resolveOccurredAt(consumerRecord.timestamp(), headers);
+        String correlationId = metadataResolver.resolveCorrelationId(headers);
+        String messageType = metadataResolver.resolveMessageType(headers);
         messageIngestRepository
                 .upsertReadyMessage(
-                        UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8))
-                                .toString(),
-                        key,
-                        consumerRecord.value(),
-                        occurredAt)
+                        messageId, messageKey, consumerRecord.value(), occurredAt, correlationId, messageType)
                 .doOnSuccess(unused -> {
                     ack.acknowledge();
                     observer.consumerSucceeded(new ConsumerObservation(
@@ -57,7 +66,7 @@ class KafkaReactiveR2dbcConsumerService {
                             consumerRecord.topic(),
                             consumerRecord.partition(),
                             consumerRecord.offset(),
-                            key,
+                            messageKey,
                             payloadSize,
                             elapsedMs(started)));
                 })
@@ -67,7 +76,7 @@ class KafkaReactiveR2dbcConsumerService {
                                 consumerRecord.topic(),
                                 consumerRecord.partition(),
                                 consumerRecord.offset(),
-                                key,
+                                messageKey,
                                 payloadSize,
                                 elapsedMs(started)),
                         e))
@@ -78,38 +87,9 @@ class KafkaReactiveR2dbcConsumerService {
         return (System.nanoTime() - startedNanos) / 1_000_000;
     }
 
-    private static Instant resolveOccurredAt(ConsumerRecord<String, String> consumerRecord) {
-        Header header = consumerRecord.headers().lastHeader(OCCURRED_AT_HEADER);
-        if (header != null) {
-            Instant parsed = parseOccurredAtHeader(header.value());
-            if (parsed != null) {
-                return parsed;
-            }
-        }
-        long timestamp = consumerRecord.timestamp();
-        if (timestamp > 0) {
-            return Instant.ofEpochMilli(timestamp);
-        }
-        return Instant.now();
-    }
-
-    private static Instant parseOccurredAtHeader(byte[] headerValue) {
-        if (headerValue == null || headerValue.length == 0) {
-            return null;
-        }
-        String raw = new String(headerValue, StandardCharsets.UTF_8).trim();
-        if (raw.isEmpty()) {
-            return null;
-        }
-        try {
-            return Instant.ofEpochMilli(Long.parseLong(raw));
-        } catch (NumberFormatException ignored) {
-            // Continue with ISO-8601 parsing.
-        }
-        try {
-            return Instant.parse(raw);
-        } catch (DateTimeParseException ignored) {
-            return null;
-        }
+    private static Map<String, byte[]> toHeaderMap(ConsumerRecord<String, String> consumerRecord) {
+        Map<String, byte[]> headers = new HashMap<>();
+        consumerRecord.headers().forEach(header -> headers.put(header.key(), header.value()));
+        return headers;
     }
 }

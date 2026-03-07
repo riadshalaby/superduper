@@ -23,15 +23,29 @@ public class R2dbcMessageIngestRepository implements ReactiveMessageIngestReposi
     }
 
     @Override
-    public Mono<Void> upsertReadyMessage(String uuid, String key, String content, Instant occurredAt) {
+    public Mono<Void> upsertReadyMessage(
+            String messageId,
+            String messageKey,
+            String content,
+            Instant occurredAt,
+            String correlationId,
+            String messageType) {
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
-        return db.sql(dialect.upsertReadyMessageSql())
-                .bind("uuid", uuid)
-                .bind("key", key)
+        var statement = db.sql(dialect.upsertReadyMessageSql())
+                .bind("messageId", messageId)
+                .bind("messageKey", messageKey)
                 .bind("content", content)
-                .bind("occurredAt", LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC))
-                .fetch()
-                .rowsUpdated()
-                .then();
+                .bind("occurredAt", LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
+        statement = bindNullable(statement, "correlationId", correlationId);
+        statement = bindNullable(statement, "messageType", messageType);
+        return statement.fetch().rowsUpdated().then();
+    }
+
+    private DatabaseClient.GenericExecuteSpec bindNullable(
+            DatabaseClient.GenericExecuteSpec statement, String name, String value) {
+        if (value == null) {
+            return statement.bindNull(name, String.class);
+        }
+        return statement.bind(name, value);
     }
 }

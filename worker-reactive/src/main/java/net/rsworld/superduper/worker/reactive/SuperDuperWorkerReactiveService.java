@@ -4,6 +4,10 @@ import jakarta.annotation.PreDestroy;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -17,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -132,7 +137,8 @@ public class SuperDuperWorkerReactiveService {
 
         messageRepository
                 .fetchClaimedForWorker(workerId)
-                .concatMap(this::processOne)
+                .collectList()
+                .flatMap(this::processBatch)
                 .onErrorResume(e -> {
                     observer.workerFailed(
                             new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)),
@@ -157,12 +163,58 @@ public class SuperDuperWorkerReactiveService {
         vtExecutor.shutdown();
     }
 
+    private Mono<Void> processBatch(List<ClaimedMessage> rows) {
+        return Flux.fromIterable(groupRowsByMessageKey(rows).values())
+                .concatMap(this::processKeyGroup)
+                .then();
+    }
+
+    private Map<String, List<ClaimedMessage>> groupRowsByMessageKey(List<ClaimedMessage> rows) {
+        Map<String, List<ClaimedMessage>> groupedRows = new LinkedHashMap<>();
+        for (ClaimedMessage row : rows) {
+            groupedRows
+                    .computeIfAbsent(row.messageKey(), ignored -> new ArrayList<>())
+                    .add(row);
+        }
+        return groupedRows;
+    }
+
+    private Mono<Void> processKeyGroup(List<ClaimedMessage> rows) {
+        return processKeyGroup(rows, 0);
+    }
+
+    private Mono<Void> processKeyGroup(List<ClaimedMessage> rows, int index) {
+        if (index >= rows.size()) {
+            return Mono.empty();
+        }
+        ClaimedMessage row = rows.get(index);
+        return handleClaimedMessage(row).flatMap(success -> {
+            if (success) {
+                return processKeyGroup(rows, index + 1);
+            }
+            return releaseRemaining(rows, index + 1);
+        });
+    }
+
     private Mono<Void> processOne(ClaimedMessage row) {
+        return handleClaimedMessage(row).then();
+    }
+
+    private Mono<Boolean> handleClaimedMessage(ClaimedMessage row) {
         long started = System.nanoTime();
         long id = row.id();
         int retry = row.retryCount() == null ? 0 : row.retryCount();
-        MessageRow mr = new MessageRow(id, null, row.key(), row.content(), "PROCESSING", retry, workerId);
-        return handler.handle(mr)
+        MessageRow messageRow = new MessageRow(
+                id,
+                row.messageId(),
+                row.messageKey(),
+                row.content(),
+                "PROCESSING",
+                retry,
+                row.containerId(),
+                row.correlationId(),
+                row.messageType());
+        return handler.handle(messageRow)
                 .map(result -> new HandlerOutcome(result, null))
                 .onErrorResume(e -> {
                     observer.workerFailed(
@@ -175,47 +227,62 @@ public class SuperDuperWorkerReactiveService {
                         return messageRepository.markProcessed(id, workerId).flatMap(updated -> {
                             if (!updated) {
                                 warnOwnershipLost(id, "markProcessed");
-                                return Mono.empty();
+                                return Mono.just(false);
                             }
                             observer.workerProcessed(new WorkerObservation(
                                     MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)));
-                            return Mono.empty();
+                            return Mono.just(true);
                         });
-                    } else {
-                        if (outcome.failureCause() == null) {
-                            observer.workerFailed(
-                                    new WorkerObservation(
-                                            MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)),
-                                    new IllegalStateException("Message handler returned FAILURE"));
-                        }
-                        int next = retry + 1;
-                        if (next < maxRetries) {
-                            return messageRepository
-                                    .markFailed(id, next, workerId)
-                                    .flatMap(updated -> {
-                                        if (!updated) {
-                                            warnOwnershipLost(id, "markFailed");
-                                            return Mono.empty();
-                                        }
-                                        observer.workerRetried(new WorkerObservation(
-                                                MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
-                                        return Mono.empty();
-                                    });
-                        } else {
-                            return messageRepository
-                                    .markStopped(id, next, workerId)
-                                    .flatMap(updated -> {
-                                        if (!updated) {
-                                            warnOwnershipLost(id, "markStopped");
-                                            return Mono.empty();
-                                        }
-                                        observer.workerStopped(new WorkerObservation(
-                                                MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
-                                        return Mono.empty();
-                                    });
-                        }
                     }
+
+                    if (outcome.failureCause() == null) {
+                        observer.workerFailed(
+                                new WorkerObservation(
+                                        MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)),
+                                new IllegalStateException("Message handler returned FAILURE"));
+                    }
+                    int next = retry + 1;
+                    if (next < maxRetries) {
+                        return messageRepository.markFailed(id, next, workerId).flatMap(updated -> {
+                            if (!updated) {
+                                warnOwnershipLost(id, "markFailed");
+                                return Mono.just(false);
+                            }
+                            observer.workerRetried(new WorkerObservation(
+                                    MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
+                            return Mono.just(false);
+                        });
+                    }
+                    return messageRepository.markStopped(id, next, workerId).flatMap(updated -> {
+                        if (!updated) {
+                            warnOwnershipLost(id, "markStopped");
+                            return Mono.just(false);
+                        }
+                        observer.workerStopped(new WorkerObservation(
+                                MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
+                        return Mono.just(false);
+                    });
                 });
+    }
+
+    private Mono<Void> releaseRemaining(List<ClaimedMessage> rows, int fromIndex) {
+        if (fromIndex >= rows.size()) {
+            return Mono.empty();
+        }
+        List<Long> ids = rows.subList(fromIndex, rows.size()).stream()
+                .map(ClaimedMessage::id)
+                .toList();
+        return messageRepository
+                .releaseMessages(ids, workerId)
+                .doOnNext(released -> {
+                    if (released == ids.size()) {
+                        return;
+                    }
+                    for (Long id : ids) {
+                        warnOwnershipLost(id, "releaseMessages");
+                    }
+                })
+                .then();
     }
 
     private void warnOwnershipLost(long messageId, String operation) {

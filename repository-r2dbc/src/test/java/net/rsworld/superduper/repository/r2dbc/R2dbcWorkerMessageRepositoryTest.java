@@ -11,11 +11,16 @@ class R2dbcWorkerMessageRepositoryTest {
         R2dbcSqlDialect dialect = new PostgresR2dbcSqlDialect();
         String claimSql = dialect.claimBatchSql();
         String fetchSql = dialect.fetchClaimedForWorkerSql();
+        String releaseSql = dialect.releaseMessagesSql();
 
-        assertThat(claimSql).contains("p.key = m1.key");
+        assertThat(claimSql).contains("p.message_key = m1.message_key");
+        assertThat(claimSql).doesNotContain("NOT EXISTS (SELECT 1 FROM");
         assertThat(claimSql).doesNotContain("`key`");
-        assertThat(fetchSql).contains("key AS message_key");
+        assertThat(fetchSql).contains("message_key");
+        assertThat(fetchSql).contains("correlation_id");
+        assertThat(fetchSql).contains("message_type");
         assertThat(fetchSql).doesNotContain("`key`");
+        assertThat(releaseSql).contains("WHERE id IN (:ids) AND container_id=:cid");
     }
 
     @Test
@@ -23,9 +28,11 @@ class R2dbcWorkerMessageRepositoryTest {
         R2dbcSqlDialect dialect = new MariaDbR2dbcSqlDialect();
         String claimSql = dialect.claimBatchSql();
         String fetchSql = dialect.fetchClaimedForWorkerSql();
+        String releaseSql = dialect.releaseMessagesSql();
 
-        assertThat(claimSql).contains("p.`key` = m1.`key`");
-        assertThat(fetchSql).contains("`key` AS message_key");
-        assertThat(fetchSql).contains("ORDER BY `key`, id");
+        assertThat(claimSql).contains("p.message_key = m1.message_key");
+        assertThat(fetchSql).contains("message_key");
+        assertThat(fetchSql).contains("ORDER BY message_key, id");
+        assertThat(releaseSql).contains("WHERE id IN (:ids) AND container_id=:cid");
     }
 }

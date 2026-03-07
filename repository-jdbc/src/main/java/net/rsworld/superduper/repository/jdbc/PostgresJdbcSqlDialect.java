@@ -15,9 +15,11 @@ public final class PostgresJdbcSqlDialect implements JdbcSqlDialect {
 
     @Override
     public String upsertReadyMessageSql() {
-        return ("INSERT INTO %s (uuid, key, content, status, occurred_at, received_at, retry_count, last_updated) "
-                        + "VALUES (:uuid, :key, :content, 'READY', :occurredAt, NOW(), 0, NOW()) "
-                        + "ON CONFLICT (uuid) DO UPDATE SET last_updated = EXCLUDED.last_updated")
+        return ("INSERT INTO %s (message_id, message_key, content, status, occurred_at, received_at, retry_count, "
+                        + "last_updated, correlation_id, message_type) "
+                        + "VALUES (:messageId, :messageKey, :content, 'READY', :occurredAt, NOW(), 0, NOW(), "
+                        + ":correlationId, :messageType) "
+                        + "ON CONFLICT (message_id) DO UPDATE SET last_updated = EXCLUDED.last_updated")
                 .formatted(messagesTable);
     }
 
@@ -25,22 +27,28 @@ public final class PostgresJdbcSqlDialect implements JdbcSqlDialect {
     public String claimBatchSql() {
         return ("WITH candidate AS ("
                         + "SELECT m1.id FROM %s m1 "
-                        + "LEFT JOIN %s p ON p.key = m1.key AND p.status = 'PROCESSING' "
+                        + "LEFT JOIN %s p ON p.message_key = m1.message_key AND p.status = 'PROCESSING' "
                         + "WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries)) "
                         + "AND p.id IS NULL "
-                        + "AND NOT EXISTS (SELECT 1 FROM %s prev WHERE prev.key = m1.key "
-                        + "AND prev.id < m1.id AND prev.status IN ('READY','FAILED','PROCESSING')) "
                         + "ORDER BY m1.id LIMIT :batch FOR UPDATE OF m1 SKIP LOCKED"
                         + ") "
                         + "UPDATE %s m SET status='PROCESSING', container_id=:cid, last_updated=NOW() "
                         + "FROM candidate c WHERE m.id = c.id")
-                .formatted(messagesTable, messagesTable, messagesTable, messagesTable);
+                .formatted(messagesTable, messagesTable, messagesTable);
     }
 
     @Override
     public String fetchClaimedForWorkerSql() {
-        return "SELECT id, key AS message_key, content, retry_count, container_id "
-                + "FROM %s WHERE status='PROCESSING' AND container_id=:cid ORDER BY key, id".formatted(messagesTable);
+        return ("SELECT id, message_id, message_key, content, retry_count, container_id, correlation_id, message_type "
+                        + "FROM %s WHERE status='PROCESSING' AND container_id=:cid ORDER BY message_key, id")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String releaseMessagesSql() {
+        return ("UPDATE %s SET status='READY', container_id=NULL, last_updated=NOW() "
+                        + "WHERE id IN (:ids) AND container_id=:cid")
+                .formatted(messagesTable);
     }
 
     @Override

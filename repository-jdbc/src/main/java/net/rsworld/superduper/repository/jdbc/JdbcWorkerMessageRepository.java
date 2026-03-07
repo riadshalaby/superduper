@@ -37,10 +37,23 @@ public class JdbcWorkerMessageRepository implements WorkerMessageRepository {
                 new MapSqlParameterSource().addValue("cid", workerId),
                 (rs, rn) -> new ClaimedMessage(
                         rs.getLong("id"),
+                        rs.getString("message_id"),
                         rs.getString("message_key"),
                         rs.getString("content"),
                         rs.getInt("retry_count"),
-                        rs.getString("container_id")));
+                        rs.getString("container_id"),
+                        rs.getString("correlation_id"),
+                        rs.getString("message_type")));
+    }
+
+    @Override
+    public int releaseMessages(List<Long> ids, String containerId) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        return jdbc.update(
+                dialect.releaseMessagesSql(),
+                new MapSqlParameterSource().addValue("ids", ids).addValue("cid", containerId));
     }
 
     @Override

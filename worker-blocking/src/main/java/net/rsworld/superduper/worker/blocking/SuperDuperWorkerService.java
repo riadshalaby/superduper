@@ -3,11 +3,16 @@ package net.rsworld.superduper.worker.blocking;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.api.WorkerObservation;
+import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -135,56 +140,103 @@ public class SuperDuperWorkerService {
 
     void process() {
         var rows = messageRepository.fetchClaimedForWorker(workerId);
+        for (var keyGroup : groupRowsByMessageKey(rows).values()) {
+            for (int index = 0; index < keyGroup.size(); index++) {
+                ClaimedMessage row = keyGroup.get(index);
+                if (processOne(row)) {
+                    continue;
+                }
+                releaseRemaining(keyGroup, index + 1);
+                break;
+            }
+        }
+    }
 
-        for (var row : rows) {
-            long started = System.nanoTime();
-            ProcessingResult res = ProcessingResult.FAILURE;
-            Throwable failureCause = null;
-            try {
-                res = handler.handle(new MessageRow(
-                        row.id(), null, row.key(), row.content(), "PROCESSING", row.retryCount(), row.containerId()));
-            } catch (RuntimeException | MessageHandlingException e) {
-                failureCause = e;
-                observer.workerFailed(
-                        new WorkerObservation(
-                                MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
-                        e);
-            }
-            int retry = row.retryCount() == null ? 0 : row.retryCount();
-            if (res == ProcessingResult.SUCCESS) {
-                boolean updated = messageRepository.markProcessed(row.id(), workerId);
-                if (!updated) {
-                    warnOwnershipLost(row.id(), "markProcessed");
-                } else {
-                    observer.workerProcessed(
-                            new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
-                }
+    private Map<String, List<ClaimedMessage>> groupRowsByMessageKey(List<ClaimedMessage> rows) {
+        Map<String, List<ClaimedMessage>> groupedRows = new LinkedHashMap<>();
+        for (ClaimedMessage row : rows) {
+            groupedRows
+                    .computeIfAbsent(row.messageKey(), ignored -> new ArrayList<>())
+                    .add(row);
+        }
+        return groupedRows;
+    }
+
+    private boolean processOne(ClaimedMessage row) {
+        long started = System.nanoTime();
+        ProcessingResult result = ProcessingResult.FAILURE;
+        Throwable failureCause = null;
+        try {
+            result = handler.handle(new MessageRow(
+                    row.id(),
+                    row.messageId(),
+                    row.messageKey(),
+                    row.content(),
+                    "PROCESSING",
+                    row.retryCount(),
+                    row.containerId(),
+                    row.correlationId(),
+                    row.messageType()));
+        } catch (RuntimeException | MessageHandlingException e) {
+            failureCause = e;
+            observer.workerFailed(
+                    new WorkerObservation(
+                            MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
+                    e);
+        }
+
+        int retry = row.retryCount() == null ? 0 : row.retryCount();
+        if (result == ProcessingResult.SUCCESS) {
+            boolean updated = messageRepository.markProcessed(row.id(), workerId);
+            if (!updated) {
+                warnOwnershipLost(row.id(), "markProcessed");
             } else {
-                if (failureCause == null) {
-                    observer.workerFailed(
-                            new WorkerObservation(
-                                    MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
-                            new IllegalStateException("Message handler returned FAILURE"));
-                }
-                retry++;
-                if (retry < maxRetries) {
-                    boolean updated = messageRepository.markFailed(row.id(), retry, workerId);
-                    if (!updated) {
-                        warnOwnershipLost(row.id(), "markFailed");
-                    } else {
-                        observer.workerRetried(new WorkerObservation(
-                                MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
-                    }
-                } else {
-                    boolean updated = messageRepository.markStopped(row.id(), retry, workerId);
-                    if (!updated) {
-                        warnOwnershipLost(row.id(), "markStopped");
-                    } else {
-                        observer.workerStopped(new WorkerObservation(
-                                MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
-                    }
-                }
+                observer.workerProcessed(
+                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
             }
+            return true;
+        }
+
+        if (failureCause == null) {
+            observer.workerFailed(
+                    new WorkerObservation(
+                            MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
+                    new IllegalStateException("Message handler returned FAILURE"));
+        }
+        retry++;
+        if (retry < maxRetries) {
+            boolean updated = messageRepository.markFailed(row.id(), retry, workerId);
+            if (!updated) {
+                warnOwnershipLost(row.id(), "markFailed");
+            } else {
+                observer.workerRetried(
+                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+            }
+        } else {
+            boolean updated = messageRepository.markStopped(row.id(), retry, workerId);
+            if (!updated) {
+                warnOwnershipLost(row.id(), "markStopped");
+            } else {
+                observer.workerStopped(
+                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+            }
+        }
+        return false;
+    }
+
+    private void releaseRemaining(List<ClaimedMessage> rows, int fromIndex) {
+        if (fromIndex >= rows.size()) {
+            return;
+        }
+        List<Long> ids = rows.subList(fromIndex, rows.size()).stream()
+                .map(ClaimedMessage::id)
+                .toList();
+        int released = messageRepository.releaseMessages(ids, workerId);
+        if (released == ids.size()) {
+            return;
+        }
+        for (Long id : ids) {
+            warnOwnershipLost(id, "releaseMessages");
         }
     }
 

@@ -45,10 +45,10 @@ class R2dbcMessageIngestRepositoryIntegrationTest {
         R2dbcMessageIngestRepository repo = new R2dbcMessageIngestRepository(db, SqlDialect.POSTGRES);
 
         Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
-        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt).block();
-        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt).block();
+        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt, null, null).block();
+        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt, null, null).block();
 
-        Integer count = db.sql("SELECT COUNT(*) AS c FROM messages WHERE uuid='u1'")
+        Integer count = db.sql("SELECT COUNT(*) AS c FROM messages WHERE message_id='u1'")
                 .map((row, md) -> row.get("c", Integer.class))
                 .one()
                 .block();

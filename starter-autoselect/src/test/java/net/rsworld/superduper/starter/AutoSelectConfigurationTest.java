@@ -12,6 +12,8 @@ import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 import net.rsworld.superduper.observability.metrics.MetricsSuperduperObserver;
+import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
+import net.rsworld.superduper.repository.api.DefaultConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
@@ -43,6 +45,7 @@ class AutoSelectConfigurationTest {
     @Test
     void createsJdbcBeans() {
         AutoSelectConfiguration cfg = new AutoSelectConfiguration();
+        ConsumerMetadataResolver metadataResolver = cfg.consumerMetadataResolver();
         DataSource ds = mock(DataSource.class);
         WorkerProperties workerProperties = workerProperties();
         LockProvider lp = cfg.lockProvider(ds, workerProperties);
@@ -60,6 +63,7 @@ class AutoSelectConfigurationTest {
 
         assertThat(lp).isNotNull();
         assertThat(exec).isNotNull();
+        assertThat(metadataResolver).isInstanceOf(DefaultConsumerMetadataResolver.class);
         assertThat(svc).isNotNull();
         assertThat(hb).isNotNull();
         assertThat(rec).isNotNull();

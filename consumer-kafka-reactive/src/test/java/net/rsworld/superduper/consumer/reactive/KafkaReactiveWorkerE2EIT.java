@@ -124,7 +124,7 @@ class KafkaReactiveWorkerE2EIT {
         String workerId = ManagementFactory.getRuntimeMXBean().getName();
 
         Long first = messageRepository.claimBatch(workerId, 10, 5).block();
-        assertThat(first).isEqualTo(2L);
+        assertThat(first).isEqualTo(3L);
 
         var list =
                 messageRepository.fetchClaimedForWorker(workerId).collectList().block();
@@ -136,14 +136,7 @@ class KafkaReactiveWorkerE2EIT {
         }
 
         Long second = messageRepository.claimBatch(workerId, 10, 5).block();
-        assertThat(second).isEqualTo(1L);
-        list = messageRepository.fetchClaimedForWorker(workerId).collectList().block();
-        for (var row : list) {
-            var processOne = svc.getClass()
-                    .getDeclaredMethod("processOne", net.rsworld.superduper.repository.api.ClaimedMessage.class);
-            processOne.setAccessible(true);
-            ((reactor.core.publisher.Mono<Void>) processOne.invoke(svc, row)).block();
-        }
+        assertThat(second).isZero();
 
         Integer processed = db.sql("SELECT COUNT(*) AS c FROM messages WHERE status='PROCESSED'")
                 .map((r, m) -> r.get("c", Integer.class))

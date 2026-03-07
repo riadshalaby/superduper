@@ -51,10 +51,10 @@ class JdbcMessageIngestRepositoryIntegrationTest {
         JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
                 new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.POSTGRES);
         Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
-        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt);
-        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt);
+        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt, null, null);
+        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt, null, null);
 
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE uuid='u1'", Integer.class);
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE message_id='u1'", Integer.class);
         assertThat(count).isEqualTo(1);
     }
 
@@ -71,10 +71,10 @@ class JdbcMessageIngestRepositoryIntegrationTest {
         JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
                 new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.MARIADB);
         Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
-        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt);
-        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt);
+        repo.upsertReadyMessage("u1", "k1", "v1", occurredAt, null, null);
+        repo.upsertReadyMessage("u1", "k1", "v2", occurredAt, null, null);
 
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE uuid='u1'", Integer.class);
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE message_id='u1'", Integer.class);
         assertThat(count).isEqualTo(1);
     }
 }
