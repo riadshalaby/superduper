@@ -1,26 +1,21 @@
 # ROADMAP
 
-Goal: improve worker throughput, keep ordering guarantees, and clean up message metadata extensibility.
+Goal: harden the `0.4.x` line for production-style operations after the metadata and batch-throughput changes landed in `0.4.0`.
 
-## Priority 1: Worker Throughput and Batch Semantics
+## Priority 1: Redrive and Failure Operations
 
-- Current behavior: the current SQL claim strategy (strict per-key oldest-pending filter) effectively claims only one message per key per worker run. If 100 messages share the same key, only 1 message is processed per schedule cycle.
-- Target behavior: when at least `batchSize` messages are available, the worker should claim and process up to `batchSize` messages per run, including large same-key backlogs.
-- Design rule: if one message for a key fails and later messages of the same key are already inside the current batch, handling of those later messages must be done inside worker batch logic, not through SQL-level key blocking.
-- Required validation: add integration tests for same-key batches with partial failure, and add performance tests to verify throughput improvements under hot-key load.
+- Add an operator-facing path to inspect and redrive `FAILED` and `STOPPED` messages without manual SQL.
+- Define the supported retry and redrive contract for both blocking and reactive stacks.
+- Add integration coverage for redrive flows, including same-key batches that were previously released back to `READY`.
 
-## Priority 2: Message Schema and Naming Cleanup
+## Priority 2: Observability and Runtime Diagnostics
 
-- Rename `uuid` to `message_id`.
-- Rename `key` to `message_key`
-- Add `correlation_id` to the message.
-- Add `message_type` (string) to the message.
+- Expand metrics and logging around claim/release/retry behavior so hot-key and failure scenarios are visible without database inspection.
+- Document how to monitor worker heartbeats, stale processing rows, and backlog growth.
+- Add examples or docs for the metadata fields introduced in `0.4.0`, especially how they should appear in logs and dashboards.
 
-## Priority 3: Consumer Metadata SPI
+## Priority 3: Claim-Path Performance Regression Guardrails
 
-- Add a consumer SPI so library users can provide `occurredAt`, `message_id`, `correlationId`, and `message_type`.
-- Provide a default SPI implementation with this behavior:
-- `occurredAt`: `now()`.
-- `message_id`: header `"message_id"` if present; otherwise deterministic UUID from `topic:partition:offset`.
-- `correlationId`: header `"correlationId"` if present; otherwise new UUID.
-- `message_type`: header `"message_type"` if present; otherwise `null`.
+- Add repeatable benchmark or explain-plan validation for Postgres and MariaDB claim queries under mixed-key and hot-key loads.
+- Track the cost of the new batch claim strategy so index or SQL regressions are caught before release.
+- Keep the performance checks lightweight enough to run in CI or as a targeted pre-release validation step.
