@@ -25,7 +25,6 @@ import net.rsworld.superduper.worker.reactive.ReactiveMessageHandler;
 import net.rsworld.superduper.worker.reactive.ReactiveOrphanReclaimer;
 import net.rsworld.superduper.worker.reactive.SuperDuperWorkerReactiveService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -71,7 +70,6 @@ public class AutoSelectConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
-    @ConditionalOnBean(ConnectionFactory.class)
     @ConditionalOnMissingBean
     public LockProvider reactiveLockProvider(ConnectionFactory connectionFactory, WorkerProperties workerProperties) {
         return new R2dbcLockProvider(

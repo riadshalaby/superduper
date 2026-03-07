@@ -6,8 +6,8 @@ import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -15,6 +15,7 @@ import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.reactive.TransactionalOperator;
 
 @AutoConfiguration
+@ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
 @EnableConfigurationProperties(R2dbcTableProperties.class)
 public class R2dbcRepositoryAutoConfiguration {
 
@@ -57,14 +58,12 @@ public class R2dbcRepositoryAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(ReactiveTransactionManager.class)
     @ConditionalOnMissingBean
     public TransactionalOperator transactionalOperator(ReactiveTransactionManager txManager) {
         return TransactionalOperator.create(txManager);
     }
 
     @Bean
-    @ConditionalOnBean(TransactionalOperator.class)
     @ConditionalOnMissingBean
     public ReactiveWorkerMessageRepository reactiveWorkerMessageRepository(
             DatabaseClient db, TransactionalOperator tx, R2dbcSqlDialect dialect) {
