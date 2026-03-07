@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>0.3.0</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>example-app-blocking</artifactId>
@@ -37,17 +37,14 @@
     <dependency>
       <groupId>net.rsworld</groupId>
       <artifactId>superduper-schema-liquibase</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>net.rsworld</groupId>
       <artifactId>superduper-starter-autoselect</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>net.rsworld</groupId>
       <artifactId>superduper-consumer-kafka-blocking</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
     </dependency>
   </dependencies>
 

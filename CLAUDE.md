@@ -7,6 +7,9 @@
 - Keep entries concise and timestamped in UTC.
 - Run formatting after every code change:
   - `mvn -q spotless:apply`
+- Use Maven version bumps for release and post-release transitions:
+  - `mvn versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`
+  - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
 - Stage newly created files explicitly:
   - `git add <new-file>`
 - When changes are complete, do not commit automatically:
@@ -30,6 +33,7 @@ Build and maintain the library described in `README.md`:
 - Orphan reclaimer resets stale/dead-worker `PROCESSING` rows to `READY`.
 
 ## Current Architecture Baseline
+- Documentation lives in `docs/` for all project docs except `README.md`, `ROADMAP.md`, and `CLAUDE.md`.
 - Repository split:
   - `repository-api`
   - `repository-jdbc`
@@ -40,12 +44,15 @@ Build and maintain the library described in `README.md`:
   - `observability-logging`
   - `observability-metrics`
 - Schema migrations are centralized in `schema-liquibase`.
+- Architecture overview:
+  - `docs/ARCHITECTURE.md`
 - Examples:
   - `examples/app-blocking`
   - `examples/app-reactive`
 
 ## Quick Resume Checklist
 - Read `README.md`.
+- Read `docs/ARCHITECTURE.md`.
 - Read `starter-autoselect/src/main/java/net/rsworld/superduper/starter/AutoSelectConfiguration.java`.
 - Read worker services:
   - `worker-blocking/src/main/java/net/rsworld/superduper/worker/blocking/SuperDuperWorkerService.java`
@@ -78,7 +85,15 @@ Build and maintain the library described in `README.md`:
 ## Release Rules
 - Never release directly from a feature branch.
 - A feature is releasable only after it is merged into `main` via PR and required checks/tests pass.
+- Set the release version before opening the release PR:
+  - `mvn versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`
+- Use Conventional Commit message for the version bump:
+  - `chore: release vX.Y.Z`
 - Create tag `vX.Y.Z` on the corresponding merge commit in `main` (no unrelated extra commit between merge and tag).
+- After the tagged release, bump the branch for the next cycle:
+  - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
+- Use Conventional Commit message for the post-release bump:
+  - `chore: start vX.Y.(Z+1)-SNAPSHOT`
 - After the release is done:
   - reset `.ai/PLAN.md` for the next cycle,
   - reset `.ai/REVIEW.md` for the next cycle,
@@ -87,15 +102,38 @@ Build and maintain the library described in `README.md`:
 ## Strict PR Flow (Agent-Executable)
 - The agent may execute the full release sequence only after explicit user approval in that session.
 - Required order:
-  1. Commit approved changes on the feature branch (never on `main` directly).
-  2. Push feature branch to remote.
-  3. Open or update a PR targeting `main`.
-  4. Ensure required checks pass.
-  5. Merge PR into `main` (merge commit preferred unless repository policy enforces another method).
-  6. Switch to `main` and fast-forward/pull latest remote.
-  7. Create release tag `vX.Y.Z` on the PR merge commit in `main`.
-  8. Push the tag to remote.
-  9. Perform post-release housekeeping (`.ai/PLAN.md`, `.ai/REVIEW.md`, `ROADMAP.md`).
+  1. On the feature branch, run `mvn versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`.
+  2. Run validation (`mvn -q -DskipTests test-compile` and `mvn -T 1C -q test` unless the session explicitly narrows it).
+  3. Commit approved changes on the feature branch with `chore: release vX.Y.Z`.
+  4. Push the feature branch to remote.
+  5. Open or update a PR targeting `main`.
+  6. Use PR title `chore: release vX.Y.Z`.
+  7. Use this PR body template:
+     ```text
+     ## Summary
+     - release vX.Y.Z
+
+     ## Validation
+     - [ ] mvn -q -DskipTests test-compile
+     - [ ] mvn -T 1C -q test
+
+     ## Release Checklist
+     - [ ] version bumped with mvn versions:set
+     - [ ] docs and roadmap updated
+     - [ ] release tag will be created from the merge commit on main
+     ```
+  8. Ensure required checks pass.
+  9. Merge PR into `main` (merge commit preferred unless repository policy enforces another method).
+  10. Switch to `main` and fast-forward/pull latest remote.
+  11. Verify the merge commit on `main` contains version `X.Y.Z`.
+  12. Create tag `vX.Y.Z` on that merge commit in `main`.
+  13. Push the tag to remote.
+  14. Perform post-release housekeeping on a follow-up branch:
+      - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
+      - commit `chore: start vX.Y.(Z+1)-SNAPSHOT`
+      - reset `.ai/PLAN.md`
+      - reset `.ai/REVIEW.md`
+      - update `ROADMAP.md`
 - Tagging constraints:
   - Tag must point to the merge commit that introduced the released feature.
   - Do not add unrelated commits between merge and release tag.
@@ -109,3 +147,10 @@ Build and maintain the library described in `README.md`:
 - Work in the current branch.
 - Never auto commit (commit only when user explicitly asks).
 - Human reviews diffs before commit.
+
+## GitHub Repository Settings
+- PRs may be merged by the PR author.
+- Required checks will be defined once CI is added.
+- Manual GitHub UI change:
+  - Repository Settings > Branches > Branch protection rules
+  - uncheck `Require review from someone other than the last pusher` or the equivalent repository-policy wording

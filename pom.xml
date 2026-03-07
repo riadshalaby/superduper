@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>net.rsworld</groupId>
   <artifactId>superduper-parent</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>0.3.0</version>
   <packaging>pom</packaging>
 
   <modules>
@@ -44,6 +44,72 @@
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-observability-api</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-observability-logging</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-observability-metrics</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-repository-api</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-repository-jdbc</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-repository-r2dbc</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-worker-blocking</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-worker-reactive</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-consumer-kafka-blocking</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-consumer-kafka-reactive</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-starter-autoselect</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-schema-liquibase</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-schema-liquibase</artifactId>
+        <version>${project.version}</version>
+        <type>test-jar</type>
+      </dependency>
       <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
@@ -91,6 +157,11 @@
   <build>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>versions-maven-plugin</artifactId>
+          <version>2.21.0</version>
+        </plugin>
         <plugin>
           <groupId>com.diffplug.spotless</groupId>
           <artifactId>spotless-maven-plugin</artifactId>
