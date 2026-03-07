@@ -1,5 +1,5 @@
 # Review
 
-Status: reset after release `v0.2.0`.
+Status: reset after release `v0.3.0`.
 
-Next: populate with findings in the next review cycle.
+Next: populate with findings for the `v0.4.0` review cycle.
