@@ -9,18 +9,23 @@ class R2dbcMessageIngestRepositoryTest {
     @Test
     void usesPostgresUpsertSyntax() {
         String sql = new PostgresR2dbcSqlDialect().upsertReadyMessageSql();
-        assertThat(sql).contains("ON CONFLICT (uuid)");
+        assertThat(sql).contains("ON CONFLICT (message_id)");
         assertThat(sql).doesNotContain("ON DUPLICATE KEY UPDATE");
+        assertThat(sql).contains("message_key");
         assertThat(sql).contains("occurred_at");
         assertThat(sql).contains("received_at");
+        assertThat(sql).contains("correlation_id");
+        assertThat(sql).contains("message_type");
     }
 
     @Test
     void usesMariaDbUpsertSyntax() {
         String sql = new MariaDbR2dbcSqlDialect().upsertReadyMessageSql();
         assertThat(sql).contains("ON DUPLICATE KEY UPDATE");
-        assertThat(sql).contains("`key`");
+        assertThat(sql).contains("message_key");
         assertThat(sql).contains("occurred_at");
         assertThat(sql).contains("received_at");
+        assertThat(sql).contains("correlation_id");
+        assertThat(sql).contains("message_type");
     }
 }

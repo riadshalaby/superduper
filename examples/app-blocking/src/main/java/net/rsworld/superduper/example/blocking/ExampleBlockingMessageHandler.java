@@ -32,7 +32,7 @@ class ExampleBlockingMessageHandler implements MessageHandler {
                 log.warn(
                         "[Blocking Worker] id={} key={} attempt={} -> FAILURE (always-fail)",
                         row.id(),
-                        row.key(),
+                        row.messageKey(),
                         attempt);
             }
             return ProcessingResult.FAILURE;
@@ -43,7 +43,7 @@ class ExampleBlockingMessageHandler implements MessageHandler {
                 log.info(
                         "[Blocking Worker] id={} key={} attempt={} -> FAILURE (retry-once first attempt)",
                         row.id(),
-                        row.key(),
+                        row.messageKey(),
                         attempt);
             }
             return ProcessingResult.FAILURE;
@@ -53,7 +53,7 @@ class ExampleBlockingMessageHandler implements MessageHandler {
             log.info(
                     "[Blocking Worker] id={} key={} attempt={} -> SUCCESS content={}",
                     row.id(),
-                    row.key(),
+                    row.messageKey(),
                     attempt,
                     content);
         }

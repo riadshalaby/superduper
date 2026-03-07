@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.Map;
 import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
+import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
+import net.rsworld.superduper.repository.api.DefaultConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -47,8 +49,11 @@ public class KafkaConsumerAutoConfiguration {
     @Bean
     KafkaConsumerService kafkaConsumerService(
             MessageIngestRepository messageIngestRepository,
-            org.springframework.beans.factory.ObjectProvider<SuperduperObserver> observerProvider) {
+            org.springframework.beans.factory.ObjectProvider<SuperduperObserver> observerProvider,
+            org.springframework.beans.factory.ObjectProvider<ConsumerMetadataResolver> metadataResolverProvider) {
         return new KafkaConsumerService(
-                messageIngestRepository, observerProvider.getIfAvailable(() -> NoopSuperduperObserver.INSTANCE));
+                messageIngestRepository,
+                observerProvider.getIfAvailable(() -> NoopSuperduperObserver.INSTANCE),
+                metadataResolverProvider.getIfAvailable(DefaultConsumerMetadataResolver::new));
     }
 }

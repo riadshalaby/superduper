@@ -7,6 +7,8 @@ public interface JdbcSqlDialect {
 
     String fetchClaimedForWorkerSql();
 
+    String releaseMessagesSql();
+
     String markProcessedSql();
 
     String markFailedSql();

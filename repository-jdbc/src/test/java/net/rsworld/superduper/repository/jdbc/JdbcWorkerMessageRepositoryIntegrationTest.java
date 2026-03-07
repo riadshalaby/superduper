@@ -49,13 +49,13 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         insert("u3", "k2", "v3", "READY");
 
         long first = repo.claimBatch("w1", 10, 5);
-        assertThat(first).isEqualTo(2);
+        assertThat(first).isEqualTo(3);
 
         long second = repo.claimBatch("w1", 10, 5);
         assertThat(second).isZero();
 
         var firstRows = repo.fetchClaimedForWorker("w1");
-        assertThat(firstRows).hasSize(2);
+        assertThat(firstRows).hasSize(3);
         List<Long> firstIds = new ArrayList<>();
         for (var row : firstRows) {
             firstIds.add(row.id());
@@ -64,12 +64,18 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         }
         Integer processedAtCount = jdbc.getJdbcTemplate()
                 .queryForObject(
-                        "SELECT COUNT(*) FROM messages WHERE id IN (" + firstIds.get(0) + "," + firstIds.get(1) + ") "
+                        "SELECT COUNT(*) FROM messages WHERE id IN ("
+                                + firstIds.get(0)
+                                + ","
+                                + firstIds.get(1)
+                                + ","
+                                + firstIds.get(2)
+                                + ") "
                                 + "AND processed_at IS NOT NULL",
                         Integer.class);
-        assertThat(processedAtCount).isEqualTo(2);
+        assertThat(processedAtCount).isEqualTo(3);
         long third = repo.claimBatch("w1", 10, 5);
-        assertThat(third).isEqualTo(1);
+        assertThat(third).isZero();
     }
 
     @Test
@@ -113,8 +119,13 @@ class JdbcWorkerMessageRepositoryIntegrationTest {
         jdbc.getJdbcTemplate().execute("TRUNCATE TABLE messages RESTART IDENTITY");
     }
 
-    private static void insert(String uuid, String key, String content, String status) {
+    private static void insert(String messageId, String messageKey, String content, String status) {
         jdbc.getJdbcTemplate()
-                .update("INSERT INTO messages(uuid,key,content,status) VALUES (?,?,?,?)", uuid, key, content, status);
+                .update(
+                        "INSERT INTO messages(message_id,message_key,content,status) VALUES (?,?,?,?)",
+                        messageId,
+                        messageKey,
+                        content,
+                        status);
     }
 }

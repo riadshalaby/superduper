@@ -130,17 +130,14 @@ class KafkaConsumerWorkerE2EIT {
 
         var claim = SuperDuperWorkerService.class.getDeclaredMethod("claimBatch");
         claim.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        java.util.List<Long> first = (java.util.List<Long>) claim.invoke(svc);
-        assertThat(first).hasSize(2);
-        var process = SuperDuperWorkerService.class.getDeclaredMethod("process", java.util.List.class);
+        long first = (long) claim.invoke(svc);
+        assertThat(first).isEqualTo(3L);
+        var process = SuperDuperWorkerService.class.getDeclaredMethod("process");
         process.setAccessible(true);
-        process.invoke(svc, first);
+        process.invoke(svc);
 
-        @SuppressWarnings("unchecked")
-        java.util.List<Long> second = (java.util.List<Long>) claim.invoke(svc);
-        assertThat(second).hasSize(1);
-        process.invoke(svc, second);
+        long second = (long) claim.invoke(svc);
+        assertThat(second).isZero();
 
         Integer processed =
                 jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE status='PROCESSED'", Integer.class);

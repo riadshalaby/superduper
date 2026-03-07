@@ -25,7 +25,7 @@ class JdbcWorkerClaimExplainIntegrationTest {
             NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(ds);
             LiquibaseTestSupport.migrate(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword());
             jdbc.getJdbcTemplate()
-                    .execute("INSERT INTO messages(uuid,key,content,status,retry_count,last_updated) "
+                    .execute("INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
                             + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 500), 'v', "
                             + "CASE WHEN g % 13 = 0 THEN 'FAILED' ELSE 'READY' END, "
                             + "CASE WHEN g % 13 = 0 THEN (g % 4) ELSE 0 END, "
@@ -66,7 +66,7 @@ class JdbcWorkerClaimExplainIntegrationTest {
             NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(ds);
             LiquibaseTestSupport.migrate(mariadb.getJdbcUrl(), mariadb.getUsername(), mariadb.getPassword());
             jdbc.getJdbcTemplate()
-                    .execute("INSERT INTO messages(uuid,`key`,content,status,retry_count,last_updated) "
+                    .execute("INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
                             + "SELECT UUID(), CONCAT('k', MOD(t.n, 500)), 'v', "
                             + "IF(MOD(t.n, 13) = 0, 'FAILED', 'READY'), "
                             + "IF(MOD(t.n, 13) = 0, MOD(t.n, 4), 0), "
@@ -109,15 +109,15 @@ class JdbcWorkerClaimExplainIntegrationTest {
             System.out.println(baselinePlanText);
 
             jdbc.getJdbcTemplate()
-                    .execute("CREATE INDEX idx_messages_claim_status_id_key ON messages(status, id, `key`)");
+                    .execute("CREATE INDEX idx_messages_claim_status_id_key ON messages(status, id, message_key)");
             jdbc.getJdbcTemplate()
-                    .execute(
-                            "CREATE INDEX idx_messages_claim_failed_status_retry_id_key ON messages(status, retry_count, id, `key`)");
+                    .execute("CREATE INDEX idx_messages_claim_failed_status_retry_id_key "
+                            + "ON messages(status, retry_count, id, message_key)");
             jdbc.getJdbcTemplate()
-                    .execute("CREATE INDEX idx_messages_processing_exists_key_status ON messages(`key`, status)");
+                    .execute("CREATE INDEX idx_messages_processing_exists_key_status ON messages(message_key, status)");
             jdbc.getJdbcTemplate()
-                    .execute(
-                            "CREATE INDEX idx_messages_processing_worker_status_container_key_id ON messages(status, container_id, `key`, id)");
+                    .execute("CREATE INDEX idx_messages_processing_worker_status_container_key_id "
+                            + "ON messages(status, container_id, message_key, id)");
             jdbc.getJdbcTemplate()
                     .execute(
                             "CREATE INDEX idx_messages_processing_stale_status_last_updated ON messages(status, last_updated)");

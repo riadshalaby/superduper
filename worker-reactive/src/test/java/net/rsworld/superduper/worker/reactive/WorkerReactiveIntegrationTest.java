@@ -100,7 +100,7 @@ class WorkerReactiveIntegrationTest {
 
         Long first = messageRepository.claimBatch("w1", 10, 5).block();
         StepVerifier.create(Mono.just(first == null ? 0L : first))
-                .expectNext(2L)
+                .expectNext(3L)
                 .verifyComplete();
 
         var list = messageRepository.fetchClaimedForWorker("w1").collectList().block();
@@ -110,8 +110,56 @@ class WorkerReactiveIntegrationTest {
 
         Long second = messageRepository.claimBatch("w1", 10, 5).block();
         StepVerifier.create(Mono.just(second == null ? 0L : second))
-                .expectNext(1L)
+                .expectNext(0L)
                 .verifyComplete();
+    }
+
+    @Test
+    void failed_same_key_rows_are_released_and_reclaimed_next_cycle() {
+        resetData();
+        seedRows("ru1", "k1", "v1", "READY", "ru2", "k1", "v2", "READY", "ru3", "k2", "v3", "READY");
+
+        LockingTaskExecutor passthroughLockExec = passthroughLockExecutor();
+        List<Long> handledOrder = java.util.Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger firstFailure = new AtomicInteger();
+        ReactiveMessageHandler handler = row -> {
+            handledOrder.add(row.id());
+            if (row.id() == 1L && firstFailure.getAndIncrement() == 0) {
+                return Mono.just(ProcessingResult.FAILURE);
+            }
+            return Mono.just(ProcessingResult.SUCCESS);
+        };
+
+        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
+                messageRepository,
+                passthroughLockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5,
+                "superduper-claim-batch",
+                15000,
+                2000,
+                "reactive-release-worker");
+
+        svc.schedule();
+
+        List<String> firstStatuses = db.sql("SELECT status FROM messages ORDER BY id")
+                .map((r, m) -> r.get("status", String.class))
+                .all()
+                .collectList()
+                .block();
+        assertThat(firstStatuses).containsExactly("FAILED", "READY", "PROCESSED");
+
+        svc.schedule();
+
+        List<String> finalStatuses = db.sql("SELECT status FROM messages ORDER BY id")
+                .map((r, m) -> r.get("status", String.class))
+                .all()
+                .collectList()
+                .block();
+        assertThat(finalStatuses).containsExactly("PROCESSED", "PROCESSED", "PROCESSED");
+        assertThat(handledOrder).containsExactly(1L, 3L, 1L, 2L);
     }
 
     @Test
@@ -119,7 +167,8 @@ class WorkerReactiveIntegrationTest {
         resetData();
         seedRows("ru3", "k2", "v3", "READY");
 
-        db.sql("UPDATE messages SET status='PROCESSING', last_updated = NOW() - INTERVAL '10 minutes' WHERE uuid='ru3'")
+        db.sql("UPDATE messages SET status='PROCESSING', last_updated = NOW() - INTERVAL '10 minutes' "
+                        + "WHERE message_id='ru3'")
                 .fetch()
                 .rowsUpdated()
                 .block();
@@ -135,7 +184,7 @@ class WorkerReactiveIntegrationTest {
                 10_000);
         rec.reclaim();
 
-        Mono<String> status = db.sql("SELECT status FROM messages WHERE uuid='ru3'")
+        Mono<String> status = db.sql("SELECT status FROM messages WHERE message_id='ru3'")
                 .map((r, m) -> r.get("status", String.class))
                 .one();
         StepVerifier.create(status).expectNext("READY").verifyComplete();
@@ -146,7 +195,8 @@ class WorkerReactiveIntegrationTest {
         resetData();
         seedRows("rhb1", "k-hb", "v-hb", "READY");
 
-        db.sql("UPDATE messages SET status='PROCESSING', container_id='w-hb', last_updated=NOW() WHERE uuid='rhb1'")
+        db.sql("UPDATE messages SET status='PROCESSING', container_id='w-hb', last_updated=NOW() "
+                        + "WHERE message_id='rhb1'")
                 .fetch()
                 .rowsUpdated()
                 .block();
@@ -163,7 +213,7 @@ class WorkerReactiveIntegrationTest {
                 90_000);
         rec.reclaim();
 
-        String status = db.sql("SELECT status FROM messages WHERE uuid='rhb1'")
+        String status = db.sql("SELECT status FROM messages WHERE message_id='rhb1'")
                 .map((r, m) -> r.get("status", String.class))
                 .one()
                 .block();
@@ -176,11 +226,12 @@ class WorkerReactiveIntegrationTest {
         seedRows("rstale1", "k-stale", "v-stale", "READY");
 
         db.sql("UPDATE messages SET status='PROCESSING', container_id='w-stale', "
-                        + "last_updated=NOW() - INTERVAL '10 minutes' WHERE uuid='rstale1'")
+                        + "last_updated=NOW() - INTERVAL '10 minutes' WHERE message_id='rstale1'")
                 .fetch()
                 .rowsUpdated()
                 .block();
-        Double beforeEpoch = db.sql("SELECT EXTRACT(EPOCH FROM last_updated) AS e FROM messages WHERE uuid='rstale1'")
+        Double beforeEpoch = db.sql(
+                        "SELECT EXTRACT(EPOCH FROM last_updated) AS e FROM messages WHERE message_id='rstale1'")
                 .map((r, m) -> r.get("e", Double.class))
                 .one()
                 .block();
@@ -192,11 +243,12 @@ class WorkerReactiveIntegrationTest {
                 90_000);
         rec.reclaim();
 
-        String status = db.sql("SELECT status FROM messages WHERE uuid='rstale1'")
+        String status = db.sql("SELECT status FROM messages WHERE message_id='rstale1'")
                 .map((r, m) -> r.get("status", String.class))
                 .one()
                 .block();
-        Double afterEpoch = db.sql("SELECT EXTRACT(EPOCH FROM last_updated) AS e FROM messages WHERE uuid='rstale1'")
+        Double afterEpoch = db.sql(
+                        "SELECT EXTRACT(EPOCH FROM last_updated) AS e FROM messages WHERE message_id='rstale1'")
                 .map((r, m) -> r.get("e", Double.class))
                 .one()
                 .block();
@@ -221,13 +273,13 @@ class WorkerReactiveIntegrationTest {
         Long second = result.getT2();
         assertThat(first).isNotNull();
         assertThat(second).isNotNull();
-        assertThat(first + second).isEqualTo(2L);
+        assertThat(first + second).isEqualTo(3L);
 
         Integer processing = db.sql("SELECT COUNT(*) AS c FROM messages WHERE status='PROCESSING'")
                 .map((r, m) -> r.get("c", Integer.class))
                 .one()
                 .block();
-        assertThat(processing).isEqualTo(2);
+        assertThat(processing).isEqualTo(3);
     }
 
     @Test
@@ -319,7 +371,7 @@ class WorkerReactiveIntegrationTest {
         resetData();
         seedRowsSingleKeyWithGenerateSeries(messageCount, "strict-key");
 
-        LockingTaskExecutor passthroughLockExec = passthroughLockExecutor();
+        LockingTaskExecutor serializedLockExec = serializedLockExecutor();
         List<Long> processedOrder = java.util.Collections.synchronizedList(new ArrayList<>());
         ReactiveMessageHandler handler = row -> {
             processedOrder.add(row.id());
@@ -331,7 +383,7 @@ class WorkerReactiveIntegrationTest {
             String workerId = "reactive-it-worker-strict-" + i;
             workers.add(new SuperDuperWorkerReactiveService(
                     messageRepository,
-                    passthroughLockExec,
+                    serializedLockExec,
                     handler,
                     net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                     batchSize,
@@ -386,11 +438,12 @@ class WorkerReactiveIntegrationTest {
         seedRowsMixedKeyPattern(patternRepeats);
         Map<String, List<Long>> expectedOrderByKey = expectedMessageOrderByKey();
 
-        LockingTaskExecutor passthroughLockExec = passthroughLockExecutor();
+        LockingTaskExecutor serializedLockExec = serializedLockExecutor();
         Map<String, List<Long>> processedOrderByKey = new ConcurrentHashMap<>();
         ReactiveMessageHandler handler = row -> {
             processedOrderByKey
-                    .computeIfAbsent(row.key(), ignored -> java.util.Collections.synchronizedList(new ArrayList<>()))
+                    .computeIfAbsent(
+                            row.messageKey(), ignored -> java.util.Collections.synchronizedList(new ArrayList<>()))
                     .add(row.id());
             return Mono.just(ProcessingResult.SUCCESS);
         };
@@ -400,7 +453,7 @@ class WorkerReactiveIntegrationTest {
             String workerId = "reactive-it-worker-mixed-" + i;
             workers.add(new SuperDuperWorkerReactiveService(
                     messageRepository,
-                    passthroughLockExec,
+                    serializedLockExec,
                     handler,
                     net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                     batchSize,
@@ -488,8 +541,23 @@ class WorkerReactiveIntegrationTest {
         return lockExec;
     }
 
+    private static LockingTaskExecutor serializedLockExecutor() {
+        Object monitor = new Object();
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+        doAnswer(invocation -> {
+                    Runnable runnable = invocation.getArgument(0);
+                    synchronized (monitor) {
+                        runnable.run();
+                    }
+                    return null;
+                })
+                .when(lockExec)
+                .executeWithLock(any(Runnable.class), any());
+        return lockExec;
+    }
+
     private static void seedRowsWithGenerateSeries(int count) {
-        db.sql("INSERT INTO messages(uuid,key,content,status) "
+        db.sql("INSERT INTO messages(message_id,message_key,content,status) "
                         + "SELECT LPAD(g::text, 36, '0'), 'parallel-key-' || g, 'payload-' || g, 'READY' "
                         + "FROM generate_series(1, "
                         + count
@@ -500,7 +568,7 @@ class WorkerReactiveIntegrationTest {
     }
 
     private static void seedRowsSingleKeyWithGenerateSeries(int count, String key) {
-        db.sql("INSERT INTO messages(uuid,key,content,status) "
+        db.sql("INSERT INTO messages(message_id,message_key,content,status) "
                         + "SELECT LPAD(g::text, 36, '0'), '"
                         + key
                         + "', 'payload-' || g, 'READY' "
@@ -513,7 +581,7 @@ class WorkerReactiveIntegrationTest {
     }
 
     private static void seedRowsMixedKeyPattern(int repeatCount) {
-        db.sql("INSERT INTO messages(uuid,key,content,status) "
+        db.sql("INSERT INTO messages(message_id,message_key,content,status) "
                         + "SELECT LPAD((((g - 1) * 6) + p.seq)::text, 36, '0'), p.msg_key, p.msg_content || '-' || g, 'READY' "
                         + "FROM generate_series(1, "
                         + repeatCount
@@ -532,8 +600,8 @@ class WorkerReactiveIntegrationTest {
     }
 
     private static Map<String, List<Long>> expectedMessageOrderByKey() {
-        List<Map.Entry<String, Long>> rows = db.sql("SELECT key, id FROM messages ORDER BY id")
-                .map((r, m) -> Map.entry(r.get("key", String.class), r.get("id", Long.class)))
+        List<Map.Entry<String, Long>> rows = db.sql("SELECT message_key, id FROM messages ORDER BY id")
+                .map((r, m) -> Map.entry(r.get("message_key", String.class), r.get("id", Long.class)))
                 .all()
                 .collectList()
                 .block();
@@ -655,9 +723,10 @@ class WorkerReactiveIntegrationTest {
         Flux.range(0, values.length / 4)
                 .concatMap(i -> {
                     int offset = i * 4;
-                    return db.sql("INSERT INTO messages(uuid,key,content,status) VALUES (:uuid,:key,:content,:status)")
-                            .bind("uuid", values[offset])
-                            .bind("key", values[offset + 1])
+                    return db.sql("INSERT INTO messages(message_id,message_key,content,status) "
+                                    + "VALUES (:messageId,:messageKey,:content,:status)")
+                            .bind("messageId", values[offset])
+                            .bind("messageKey", values[offset + 1])
                             .bind("content", values[offset + 2])
                             .bind("status", values[offset + 3])
                             .fetch()

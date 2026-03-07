@@ -97,12 +97,55 @@ class WorkerBlockingIntegrationTest {
                 5);
 
         long first = svc.claimBatch();
-        assertThat(first).isEqualTo(2L);
+        assertThat(first).isEqualTo(3L);
 
         svc.process();
 
         long second = svc.claimBatch();
-        assertThat(second).isEqualTo(1L);
+        assertThat(second).isZero();
+    }
+
+    @Test
+    void failed_same_key_rows_are_released_and_reclaimed_next_cycle() {
+        resetData();
+        seedRows("ju1", "k1", "v1", "READY", "ju2", "k1", "v2", "READY", "ju3", "k2", "v3", "READY");
+
+        LockingTaskExecutor passthroughLockExec = passthroughLockExecutor();
+        List<Long> handledOrder = new ArrayList<>();
+        AtomicInteger firstFailure = new AtomicInteger();
+        MessageHandler handler = row -> {
+            handledOrder.add(row.id());
+            if (row.id() == 1L && firstFailure.getAndIncrement() == 0) {
+                return ProcessingResult.FAILURE;
+            }
+            return ProcessingResult.SUCCESS;
+        };
+
+        SuperDuperWorkerService svc = new SuperDuperWorkerService(
+                messageRepository,
+                txm,
+                passthroughLockExec,
+                handler,
+                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
+                10,
+                5,
+                "superduper-claim-batch",
+                15000,
+                2000,
+                "blocking-release-worker");
+
+        svc.schedule();
+
+        List<String> firstStatuses = jdbc.getJdbcTemplate()
+                .query("SELECT status FROM messages ORDER BY id", (rs, rn) -> rs.getString("status"));
+        assertThat(firstStatuses).containsExactly("FAILED", "READY", "PROCESSED");
+
+        svc.schedule();
+
+        List<String> finalStatuses = jdbc.getJdbcTemplate()
+                .query("SELECT status FROM messages ORDER BY id", (rs, rn) -> rs.getString("status"));
+        assertThat(finalStatuses).containsExactly("PROCESSED", "PROCESSED", "PROCESSED");
+        assertThat(handledOrder).containsExactly(1L, 3L, 1L, 2L);
     }
 
     @Test
@@ -111,8 +154,9 @@ class WorkerBlockingIntegrationTest {
         seedRows("ju3", "k2", "v3", "READY");
 
         jdbc.update(
-                "UPDATE messages SET status='PROCESSING', last_updated = NOW() - INTERVAL '10 minutes' WHERE uuid=:uuid",
-                new MapSqlParameterSource("uuid", "ju3"));
+                "UPDATE messages SET status='PROCESSING', last_updated = NOW() - INTERVAL '10 minutes' "
+                        + "WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "ju3"));
 
         HeartbeatService hb = new HeartbeatService(
                 maintenanceRepository, net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE);
@@ -126,7 +170,9 @@ class WorkerBlockingIntegrationTest {
         rec.reclaim();
 
         String status = jdbc.queryForObject(
-                "SELECT status FROM messages WHERE uuid=:uuid", new MapSqlParameterSource("uuid", "ju3"), String.class);
+                "SELECT status FROM messages WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "ju3"),
+                String.class);
         assertThat(status).isEqualTo("READY");
     }
 
@@ -138,8 +184,8 @@ class WorkerBlockingIntegrationTest {
         jdbc.update(
                 "UPDATE messages "
                         + "SET status='PROCESSING', container_id='w-hb', last_updated=NOW() "
-                        + "WHERE uuid=:uuid",
-                new MapSqlParameterSource("uuid", "hb1"));
+                        + "WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "hb1"));
         jdbc.update(
                 "INSERT INTO container_heartbeats(container_id, last_heartbeat) "
                         + "VALUES ('w-hb', NOW() - INTERVAL '31 seconds')",
@@ -153,7 +199,9 @@ class WorkerBlockingIntegrationTest {
         rec.reclaim();
 
         String status = jdbc.queryForObject(
-                "SELECT status FROM messages WHERE uuid=:uuid", new MapSqlParameterSource("uuid", "hb1"), String.class);
+                "SELECT status FROM messages WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "hb1"),
+                String.class);
         assertThat(status).isEqualTo("PROCESSING");
     }
 
@@ -165,11 +213,11 @@ class WorkerBlockingIntegrationTest {
         jdbc.update(
                 "UPDATE messages "
                         + "SET status='PROCESSING', container_id='w-stale', last_updated=NOW() - INTERVAL '10 minutes' "
-                        + "WHERE uuid=:uuid",
-                new MapSqlParameterSource("uuid", "stale1"));
+                        + "WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "stale1"));
         Timestamp before = jdbc.queryForObject(
-                "SELECT last_updated FROM messages WHERE uuid=:uuid",
-                new MapSqlParameterSource("uuid", "stale1"),
+                "SELECT last_updated FROM messages WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "stale1"),
                 Timestamp.class);
 
         OrphanReclaimer rec = new OrphanReclaimer(
@@ -180,12 +228,12 @@ class WorkerBlockingIntegrationTest {
         rec.reclaim();
 
         String status = jdbc.queryForObject(
-                "SELECT status FROM messages WHERE uuid=:uuid",
-                new MapSqlParameterSource("uuid", "stale1"),
+                "SELECT status FROM messages WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "stale1"),
                 String.class);
         Timestamp after = jdbc.queryForObject(
-                "SELECT last_updated FROM messages WHERE uuid=:uuid",
-                new MapSqlParameterSource("uuid", "stale1"),
+                "SELECT last_updated FROM messages WHERE message_id=:messageId",
+                new MapSqlParameterSource("messageId", "stale1"),
                 Timestamp.class);
         assertThat(status).isEqualTo("READY");
         assertThat(before).isNotNull();
@@ -223,11 +271,11 @@ class WorkerBlockingIntegrationTest {
 
             long first = c1.get(10, TimeUnit.SECONDS);
             long second = c2.get(10, TimeUnit.SECONDS);
-            assertThat(first + second).isEqualTo(2L);
+            assertThat(first + second).isEqualTo(3L);
 
             Integer processing = jdbc.getJdbcTemplate()
                     .queryForObject("SELECT COUNT(*) FROM messages WHERE status='PROCESSING'", Integer.class);
-            assertThat(processing).isEqualTo(2);
+            assertThat(processing).isEqualTo(3);
         } finally {
             executor.shutdownNow();
         }
@@ -321,7 +369,7 @@ class WorkerBlockingIntegrationTest {
         resetData();
         seedRowsSingleKeyWithGenerateSeries(messageCount, "strict-key");
 
-        LockingTaskExecutor passthroughLockExec = passthroughLockExecutor();
+        LockingTaskExecutor serializedLockExec = serializedLockExecutor();
         List<Long> processedOrder = java.util.Collections.synchronizedList(new ArrayList<>());
         MessageHandler handler = row -> {
             processedOrder.add(row.id());
@@ -334,7 +382,7 @@ class WorkerBlockingIntegrationTest {
             workers.add(new SuperDuperWorkerService(
                     messageRepository,
                     txm,
-                    passthroughLockExec,
+                    serializedLockExec,
                     handler,
                     net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                     batchSize,
@@ -389,11 +437,12 @@ class WorkerBlockingIntegrationTest {
         seedRowsMixedKeyPattern(patternRepeats);
         Map<String, List<Long>> expectedOrderByKey = expectedMessageOrderByKey();
 
-        LockingTaskExecutor passthroughLockExec = passthroughLockExecutor();
+        LockingTaskExecutor serializedLockExec = serializedLockExecutor();
         Map<String, List<Long>> processedOrderByKey = new ConcurrentHashMap<>();
         MessageHandler handler = row -> {
             processedOrderByKey
-                    .computeIfAbsent(row.key(), ignored -> java.util.Collections.synchronizedList(new ArrayList<>()))
+                    .computeIfAbsent(
+                            row.messageKey(), ignored -> java.util.Collections.synchronizedList(new ArrayList<>()))
                     .add(row.id());
             return ProcessingResult.SUCCESS;
         };
@@ -404,7 +453,7 @@ class WorkerBlockingIntegrationTest {
             workers.add(new SuperDuperWorkerService(
                     messageRepository,
                     txm,
-                    passthroughLockExec,
+                    serializedLockExec,
                     handler,
                     net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
                     batchSize,
@@ -473,9 +522,24 @@ class WorkerBlockingIntegrationTest {
         return lockExec;
     }
 
+    private static LockingTaskExecutor serializedLockExecutor() {
+        Object monitor = new Object();
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+        doAnswer(invocation -> {
+                    Runnable runnable = invocation.getArgument(0);
+                    synchronized (monitor) {
+                        runnable.run();
+                    }
+                    return null;
+                })
+                .when(lockExec)
+                .executeWithLock(any(Runnable.class), any());
+        return lockExec;
+    }
+
     private static void seedRowsWithGenerateSeries(int count) {
         jdbc.getJdbcTemplate()
-                .execute("INSERT INTO messages(uuid,key,content,status) "
+                .execute("INSERT INTO messages(message_id,message_key,content,status) "
                         + "SELECT LPAD(g::text, 36, '0'), 'parallel-key-' || g, 'payload-' || g, 'READY' "
                         + "FROM generate_series(1, "
                         + count
@@ -484,7 +548,7 @@ class WorkerBlockingIntegrationTest {
 
     private static void seedRowsSingleKeyWithGenerateSeries(int count, String key) {
         jdbc.getJdbcTemplate()
-                .execute("INSERT INTO messages(uuid,key,content,status) "
+                .execute("INSERT INTO messages(message_id,message_key,content,status) "
                         + "SELECT LPAD(g::text, 36, '0'), '"
                         + key
                         + "', 'payload-' || g, 'READY' "
@@ -495,7 +559,7 @@ class WorkerBlockingIntegrationTest {
 
     private static void seedRowsMixedKeyPattern(int repeatCount) {
         jdbc.getJdbcTemplate()
-                .execute("INSERT INTO messages(uuid,key,content,status) "
+                .execute("INSERT INTO messages(message_id,message_key,content,status) "
                         + "SELECT LPAD((((g - 1) * 6) + p.seq)::text, 36, '0'), p.msg_key, p.msg_content || '-' || g, 'READY' "
                         + "FROM generate_series(1, "
                         + repeatCount
@@ -511,10 +575,10 @@ class WorkerBlockingIntegrationTest {
     }
 
     private static Map<String, List<Long>> expectedMessageOrderByKey() {
-        return jdbc.getJdbcTemplate().query("SELECT key, id FROM messages ORDER BY id", rs -> {
+        return jdbc.getJdbcTemplate().query("SELECT message_key, id FROM messages ORDER BY id", rs -> {
             Map<String, List<Long>> result = new TreeMap<>();
             while (rs.next()) {
-                result.computeIfAbsent(rs.getString("key"), ignored -> new ArrayList<>())
+                result.computeIfAbsent(rs.getString("message_key"), ignored -> new ArrayList<>())
                         .add(rs.getLong("id"));
             }
             return result;
@@ -625,10 +689,11 @@ class WorkerBlockingIntegrationTest {
         }
         for (int i = 0; i < values.length; i += 4) {
             jdbc.update(
-                    "INSERT INTO messages(uuid,key,content,status) VALUES (:uuid,:key,:content,:status)",
+                    "INSERT INTO messages(message_id,message_key,content,status) "
+                            + "VALUES (:messageId,:messageKey,:content,:status)",
                     new MapSqlParameterSource()
-                            .addValue("uuid", values[i])
-                            .addValue("key", values[i + 1])
+                            .addValue("messageId", values[i])
+                            .addValue("messageKey", values[i + 1])
                             .addValue("content", values[i + 2])
                             .addValue("status", values[i + 3]));
         }

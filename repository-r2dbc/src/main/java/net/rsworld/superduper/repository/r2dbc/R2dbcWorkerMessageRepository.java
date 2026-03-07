@@ -43,12 +43,29 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
                     Number retry = row.get("retry_count", Number.class);
                     return new ClaimedMessage(
                             id == null ? null : id.longValue(),
+                            row.get("message_id", String.class),
                             row.get("message_key", String.class),
                             row.get("content", String.class),
                             retry == null ? 0 : retry.intValue(),
-                            row.get("container_id", String.class));
+                            row.get("container_id", String.class),
+                            row.get("correlation_id", String.class),
+                            row.get("message_type", String.class));
                 })
                 .all();
+    }
+
+    @Override
+    public Mono<Integer> releaseMessages(java.util.List<Long> ids, String containerId) {
+        if (ids == null || ids.isEmpty()) {
+            return Mono.just(0);
+        }
+        return db.sql(dialect.releaseMessagesSql())
+                .bind("ids", ids)
+                .bind("cid", containerId)
+                .fetch()
+                .rowsUpdated()
+                .map(Long::intValue)
+                .defaultIfEmpty(0);
     }
 
     @Override

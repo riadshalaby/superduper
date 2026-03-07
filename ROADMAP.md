@@ -1,19 +1,26 @@
 # ROADMAP
 
-Goal: prepare scope for `v0.4.0`
+Goal: improve worker throughput, keep ordering guarantees, and clean up message metadata extensibility.
 
-## v0.3.0 delivered
+## Priority 1: Worker Throughput and Batch Semantics
 
-1. [x] Add release notes automation for tagged versions (`vX.Y.Z`) to improve traceability.
-2. [x] Expand example verification docs with reproducible SQL assertions for status distribution and ordering.
-3. [x] Move the example description and running locally parts from README to `docs/EXAMPLES.md`. Link that in README.
-4. [x] Move library usage instructions from README to `docs/USAGE.md`.
-5. [x] Create a `docs/` folder for project documentation except `README.md`, `ROADMAP.md`, and `CLAUDE.md`.
-6. [x] Improve the agent workflow with instructions for versioning, committing changes, creating a PR, merging, and releasing in GitHub.
-7. [x] Document GitHub policy changes that allow PRs to be merged by the PR author.
-8. [x] Create a detailed architecture and module overview in `docs/ARCHITECTURE.md`.
-9. [x] Update `CLAUDE.md` accordingly.
+- Current behavior: the current SQL claim strategy (strict per-key oldest-pending filter) effectively claims only one message per key per worker run. If 100 messages share the same key, only 1 message is processed per schedule cycle.
+- Target behavior: when at least `batchSize` messages are available, the worker should claim and process up to `batchSize` messages per run, including large same-key backlogs.
+- Design rule: if one message for a key fails and later messages of the same key are already inside the current batch, handling of those later messages must be done inside worker batch logic, not through SQL-level key blocking.
+- Required validation: add integration tests for same-key batches with partial failure, and add performance tests to verify throughput improvements under hot-key load.
 
-## Next version scope
+## Priority 2: Message Schema and Naming Cleanup
 
-1. [ ] Carry forward ROADMAP #2 from v0.3.0: add CI workflow checks for multi-container smoke validation (`docker-compose.multi.yml`).
+- Rename `uuid` to `message_id`.
+- Rename `key` to `message_key`
+- Add `correlation_id` to the message.
+- Add `message_type` (string) to the message.
+
+## Priority 3: Consumer Metadata SPI
+
+- Add a consumer SPI so library users can provide `occurredAt`, `message_id`, `correlationId`, and `message_type`.
+- Provide a default SPI implementation with this behavior:
+- `occurredAt`: `now()`.
+- `message_id`: header `"message_id"` if present; otherwise deterministic UUID from `topic:partition:offset`.
+- `correlationId`: header `"correlationId"` if present; otherwise new UUID.
+- `message_type`: header `"message_type"` if present; otherwise `null`.

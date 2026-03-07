@@ -93,7 +93,7 @@ class KafkaConsumerE2ETest {
         Integer found = 0;
         while (System.currentTimeMillis() < deadline) {
             found = jdbc.queryForObject(
-                    "SELECT COUNT(*) FROM messages WHERE key='k-e2e' AND content='hello-jdbc'", Integer.class);
+                    "SELECT COUNT(*) FROM messages WHERE message_key='k-e2e' AND content='hello-jdbc'", Integer.class);
             if (found != null && found > 0) break;
             pauseMillis(250);
         }

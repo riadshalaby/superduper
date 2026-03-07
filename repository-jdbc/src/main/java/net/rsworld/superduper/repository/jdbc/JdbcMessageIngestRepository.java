@@ -22,14 +22,22 @@ public class JdbcMessageIngestRepository implements MessageIngestRepository {
     }
 
     @Override
-    public void upsertReadyMessage(String uuid, String key, String content, Instant occurredAt) {
+    public void upsertReadyMessage(
+            String messageId,
+            String messageKey,
+            String content,
+            Instant occurredAt,
+            String correlationId,
+            String messageType) {
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         jdbc.update(
                 dialect.upsertReadyMessageSql(),
                 new MapSqlParameterSource()
-                        .addValue("uuid", uuid)
-                        .addValue("key", key)
+                        .addValue("messageId", messageId)
+                        .addValue("messageKey", messageKey)
                         .addValue("content", content)
-                        .addValue("occurredAt", Timestamp.from(occurredAt)));
+                        .addValue("occurredAt", Timestamp.from(occurredAt))
+                        .addValue("correlationId", correlationId)
+                        .addValue("messageType", messageType));
     }
 }

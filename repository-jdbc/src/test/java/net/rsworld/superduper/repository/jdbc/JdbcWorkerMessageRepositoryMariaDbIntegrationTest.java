@@ -47,7 +47,7 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         insert("u3", "k2", "v3", "READY");
 
         long first = repo.claimBatch("w1", 10, 5);
-        assertThat(first).isEqualTo(2);
+        assertThat(first).isEqualTo(3);
 
         long second = repo.claimBatch("w1", 10, 5);
         assertThat(second).isZero();
@@ -55,7 +55,7 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         repo.fetchClaimedForWorker("w1")
                 .forEach(row -> assertThat(repo.markProcessed(row.id(), "w1")).isTrue());
         long third = repo.claimBatch("w1", 10, 5);
-        assertThat(third).isEqualTo(1);
+        assertThat(third).isZero();
     }
 
     @Test
@@ -96,8 +96,13 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         jdbc.getJdbcTemplate().execute("TRUNCATE TABLE messages");
     }
 
-    private static void insert(String uuid, String key, String content, String status) {
+    private static void insert(String messageId, String messageKey, String content, String status) {
         jdbc.getJdbcTemplate()
-                .update("INSERT INTO messages(uuid,`key`,content,status) VALUES (?,?,?,?)", uuid, key, content, status);
+                .update(
+                        "INSERT INTO messages(message_id,message_key,content,status) VALUES (?,?,?,?)",
+                        messageId,
+                        messageKey,
+                        content,
+                        status);
     }
 }

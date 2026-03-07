@@ -12,6 +12,8 @@ import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 import net.rsworld.superduper.observability.metrics.MetricsSuperduperObserver;
+import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
+import net.rsworld.superduper.repository.api.DefaultConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
@@ -36,6 +38,12 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @EnableConfigurationProperties({ObservabilityProperties.class, WorkerProperties.class})
 public class AutoSelectConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ConsumerMetadataResolver consumerMetadataResolver() {
+        return new DefaultConsumerMetadataResolver();
+    }
 
     @Bean
     @ConditionalOnMissingBean

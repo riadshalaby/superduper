@@ -78,10 +78,10 @@ graph TD
 ## Data Flow
 
 1. Kafka records are consumed by `consumer-kafka-blocking` or `consumer-kafka-reactive`.
-2. The consumer resolves `occurred_at`, derives a deterministic `uuid` from `topic:partition:offset`, and persists the row as `READY` in `messages`.
+2. The consumer uses `ConsumerMetadataResolver` to resolve `message_id`, `occurred_at`, `correlation_id`, and `message_type`, then persists the row as `READY` in `messages`.
 3. `starter-autoselect` wires either `SuperDuperWorkerService` or `SuperDuperWorkerReactiveService` based on `superduper.consumer.type`.
-4. The worker enters a short ShedLock-protected claim section and marks the oldest eligible row per key as `PROCESSING`.
-5. The worker fetches its claimed rows and invokes the user extension point:
+4. The worker enters a short ShedLock-protected claim section and marks eligible rows as `PROCESSING`, including multiple rows for the same key when no row for that key is already `PROCESSING`.
+5. The worker fetches its claimed rows, processes them per key in `id` order, and invokes the user extension point:
    - blocking: `MessageHandler`
    - reactive: `ReactiveMessageHandler`
 6. A handler result updates the row:
@@ -102,6 +102,7 @@ graph TD
 - Ingest: `MessageIngestRepository`, `ReactiveMessageIngestRepository`
 - Worker claim/process: `WorkerMessageRepository`, `ReactiveWorkerMessageRepository`
 - Maintenance: `WorkerMaintenanceRepository`, `ReactiveWorkerMaintenanceRepository`
+- Consumer metadata: `ConsumerMetadataResolver`
 
 These ports isolate service logic from dialect-specific SQL.
 
@@ -127,4 +128,4 @@ Practical difference:
 
 - PostgreSQL uses a CTE plus `UPDATE ... FROM candidate`.
 - MariaDB uses a nested derived table to satisfy `SKIP LOCKED` and `UPDATE JOIN` constraints.
-- Both dialects preserve the same behavioral contract: oldest eligible row per key, no concurrent ownership, retry-aware claim eligibility.
+- Both dialects preserve the same behavioral contract: no concurrent ownership, retry-aware claim eligibility, and worker-enforced per-key order inside each batch.

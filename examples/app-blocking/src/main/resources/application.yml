@@ -27,6 +27,7 @@ superduper:
   worker:
     max-retries: 3
     claim-interval-ms: 2000
+    batch-size: 500
   example:
     seed:
       enabled: false

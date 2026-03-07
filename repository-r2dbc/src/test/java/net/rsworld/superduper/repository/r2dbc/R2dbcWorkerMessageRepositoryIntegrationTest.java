@@ -52,14 +52,14 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         insert("u3", "k2", "v3", "READY");
 
         Long first = repo.claimBatch("w1", 10, 5).block();
-        assertThat(first).isEqualTo(2L);
+        assertThat(first).isEqualTo(3L);
 
         Long second = repo.claimBatch("w1", 10, 5).block();
         assertThat(second).isZero();
 
         var firstRows = repo.fetchClaimedForWorker("w1").collectList().block();
         assertThat(firstRows).isNotNull();
-        assertThat(firstRows).hasSize(2);
+        assertThat(firstRows).hasSize(3);
         firstRows.forEach(
                 row -> assertThat(repo.markProcessed(row.id(), "w1").block()).isTrue());
         Integer processedAtCount = db.sql("SELECT COUNT(*) AS c FROM messages WHERE status='PROCESSED' "
@@ -67,9 +67,9 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
                 .map((row, md) -> row.get("c", Integer.class))
                 .one()
                 .block();
-        assertThat(processedAtCount).isEqualTo(2);
+        assertThat(processedAtCount).isEqualTo(3);
         Long third = repo.claimBatch("w1", 10, 5).block();
-        assertThat(third).isEqualTo(1L);
+        assertThat(third).isZero();
     }
 
     @Test
@@ -116,12 +116,13 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         db.sql("TRUNCATE TABLE messages RESTART IDENTITY").fetch().rowsUpdated().block();
     }
 
-    private static void insert(String uuid, String key, String content, String status) {
-        db.sql("INSERT INTO messages(uuid,key,content,status) VALUES (:u,:k,:c,:s)")
-                .bind("u", uuid)
-                .bind("k", key)
-                .bind("c", content)
-                .bind("s", status)
+    private static void insert(String messageId, String messageKey, String content, String status) {
+        db.sql(
+                        "INSERT INTO messages(message_id,message_key,content,status) VALUES (:messageId,:messageKey,:content,:status)")
+                .bind("messageId", messageId)
+                .bind("messageKey", messageKey)
+                .bind("content", content)
+                .bind("status", status)
                 .fetch()
                 .rowsUpdated()
                 .block();

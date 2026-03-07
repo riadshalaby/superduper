@@ -19,9 +19,9 @@ superduper:
     group-id: example-reactive
     topic: superduper.example
   worker:
-    batch-size: 250
+    batch-size: 5000
     max-retries: 3
-    claim-interval-ms: 500
+    claim-interval-ms: 2000
   example:
     seed:
       enabled: false

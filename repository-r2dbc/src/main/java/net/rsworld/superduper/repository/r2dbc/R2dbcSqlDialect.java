@@ -7,6 +7,8 @@ public interface R2dbcSqlDialect {
 
     String fetchClaimedForWorkerSql();
 
+    String releaseMessagesSql();
+
     String markProcessedSql();
 
     String markFailedSql();
