@@ -128,7 +128,8 @@ Build and maintain the library described in `README.md`:
   11. Verify the merge commit on `main` contains version `X.Y.Z`.
   12. Create tag `vX.Y.Z` on that merge commit in `main`.
   13. Push the tag to remote.
-  14. Perform post-release housekeeping on a follow-up branch:
+  14. create a new branch for the next release
+  14. Perform post-release housekeeping on the branch for the next release cycle:
       - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
       - commit `chore: start vX.Y.(Z+1)-SNAPSHOT`
       - reset `.ai/PLAN.md`
@@ -145,12 +146,3 @@ Build and maintain the library described in `README.md`:
 
 ## Git Rules
 - Work in the current branch.
-- Never auto commit (commit only when user explicitly asks).
-- Human reviews diffs before commit.
-
-## GitHub Repository Settings
-- PRs may be merged by the PR author.
-- Required checks will be defined once CI is added.
-- Manual GitHub UI change:
-  - Repository Settings > Branches > Branch protection rules
-  - uncheck `Require review from someone other than the last pusher` or the equivalent repository-policy wording
