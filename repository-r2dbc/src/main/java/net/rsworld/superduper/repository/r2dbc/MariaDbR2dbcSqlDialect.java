@@ -47,6 +47,13 @@ public final class MariaDbR2dbcSqlDialect implements R2dbcSqlDialect {
     }
 
     @Override
+    public String findByStatusSql() {
+        return ("SELECT id, message_id, message_key, content, retry_count, container_id, correlation_id, message_type "
+                        + "FROM %s WHERE status = :status ORDER BY id LIMIT :limit")
+                .formatted(messagesTable);
+    }
+
+    @Override
     public String releaseMessagesSql() {
         return ("UPDATE %s SET status='READY', container_id=NULL, last_updated=NOW() "
                         + "WHERE id IN (:ids) AND container_id=:cid")
@@ -75,10 +82,30 @@ public final class MariaDbR2dbcSqlDialect implements R2dbcSqlDialect {
     }
 
     @Override
+    public String redriveByIdSql() {
+        return ("UPDATE %s SET status='READY', retry_count=0, container_id=NULL, last_updated=NOW() "
+                        + "WHERE id=:id AND status IN ('FAILED', 'STOPPED')")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String redriveByStatusSql() {
+        return ("UPDATE %s m JOIN (SELECT id FROM (SELECT id FROM %s WHERE status = :status ORDER BY id LIMIT :limit) "
+                        + "redrive_ids) r ON r.id = m.id "
+                        + "SET m.status='READY', m.retry_count=0, m.container_id=NULL, m.last_updated=NOW()")
+                .formatted(messagesTable, messagesTable);
+    }
+
+    @Override
     public String heartbeatUpsertSql() {
         return ("INSERT INTO %s (container_id, last_heartbeat) VALUES (:cid, NOW()) "
                         + "ON DUPLICATE KEY UPDATE last_heartbeat = VALUES(last_heartbeat)")
                 .formatted(heartbeatsTable);
+    }
+
+    @Override
+    public String countByStatusSql() {
+        return ("SELECT status, COUNT(*) AS cnt FROM %s GROUP BY status").formatted(messagesTable);
     }
 
     @Override

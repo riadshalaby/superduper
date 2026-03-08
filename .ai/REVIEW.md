@@ -1,20 +1,19 @@
 # Review
 
-2026-03-07 UTC
+2026-03-08 UTC
+
+Status: **changes requested**
 
 ## Findings
 
-No findings.
+1. Medium — The new observability/runtime-diagnostics docs still miss the specific example log output with `correlation_id` and `message_type` metadata fields required by `.ai/PLAN.md`. The plan calls this out explicitly in `.ai/PLAN.md:309`-`.ai/PLAN.md:315`, but the only example log block in `docs/USAGE.md:257`-`docs/USAGE.md:262` shows batch and consumer timing lines without either metadata field. The text at `docs/USAGE.md:278` only recommends including those fields in application logs; it does not provide the documented example the plan asked for.
 
 ## Notes
 
-- The previously reported issues are resolved:
-  - consumer/worker E2E tests now match the Track B claim/process contract
-  - `messageId` now flows from repository fetch to worker handlers
-  - same-key failure release and reclaim is covered by real integration tests in both worker modules
-- I did not find an architecture violation against `CLAUDE.md`: consumers and workers still use repository ports, and the metadata SPI remains Kafka-free inside `repository-api`.
-- Re-validated targeted suites:
-  - `consumer-kafka-blocking`: `KafkaConsumerWorkerE2EIT`
-  - `consumer-kafka-reactive`: `KafkaReactiveWorkerE2EIT`
-  - `worker-blocking`: `WorkerBlockingIntegrationTest` (`Tests run: 9, Failures: 0, Errors: 0`)
-  - `worker-reactive`: `WorkerReactiveIntegrationTest` (`Tests run: 9, Failures: 0, Errors: 0`)
+- The redrive docs are present in `docs/USAGE.md:153`-`docs/USAGE.md:182` and the README mention is present at `README.md:194`-`README.md:200`.
+- The operational monitoring section is largely in place in `docs/USAGE.md:218`-`docs/USAGE.md:307`, including metric tables, log-line tables, queue/backlog guidance, missing-heartbeat alerting, and orphan-reclaim monitoring guidance.
+
+## Validation
+
+- `mvn -q -DskipTests test-compile`
+- `mvn -T 1C -q test`

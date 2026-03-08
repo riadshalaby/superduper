@@ -8,11 +8,13 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
+import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,7 @@ class SuperDuperWorkerReactiveServiceTest {
     @Test
     void processOne_successAndFailurePaths() throws Exception {
         ReactiveWorkerMessageRepository mr = mock(ReactiveWorkerMessageRepository.class);
+        SuperduperObserver observer = mock(SuperduperObserver.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
         when(mr.markProcessed(anyLong(), anyString())).thenReturn(Mono.just(true));
         when(mr.markStopped(anyLong(), anyInt(), anyString())).thenReturn(Mono.just(true));
@@ -31,13 +34,8 @@ class SuperDuperWorkerReactiveServiceTest {
         ReactiveMessageHandler handler =
                 row -> Mono.just(row.id() == 1L ? ProcessingResult.SUCCESS : ProcessingResult.FAILURE);
 
-        SuperDuperWorkerReactiveService svc = new SuperDuperWorkerReactiveService(
-                mr,
-                lockExec,
-                handler,
-                net.rsworld.superduper.observability.api.NoopSuperduperObserver.INSTANCE,
-                100,
-                2);
+        SuperDuperWorkerReactiveService svc =
+                new SuperDuperWorkerReactiveService(mr, lockExec, handler, observer, 100, 2);
 
         ClaimedMessage row1 = new ClaimedMessage(1L, "mid-1", "k1", "v", 0, "cid", null, null);
         ClaimedMessage row2 = new ClaimedMessage(2L, "mid-2", "k2", "v", 1, "cid", null, null);
@@ -49,6 +47,7 @@ class SuperDuperWorkerReactiveServiceTest {
 
         verify(mr).markProcessed(eq(1L), anyString());
         verify(mr).markStopped(eq(2L), eq(2), anyString());
+        verify(observer, never()).workerBatchCompleted(any(), anyInt(), anyInt(), anyInt());
     }
 
     @Test
@@ -201,5 +200,34 @@ class SuperDuperWorkerReactiveServiceTest {
 
         verify(mr).releaseMessages(eq(java.util.List.of(2L)), anyString());
         verify(mr).markProcessed(eq(3L), anyString());
+    }
+
+    @Test
+    void schedule_emitsBatchSummary() {
+        ReactiveWorkerMessageRepository mr = mock(ReactiveWorkerMessageRepository.class);
+        SuperduperObserver observer = mock(SuperduperObserver.class);
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+
+        when(mr.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(Mono.just(2L));
+        when(mr.fetchClaimedForWorker(anyString()))
+                .thenReturn(Flux.just(
+                        new ClaimedMessage(1L, "mid-1", "k1", "v1", 0, "cid", null, null),
+                        new ClaimedMessage(2L, "mid-2", "k2", "v2", 0, "cid", null, null)));
+        when(mr.markProcessed(anyLong(), anyString())).thenReturn(Mono.just(true));
+        doAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(0);
+                    task.run();
+                    return null;
+                })
+                .when(lockExec)
+                .executeWithLock(any(Runnable.class), any());
+
+        ReactiveMessageHandler handler = row -> Mono.just(ProcessingResult.SUCCESS);
+        SuperDuperWorkerReactiveService svc =
+                new SuperDuperWorkerReactiveService(mr, lockExec, handler, observer, 100, 3);
+
+        svc.schedule();
+
+        verify(observer).workerBatchCompleted(any(), eq(2), eq(0), eq(0));
     }
 }

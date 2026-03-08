@@ -45,6 +45,13 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
     }
 
     @Override
+    public String findByStatusSql() {
+        return ("SELECT id, message_id, message_key, content, retry_count, container_id, correlation_id, message_type "
+                        + "FROM %s WHERE status = :status ORDER BY id LIMIT :limit")
+                .formatted(messagesTable);
+    }
+
+    @Override
     public String releaseMessagesSql() {
         return ("UPDATE %s SET status='READY', container_id=NULL, last_updated=NOW() "
                         + "WHERE id IN (:ids) AND container_id=:cid")
@@ -73,10 +80,29 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
     }
 
     @Override
+    public String redriveByIdSql() {
+        return ("UPDATE %s SET status='READY', retry_count=0, container_id=NULL, last_updated=NOW() "
+                        + "WHERE id=:id AND status IN ('FAILED', 'STOPPED')")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String redriveByStatusSql() {
+        return ("UPDATE %s SET status='READY', retry_count=0, container_id=NULL, last_updated=NOW() "
+                        + "WHERE id IN (SELECT id FROM %s WHERE status = :status ORDER BY id LIMIT :limit)")
+                .formatted(messagesTable, messagesTable);
+    }
+
+    @Override
     public String heartbeatUpsertSql() {
         return ("INSERT INTO %s (container_id, last_heartbeat) VALUES (:cid, NOW()) "
                         + "ON CONFLICT (container_id) DO UPDATE SET last_heartbeat = EXCLUDED.last_heartbeat")
                 .formatted(heartbeatsTable);
+    }
+
+    @Override
+    public String countByStatusSql() {
+        return ("SELECT status, COUNT(*) AS cnt FROM %s GROUP BY status").formatted(messagesTable);
     }
 
     @Override

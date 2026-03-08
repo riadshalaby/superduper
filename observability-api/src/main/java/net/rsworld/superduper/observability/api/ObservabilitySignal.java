@@ -5,5 +5,6 @@ public enum ObservabilitySignal {
     SUCCESS,
     FAILURE,
     RETRY,
+    REDRIVE,
     TIMING
 }

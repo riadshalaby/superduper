@@ -7,6 +7,8 @@ public interface JdbcSqlDialect {
 
     String fetchClaimedForWorkerSql();
 
+    String findByStatusSql();
+
     String releaseMessagesSql();
 
     String markProcessedSql();
@@ -15,9 +17,15 @@ public interface JdbcSqlDialect {
 
     String markStoppedSql();
 
+    String redriveByIdSql();
+
+    String redriveByStatusSql();
+
     String reclaimStaleProcessingSql();
 
     String reclaimMissingHeartbeatsSql();
 
     String heartbeatUpsertSql();
+
+    String countByStatusSql();
 }

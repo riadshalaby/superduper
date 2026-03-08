@@ -31,10 +31,11 @@ public class OrphanReclaimer {
     public void reclaim() {
         long started = System.nanoTime();
         try {
-            maintenanceRepository.reclaimStaleProcessing(orphanTimeoutSec);
-            maintenanceRepository.reclaimMissingHeartbeats(heartbeatWindowSec);
+            int reclaimedCount = maintenanceRepository.reclaimStaleProcessing(orphanTimeoutSec)
+                    + maintenanceRepository.reclaimMissingHeartbeats(heartbeatWindowSec);
             observer.maintenanceSucceeded(
-                    new MaintenanceObservation("blocking", "n/a", "orphan-reclaim", elapsedMs(started)));
+                    new MaintenanceObservation("blocking", "n/a", "orphan-reclaim", elapsedMs(started)),
+                    reclaimedCount);
         } catch (RuntimeException e) {
             observer.maintenanceFailed(
                     new MaintenanceObservation("blocking", "n/a", "orphan-reclaim", elapsedMs(started)), e);

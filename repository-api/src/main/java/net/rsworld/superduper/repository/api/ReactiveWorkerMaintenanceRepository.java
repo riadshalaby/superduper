@@ -5,7 +5,7 @@ import reactor.core.publisher.Mono;
 public interface ReactiveWorkerMaintenanceRepository {
     Mono<Void> heartbeat(String workerId);
 
-    Mono<Void> reclaimStaleProcessing(int orphanTimeoutSec);
+    Mono<Integer> reclaimStaleProcessing(int orphanTimeoutSec);
 
-    Mono<Void> reclaimMissingHeartbeats(int heartbeatWindowSec);
+    Mono<Integer> reclaimMissingHeartbeats(int heartbeatWindowSec);
 }

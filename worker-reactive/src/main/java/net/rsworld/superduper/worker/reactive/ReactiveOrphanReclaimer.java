@@ -31,11 +31,12 @@ public class ReactiveOrphanReclaimer {
             initialDelayString = "${superduper.worker.orphan-initial-delay-ms:15000}")
     public void reclaim() {
         long started = System.nanoTime();
-        Mono.when(
+        Mono.zip(
                         maintenanceRepository.reclaimStaleProcessing(orphanTimeoutSec),
                         maintenanceRepository.reclaimMissingHeartbeats(heartbeatWindowSec))
-                .doOnSuccess(x -> observer.maintenanceSucceeded(
-                        new MaintenanceObservation("reactive", "n/a", "orphan-reclaim", elapsedMs(started))))
+                .doOnSuccess(counts -> observer.maintenanceSucceeded(
+                        new MaintenanceObservation("reactive", "n/a", "orphan-reclaim", elapsedMs(started)),
+                        counts.getT1() + counts.getT2()))
                 .onErrorResume(e -> {
                     observer.maintenanceFailed(
                             new MaintenanceObservation("reactive", "n/a", "orphan-reclaim", elapsedMs(started)), e);
