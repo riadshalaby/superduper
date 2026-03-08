@@ -1,21 +1,29 @@
 # ROADMAP
 
-Goal: harden the `0.4.x` line for production-style operations after the metadata and batch-throughput changes landed in `0.4.0`.
+Goal: stabilize the `0.4.x` line for production operations after the metadata and batch-throughput changes introduced in `0.4.0`.
 
 ## Priority 1: Redrive and Failure Operations
 
-- Add an operator-facing path to inspect and redrive `FAILED` and `STOPPED` messages without manual SQL.
-- Define the supported retry and redrive contract for both blocking and reactive stacks.
-- Add integration coverage for redrive flows, including same-key batches that were previously released back to `READY`.
+Objective: make failure handling operable without ad hoc database access.
+
+- Provide an operator-facing workflow to inspect and redrive `FAILED` and `STOPPED` messages without manual SQL.
+- Define and document the retry/redrive contract for both blocking and reactive stacks.
+- Add integration tests for redrive behavior, including same-key batches previously released back to `READY`.
 
 ## Priority 2: Observability and Runtime Diagnostics
 
-- Expand metrics and logging around claim/release/retry behavior so hot-key and failure scenarios are visible without database inspection.
-- Document how to monitor worker heartbeats, stale processing rows, and backlog growth.
-- Add examples or docs for the metadata fields introduced in `0.4.0`, especially how they should appear in logs and dashboards.
+Objective: make queue health and failure patterns visible through logs and metrics.
+
+- Expand metrics and logs for claim/release/retry behavior so hot-key and failure scenarios are diagnosable without direct database inspection.
+- Document operational monitoring for worker heartbeats, stale `PROCESSING` rows, and backlog growth.
+- Emit clear per-batch summaries: total processed, total failed, and total stopped.
+- Log per-message processing details at `DEBUG` level not at info level.
+- Add examples for metadata fields introduced in `0.4.0`, including expected representation in logs and dashboards.
 
 ## Priority 3: Claim-Path Performance Regression Guardrails
 
-- Add repeatable benchmark or explain-plan validation for Postgres and MariaDB claim queries under mixed-key and hot-key loads.
-- Track the cost of the new batch claim strategy so index or SQL regressions are caught before release.
-- Keep the performance checks lightweight enough to run in CI or as a targeted pre-release validation step.
+Objective: prevent claim-query regressions before release.
+
+- Add repeatable benchmarks or explain-plan validation for Postgres and MariaDB claim queries under mixed-key and hot-key workloads.
+- Track the cost of the batch-claim strategy so SQL or index regressions are detected early.
+- Keep checks lightweight enough for CI, or runnable as targeted pre-release validation.
