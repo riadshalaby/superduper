@@ -7,6 +7,8 @@ public interface R2dbcSqlDialect {
 
     String fetchClaimedForWorkerSql();
 
+    String findByStatusSql();
+
     String releaseMessagesSql();
 
     String markProcessedSql();
@@ -15,9 +17,15 @@ public interface R2dbcSqlDialect {
 
     String markStoppedSql();
 
+    String redriveByIdSql();
+
+    String redriveByStatusSql();
+
     String heartbeatUpsertSql();
 
     String reclaimStaleProcessingSql();
 
     String reclaimMissingHeartbeatsSql();
+
+    String countByStatusSql();
 }

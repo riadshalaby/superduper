@@ -129,7 +129,13 @@ public class SuperDuperWorkerService {
             return;
         }
         if (claimedCount.get() > 0) {
-            process();
+            BatchOutcome outcome = process();
+            observer.workerBatchCompleted(
+                    new WorkerObservation(
+                            MODE_BLOCKING, workerId, null, null, outcome.batchSize(), outcome.durationMs()),
+                    outcome.processed(),
+                    outcome.failed(),
+                    outcome.stopped());
         }
     }
 
@@ -138,18 +144,24 @@ public class SuperDuperWorkerService {
         return claimed == null ? 0L : claimed;
     }
 
-    void process() {
+    BatchOutcome process() {
+        long started = System.nanoTime();
         var rows = messageRepository.fetchClaimedForWorker(workerId);
+        BatchOutcome outcome = new BatchOutcome(rows.size());
         for (var keyGroup : groupRowsByMessageKey(rows).values()) {
             for (int index = 0; index < keyGroup.size(); index++) {
                 ClaimedMessage row = keyGroup.get(index);
-                if (processOne(row)) {
+                ProcessResult result = processOne(row);
+                outcome.record(result.outcome());
+                if (result.continueKey()) {
                     continue;
                 }
                 releaseRemaining(keyGroup, index + 1);
                 break;
             }
         }
+        outcome.complete(elapsedMs(started));
+        return outcome;
     }
 
     private Map<String, List<ClaimedMessage>> groupRowsByMessageKey(List<ClaimedMessage> rows) {
@@ -162,7 +174,7 @@ public class SuperDuperWorkerService {
         return groupedRows;
     }
 
-    private boolean processOne(ClaimedMessage row) {
+    private ProcessResult processOne(ClaimedMessage row) {
         long started = System.nanoTime();
         ProcessingResult result = ProcessingResult.FAILURE;
         Throwable failureCause = null;
@@ -193,8 +205,9 @@ public class SuperDuperWorkerService {
             } else {
                 observer.workerProcessed(
                         new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                return new ProcessResult(true, MessageOutcome.PROCESSED);
             }
-            return true;
+            return new ProcessResult(true, MessageOutcome.NONE);
         }
 
         if (failureCause == null) {
@@ -211,6 +224,7 @@ public class SuperDuperWorkerService {
             } else {
                 observer.workerRetried(
                         new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                return new ProcessResult(false, MessageOutcome.FAILED);
             }
         } else {
             boolean updated = messageRepository.markStopped(row.id(), retry, workerId);
@@ -219,9 +233,10 @@ public class SuperDuperWorkerService {
             } else {
                 observer.workerStopped(
                         new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                return new ProcessResult(false, MessageOutcome.STOPPED);
             }
         }
-        return false;
+        return new ProcessResult(false, MessageOutcome.NONE);
     }
 
     private void releaseRemaining(List<ClaimedMessage> rows, int fromIndex) {
@@ -254,5 +269,59 @@ public class SuperDuperWorkerService {
 
     private static long elapsedMs(long startedNanos) {
         return (System.nanoTime() - startedNanos) / 1_000_000;
+    }
+
+    private enum MessageOutcome {
+        NONE,
+        PROCESSED,
+        FAILED,
+        STOPPED
+    }
+
+    private record ProcessResult(boolean continueKey, MessageOutcome outcome) {}
+
+    static final class BatchOutcome {
+        private final int batchSize;
+        private int processed;
+        private int failed;
+        private int stopped;
+        private long durationMs;
+
+        BatchOutcome(int batchSize) {
+            this.batchSize = batchSize;
+        }
+
+        void record(MessageOutcome outcome) {
+            switch (outcome) {
+                case PROCESSED -> processed++;
+                case FAILED -> failed++;
+                case STOPPED -> stopped++;
+                case NONE -> {}
+            }
+        }
+
+        void complete(long durationMs) {
+            this.durationMs = durationMs;
+        }
+
+        int processed() {
+            return processed;
+        }
+
+        int failed() {
+            return failed;
+        }
+
+        int stopped() {
+            return stopped;
+        }
+
+        int batchSize() {
+            return batchSize;
+        }
+
+        long durationMs() {
+            return durationMs;
+        }
     }
 }

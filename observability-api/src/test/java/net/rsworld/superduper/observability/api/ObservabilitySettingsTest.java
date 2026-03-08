@@ -3,6 +3,7 @@ package net.rsworld.superduper.observability.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ObservabilitySettingsTest {
@@ -56,6 +57,8 @@ class ObservabilitySettingsTest {
                 .isTrue();
         assertThat(settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.FAILURE))
                 .isTrue();
+        assertThat(settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.REDRIVE))
+                .isFalse();
         assertThat(settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.TIMING))
                 .isTrue();
     }
@@ -75,10 +78,14 @@ class ObservabilitySettingsTest {
                     observer.consumerFailed(consumer, new RuntimeException("consumer"));
                     observer.workerClaimed(worker, 3);
                     observer.workerProcessed(worker);
+                    observer.workerBatchCompleted(worker, 1, 1, 1);
                     observer.workerRetried(worker);
                     observer.workerStopped(worker);
+                    observer.workerRedriven(worker, 2);
                     observer.workerFailed(worker, new RuntimeException("worker"));
                     observer.maintenanceSucceeded(maintenance);
+                    observer.maintenanceSucceeded(maintenance, 4);
+                    observer.queueBacklogObserved("blocking", Map.of("READY", 2L));
                     observer.maintenanceFailed(maintenance, new RuntimeException("maintenance"));
                 })
                 .doesNotThrowAnyException();

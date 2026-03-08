@@ -1,12 +1,16 @@
 package net.rsworld.superduper.observability.metrics;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import net.rsworld.superduper.observability.api.ConsumerObservation;
 import net.rsworld.superduper.observability.api.MaintenanceObservation;
 import net.rsworld.superduper.observability.api.ObservabilityComponent;
@@ -18,10 +22,12 @@ import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 
 public class MetricsSuperduperObserver implements SuperduperObserver {
     private static final String WORKER_PROCESS_DURATION = "superduper.worker.process.duration";
+    private static final List<String> BACKLOG_STATUSES = List.of("READY", "FAILED", "STOPPED", "PROCESSING");
 
     private final MeterRegistry meterRegistry;
     private final ObservabilitySettings settings;
     private final LoggingSuperduperObserver loggingDelegate;
+    private final Map<QueueGaugeKey, AtomicLong> queueBacklogGauges = new ConcurrentHashMap<>();
 
     public MetricsSuperduperObserver(MeterRegistry meterRegistry, ObservabilitySettings settings) {
         this.meterRegistry = meterRegistry;
@@ -98,6 +104,11 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
     }
 
     @Override
+    public void workerBatchCompleted(WorkerObservation observation, int processed, int failed, int stopped) {
+        loggingDelegate.workerBatchCompleted(observation, processed, failed, stopped);
+    }
+
+    @Override
     public void workerRetried(WorkerObservation observation) {
         loggingDelegate.workerRetried(observation);
         if (!settings.metricsEnabled() || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.RETRY)) {
@@ -121,6 +132,17 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
     }
 
     @Override
+    public void workerRedriven(WorkerObservation observation, int redrivenCount) {
+        loggingDelegate.workerRedriven(observation, redrivenCount);
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.REDRIVE)) {
+            return;
+        }
+        counter("superduper.worker.redriven.total", Tags.of("mode", observation.mode()))
+                .increment(redrivenCount);
+    }
+
+    @Override
     public void workerFailed(WorkerObservation observation, Throwable error) {
         loggingDelegate.workerFailed(observation, error);
         if (!settings.metricsEnabled()
@@ -134,13 +156,19 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
 
     @Override
     public void maintenanceSucceeded(MaintenanceObservation observation) {
-        loggingDelegate.maintenanceSucceeded(observation);
+        maintenanceSucceeded(observation, 0);
+    }
+
+    @Override
+    public void maintenanceSucceeded(MaintenanceObservation observation, int reclaimedCount) {
+        loggingDelegate.maintenanceSucceeded(observation, reclaimedCount);
         if (!settings.metricsEnabled()
                 || !settings.allows(ObservabilityComponent.MAINTENANCE, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
         Tags tags = maintenanceTags(observation, null);
         counter("superduper.maintenance.total", tags.and("result", "success")).increment();
+        counter("superduper.maintenance.reclaimed.total", tags).increment(reclaimedCount);
         recordDuration(
                 "superduper.maintenance.duration", tags, observation.durationMs(), ObservabilityComponent.MAINTENANCE);
     }
@@ -158,6 +186,19 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
                 "superduper.maintenance.duration", tags, observation.durationMs(), ObservabilityComponent.MAINTENANCE);
     }
 
+    @Override
+    public void queueBacklogObserved(String mode, Map<String, Long> statusCounts) {
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.LIFECYCLE)) {
+            return;
+        }
+        for (String status : BACKLOG_STATUSES) {
+            QueueGaugeKey key = new QueueGaugeKey(mode, status);
+            AtomicLong gaugeValue = queueBacklogGauges.computeIfAbsent(key, this::registerBacklogGauge);
+            gaugeValue.set(statusCounts.getOrDefault(status, 0L));
+        }
+    }
+
     private void recordDuration(String name, Tags tags, long durationMs, ObservabilityComponent component) {
         if (!settings.allows(component, ObservabilitySignal.TIMING)) {
             return;
@@ -167,6 +208,14 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
 
     private Counter counter(String name, Tags tags) {
         return Counter.builder(name).tags(tags).register(meterRegistry);
+    }
+
+    private AtomicLong registerBacklogGauge(QueueGaugeKey key) {
+        AtomicLong value = new AtomicLong();
+        Gauge.builder("superduper.queue.backlog", value, AtomicLong::doubleValue)
+                .tags("mode", key.mode(), "status", key.status())
+                .register(meterRegistry);
+        return value;
     }
 
     private Tags consumerTags(ConsumerObservation observation, Throwable error) {
@@ -200,4 +249,6 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         }
         tags.add(Tag.of("exception", error == null ? "none" : error.getClass().getSimpleName()));
     }
+
+    private record QueueGaugeKey(String mode, String status) {}
 }

@@ -3,6 +3,7 @@ package net.rsworld.superduper.observability.metrics;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.Map;
 import net.rsworld.superduper.observability.api.ConsumerObservation;
 import net.rsworld.superduper.observability.api.MaintenanceObservation;
 import net.rsworld.superduper.observability.api.ObservabilitySettings;
@@ -25,11 +26,14 @@ class MetricsSuperduperObserverTest {
         observer.consumerFailed(consumer, new IllegalStateException("consumer"));
         observer.workerClaimed(worker, 5);
         observer.workerProcessed(worker);
+        observer.workerBatchCompleted(worker, 3, 1, 1);
         observer.workerRetried(worker);
         observer.workerStopped(worker);
+        observer.workerRedriven(worker, 2);
         observer.workerFailed(worker, new IllegalArgumentException("worker"));
-        observer.maintenanceSucceeded(maintenance);
+        observer.maintenanceSucceeded(maintenance, 4);
         observer.maintenanceFailed(maintenance, new RuntimeException("maintenance"));
+        observer.queueBacklogObserved("blocking", Map.of("READY", 7L, "FAILED", 2L, "STOPPED", 1L, "PROCESSING", 3L));
 
         assertThat(counterCount(
                         registry,
@@ -78,6 +82,8 @@ class MetricsSuperduperObserverTest {
                 .isEqualTo(1.0d);
         assertThat(counterCount(registry, "superduper.worker.stopped.total", "mode", "blocking", "exception", "none"))
                 .isEqualTo(1.0d);
+        assertThat(counterCount(registry, "superduper.worker.redriven.total", "mode", "blocking"))
+                .isEqualTo(2.0d);
         assertThat(counterCount(
                         registry,
                         "superduper.worker.failed.total",
@@ -99,6 +105,16 @@ class MetricsSuperduperObserverTest {
                         "result",
                         "success"))
                 .isEqualTo(1.0d);
+        assertThat(counterCount(
+                        registry,
+                        "superduper.maintenance.reclaimed.total",
+                        "mode",
+                        "blocking",
+                        "operation",
+                        "heartbeat",
+                        "exception",
+                        "none"))
+                .isEqualTo(4.0d);
         assertThat(counterCount(
                         registry,
                         "superduper.maintenance.total",
@@ -172,6 +188,14 @@ class MetricsSuperduperObserverTest {
                         "exception",
                         "RuntimeException"))
                 .isEqualTo(1L);
+        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "READY"))
+                .isEqualTo(7.0d);
+        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "FAILED"))
+                .isEqualTo(2.0d);
+        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "STOPPED"))
+                .isEqualTo(1.0d);
+        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "PROCESSING"))
+                .isEqualTo(3.0d);
     }
 
     @Test
@@ -251,5 +275,9 @@ class MetricsSuperduperObserverTest {
 
     private static long timerCount(SimpleMeterRegistry registry, String name, String... tags) {
         return registry.find(name).tags(tags).timer().count();
+    }
+
+    private static double gaugeValue(SimpleMeterRegistry registry, String name, String... tags) {
+        return registry.find(name).tags(tags).gauge().value();
     }
 }

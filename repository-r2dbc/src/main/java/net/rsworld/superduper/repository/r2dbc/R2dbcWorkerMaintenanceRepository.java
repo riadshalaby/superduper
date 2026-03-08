@@ -24,20 +24,22 @@ public class R2dbcWorkerMaintenanceRepository implements ReactiveWorkerMaintenan
     }
 
     @Override
-    public Mono<Void> reclaimStaleProcessing(int orphanTimeoutSec) {
+    public Mono<Integer> reclaimStaleProcessing(int orphanTimeoutSec) {
         return db.sql(dialect.reclaimStaleProcessingSql())
                 .bind("t", orphanTimeoutSec)
                 .fetch()
                 .rowsUpdated()
-                .then();
+                .map(Long::intValue)
+                .defaultIfEmpty(0);
     }
 
     @Override
-    public Mono<Void> reclaimMissingHeartbeats(int heartbeatWindowSec) {
+    public Mono<Integer> reclaimMissingHeartbeats(int heartbeatWindowSec) {
         return db.sql(dialect.reclaimMissingHeartbeatsSql())
                 .bind("hb", heartbeatWindowSec)
                 .fetch()
                 .rowsUpdated()
-                .then();
+                .map(Long::intValue)
+                .defaultIfEmpty(0);
     }
 }

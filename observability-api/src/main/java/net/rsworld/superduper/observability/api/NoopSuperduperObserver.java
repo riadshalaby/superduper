@@ -1,5 +1,7 @@
 package net.rsworld.superduper.observability.api;
 
+import java.util.Map;
+
 public final class NoopSuperduperObserver implements SuperduperObserver {
     public static final NoopSuperduperObserver INSTANCE = new NoopSuperduperObserver();
 
@@ -31,6 +33,11 @@ public final class NoopSuperduperObserver implements SuperduperObserver {
     }
 
     @Override
+    public void workerBatchCompleted(WorkerObservation observation, int processed, int failed, int stopped) {
+        // Intentionally no-op.
+    }
+
+    @Override
     public void workerRetried(WorkerObservation observation) {
         // Intentionally no-op.
     }
@@ -41,12 +48,27 @@ public final class NoopSuperduperObserver implements SuperduperObserver {
     }
 
     @Override
+    public void workerRedriven(WorkerObservation observation, int redrivenCount) {
+        // Intentionally no-op.
+    }
+
+    @Override
     public void workerFailed(WorkerObservation observation, Throwable error) {
         // Intentionally no-op.
     }
 
     @Override
     public void maintenanceSucceeded(MaintenanceObservation observation) {
+        // Intentionally no-op.
+    }
+
+    @Override
+    public void maintenanceSucceeded(MaintenanceObservation observation, int reclaimedCount) {
+        // Intentionally no-op.
+    }
+
+    @Override
+    public void queueBacklogObserved(String mode, Map<String, Long> statusCounts) {
         // Intentionally no-op.
     }
 

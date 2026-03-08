@@ -14,6 +14,7 @@ public class WorkerProperties {
     private int orphanTimeoutMs = 120000;
     private long orphanInitialDelayMs = 15000;
     private final Shedlock shedlock = new Shedlock();
+    private final QueueHealth queueHealth = new QueueHealth();
 
     public int getBatchSize() {
         return batchSize;
@@ -91,6 +92,10 @@ public class WorkerProperties {
         return shedlock;
     }
 
+    public QueueHealth getQueueHealth() {
+        return queueHealth;
+    }
+
     public static class Shedlock {
         private String tableName = "shedlock";
         private String claimLockName = "superduper-claim-batch";
@@ -127,6 +132,27 @@ public class WorkerProperties {
 
         public void setLockAtLeastForMs(long lockAtLeastForMs) {
             this.lockAtLeastForMs = lockAtLeastForMs;
+        }
+    }
+
+    public static class QueueHealth {
+        private boolean enabled = false;
+        private long intervalMs = 60000;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public long getIntervalMs() {
+            return intervalMs;
+        }
+
+        public void setIntervalMs(long intervalMs) {
+            this.intervalMs = intervalMs;
         }
     }
 }

@@ -1,39 +1,43 @@
-package net.rsworld.superduper.repository.jdbc;
+package net.rsworld.superduper.repository.r2dbc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
+import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
+import io.r2dbc.postgresql.PostgresqlConnectionFactory;
 import java.util.stream.Stream;
 import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.r2dbc.connection.R2dbcTransactionManager;
+import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-class JdbcWorkerClaimExplainIntegrationTest {
+class R2dbcWorkerClaimExplainIntegrationTest {
 
     static PostgreSQLContainer postgres;
-    static NamedParameterJdbcTemplate jdbc;
-    static PostgresJdbcSqlDialect dialect;
+    static DatabaseClient db;
+    static PostgresR2dbcSqlDialect dialect;
 
     @BeforeAll
     static void beforeAll() {
         postgres = new PostgreSQLContainer("postgres:16-alpine");
         postgres.start();
-
-        DriverManagerDataSource ds = new DriverManagerDataSource();
-        ds.setDriverClassName("org.postgresql.Driver");
-        ds.setUrl(postgres.getJdbcUrl());
-        ds.setUsername(postgres.getUsername());
-        ds.setPassword(postgres.getPassword());
-
-        jdbc = new NamedParameterJdbcTemplate(ds);
-        dialect = new PostgresJdbcSqlDialect();
         LiquibaseTestSupport.migrate(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+
+        PostgresqlConnectionFactory cf = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
+                .host(postgres.getHost())
+                .port(postgres.getMappedPort(5432))
+                .database(postgres.getDatabaseName())
+                .username(postgres.getUsername())
+                .password(postgres.getPassword())
+                .build());
+        db = DatabaseClient.create(cf);
+        dialect = new PostgresR2dbcSqlDialect();
+        new R2dbcWorkerMessageRepository(
+                db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.POSTGRES);
     }
 
     @AfterAll
@@ -49,14 +53,8 @@ class JdbcWorkerClaimExplainIntegrationTest {
         resetData();
         seedScenario(scenario);
 
-        String claimPlan = explain(
-                dialect.claimBatchSql(),
-                new MapSqlParameterSource()
-                        .addValue("cid", "w-claim")
-                        .addValue("batch", 200)
-                        .addValue("maxRetries", 5));
-        String fetchPlan =
-                explain(dialect.fetchClaimedForWorkerSql(), new MapSqlParameterSource().addValue("cid", "w-fetch"));
+        String claimPlan = explain(dialect.claimBatchSql(), "w-claim", 200, 5);
+        String fetchPlan = explainFetch(dialect.fetchClaimedForWorkerSql(), "w-fetch");
 
         assertThat(claimPlan)
                 .containsAnyOf(
@@ -72,7 +70,7 @@ class JdbcWorkerClaimExplainIntegrationTest {
     }
 
     private static void resetData() {
-        jdbc.getJdbcTemplate().execute("TRUNCATE TABLE messages RESTART IDENTITY");
+        db.sql("TRUNCATE TABLE messages RESTART IDENTITY").fetch().rowsUpdated().block();
     }
 
     private static void seedScenario(String scenario) {
@@ -109,13 +107,34 @@ class JdbcWorkerClaimExplainIntegrationTest {
                                 + "FROM generate_series(1, 10000) g";
                     default -> throw new IllegalArgumentException("Unknown scenario: " + scenario);
                 };
-        jdbc.getJdbcTemplate().execute(insertSql);
-        jdbc.getJdbcTemplate()
-                .execute("UPDATE messages SET status='PROCESSING', container_id='w-fetch' WHERE id % 97 = 0");
+        db.sql(insertSql).fetch().rowsUpdated().block();
+        db.sql("UPDATE messages SET status='PROCESSING', container_id='w-fetch' WHERE id % 97 = 0")
+                .fetch()
+                .rowsUpdated()
+                .block();
     }
 
-    private static String explain(String sql, MapSqlParameterSource params) {
-        List<String> plan = jdbc.queryForList("EXPLAIN " + sql, params, String.class);
-        return String.join(System.lineSeparator(), plan);
+    private static String explain(String sql, String cid, int batch, int maxRetries) {
+        return String.join(
+                System.lineSeparator(),
+                db.sql("EXPLAIN " + sql)
+                        .bind("cid", cid)
+                        .bind("batch", batch)
+                        .bind("maxRetries", maxRetries)
+                        .map((row, metadata) -> row.get(0, String.class))
+                        .all()
+                        .collectList()
+                        .block());
+    }
+
+    private static String explainFetch(String sql, String cid) {
+        return String.join(
+                System.lineSeparator(),
+                db.sql("EXPLAIN " + sql)
+                        .bind("cid", cid)
+                        .map((row, metadata) -> row.get(0, String.class))
+                        .all()
+                        .collectList()
+                        .block());
     }
 }

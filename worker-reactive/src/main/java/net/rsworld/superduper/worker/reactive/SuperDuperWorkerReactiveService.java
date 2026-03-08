@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
@@ -139,6 +140,12 @@ public class SuperDuperWorkerReactiveService {
                 .fetchClaimedForWorker(workerId)
                 .collectList()
                 .flatMap(this::processBatch)
+                .doOnSuccess(outcome -> observer.workerBatchCompleted(
+                        new WorkerObservation(
+                                MODE_REACTIVE, workerId, null, null, outcome.batchSize(), outcome.durationMs()),
+                        outcome.processed(),
+                        outcome.failed(),
+                        outcome.stopped()))
                 .onErrorResume(e -> {
                     observer.workerFailed(
                             new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)),
@@ -163,10 +170,15 @@ public class SuperDuperWorkerReactiveService {
         vtExecutor.shutdown();
     }
 
-    private Mono<Void> processBatch(List<ClaimedMessage> rows) {
+    private Mono<BatchOutcome> processBatch(List<ClaimedMessage> rows) {
+        long started = System.nanoTime();
+        BatchOutcome outcome = new BatchOutcome(rows.size());
         return Flux.fromIterable(groupRowsByMessageKey(rows).values())
-                .concatMap(this::processKeyGroup)
-                .then();
+                .concatMap(keyGroup -> processKeyGroup(keyGroup, outcome))
+                .then(Mono.fromSupplier(() -> {
+                    outcome.complete(elapsedMs(started));
+                    return outcome;
+                }));
     }
 
     private Map<String, List<ClaimedMessage>> groupRowsByMessageKey(List<ClaimedMessage> rows) {
@@ -179,18 +191,19 @@ public class SuperDuperWorkerReactiveService {
         return groupedRows;
     }
 
-    private Mono<Void> processKeyGroup(List<ClaimedMessage> rows) {
-        return processKeyGroup(rows, 0);
+    private Mono<Void> processKeyGroup(List<ClaimedMessage> rows, BatchOutcome outcome) {
+        return processKeyGroup(rows, 0, outcome);
     }
 
-    private Mono<Void> processKeyGroup(List<ClaimedMessage> rows, int index) {
+    private Mono<Void> processKeyGroup(List<ClaimedMessage> rows, int index, BatchOutcome outcome) {
         if (index >= rows.size()) {
             return Mono.empty();
         }
         ClaimedMessage row = rows.get(index);
-        return handleClaimedMessage(row).flatMap(success -> {
-            if (success) {
-                return processKeyGroup(rows, index + 1);
+        return handleClaimedMessage(row).flatMap(result -> {
+            outcome.record(result.outcome());
+            if (result.continueKey()) {
+                return processKeyGroup(rows, index + 1, outcome);
             }
             return releaseRemaining(rows, index + 1);
         });
@@ -200,7 +213,7 @@ public class SuperDuperWorkerReactiveService {
         return handleClaimedMessage(row).then();
     }
 
-    private Mono<Boolean> handleClaimedMessage(ClaimedMessage row) {
+    private Mono<ProcessResult> handleClaimedMessage(ClaimedMessage row) {
         long started = System.nanoTime();
         long id = row.id();
         int retry = row.retryCount() == null ? 0 : row.retryCount();
@@ -227,11 +240,11 @@ public class SuperDuperWorkerReactiveService {
                         return messageRepository.markProcessed(id, workerId).flatMap(updated -> {
                             if (!updated) {
                                 warnOwnershipLost(id, "markProcessed");
-                                return Mono.just(false);
+                                return Mono.just(new ProcessResult(true, MessageOutcome.NONE));
                             }
                             observer.workerProcessed(new WorkerObservation(
                                     MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)));
-                            return Mono.just(true);
+                            return Mono.just(new ProcessResult(true, MessageOutcome.PROCESSED));
                         });
                     }
 
@@ -246,21 +259,21 @@ public class SuperDuperWorkerReactiveService {
                         return messageRepository.markFailed(id, next, workerId).flatMap(updated -> {
                             if (!updated) {
                                 warnOwnershipLost(id, "markFailed");
-                                return Mono.just(false);
+                                return Mono.just(new ProcessResult(false, MessageOutcome.NONE));
                             }
                             observer.workerRetried(new WorkerObservation(
                                     MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
-                            return Mono.just(false);
+                            return Mono.just(new ProcessResult(false, MessageOutcome.FAILED));
                         });
                     }
                     return messageRepository.markStopped(id, next, workerId).flatMap(updated -> {
                         if (!updated) {
                             warnOwnershipLost(id, "markStopped");
-                            return Mono.just(false);
+                            return Mono.just(new ProcessResult(false, MessageOutcome.NONE));
                         }
                         observer.workerStopped(new WorkerObservation(
                                 MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
-                        return Mono.just(false);
+                        return Mono.just(new ProcessResult(false, MessageOutcome.STOPPED));
                     });
                 });
     }
@@ -298,6 +311,60 @@ public class SuperDuperWorkerReactiveService {
     }
 
     private record HandlerOutcome(ProcessingResult result, Throwable failureCause) {}
+
+    private enum MessageOutcome {
+        NONE,
+        PROCESSED,
+        FAILED,
+        STOPPED
+    }
+
+    private record ProcessResult(boolean continueKey, MessageOutcome outcome) {}
+
+    static final class BatchOutcome {
+        private final int batchSize;
+        private final AtomicInteger processed = new AtomicInteger();
+        private final AtomicInteger failed = new AtomicInteger();
+        private final AtomicInteger stopped = new AtomicInteger();
+        private final AtomicLong durationMs = new AtomicLong();
+
+        BatchOutcome(int batchSize) {
+            this.batchSize = batchSize;
+        }
+
+        void record(MessageOutcome outcome) {
+            switch (outcome) {
+                case PROCESSED -> processed.incrementAndGet();
+                case FAILED -> failed.incrementAndGet();
+                case STOPPED -> stopped.incrementAndGet();
+                case NONE -> {}
+            }
+        }
+
+        void complete(long durationMs) {
+            this.durationMs.set(durationMs);
+        }
+
+        int processed() {
+            return processed.get();
+        }
+
+        int failed() {
+            return failed.get();
+        }
+
+        int stopped() {
+            return stopped.get();
+        }
+
+        int batchSize() {
+            return batchSize;
+        }
+
+        long durationMs() {
+            return durationMs.get();
+        }
+    }
 
     private static long elapsedMs(long startedNanos) {
         return (System.nanoTime() - startedNanos) / 1_000_000;

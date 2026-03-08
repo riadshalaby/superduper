@@ -141,11 +141,45 @@ Metrics emitted when enabled:
 - `superduper.worker.retried.total`
 - `superduper.worker.stopped.total`
 - `superduper.worker.failed.total`
+- `superduper.worker.redriven.total`
 - `superduper.maintenance.total`
+- `superduper.maintenance.reclaimed.total`
+- `superduper.queue.backlog{mode,status}`
 - `superduper.consumer.persist.duration`
 - `superduper.worker.claim.duration`
 - `superduper.worker.process.duration`
 - `superduper.maintenance.duration`
+
+## Redrive
+
+Use the administrative redrive services to inspect or requeue terminal failures:
+
+```java
+@Autowired
+private RedriveService redriveService;
+
+List<ClaimedMessage> failed = redriveService.inspect("FAILED", 100);
+boolean redriven = redriveService.redriveOne(42L);
+int redrivenBatch = redriveService.redriveBatch("STOPPED", 50);
+```
+
+Reactive:
+
+```java
+@Autowired
+private ReactiveRedriveService reactiveRedriveService;
+
+reactiveRedriveService.inspect("FAILED", 100).collectList();
+reactiveRedriveService.redriveOne(42L);
+reactiveRedriveService.redriveBatch("STOPPED", 50);
+```
+
+Redrive contract:
+
+- only `FAILED` and `STOPPED` rows are inspectable or redrivable
+- redrive resets `status='READY'`, `retry_count=0`, `container_id=NULL`, and updates `last_updated`
+- a redriven row is still subject to the normal per-key claim ordering rules
+- if a sibling row for the same key is already `PROCESSING`, the redriven row remains unclaimable until that sibling completes
 
 ## Tuning & Operational Guidance
 
@@ -167,6 +201,8 @@ Metrics emitted when enabled:
   - claim lock name: `superduper.worker.shedlock.claim-lock-name`
   - lock windows: `superduper.worker.shedlock.lock-at-most-for-ms`, `superduper.worker.shedlock.lock-at-least-for-ms`
 - Max retries: alert on `STOPPED`, then requeue manually if appropriate
+- Queue-health polling: `superduper.worker.queue-health.enabled` (default `false`)
+- Queue-health polling interval: `superduper.worker.queue-health.interval-ms` (default `60000`)
 - Indexes: keep `messages(message_key, id)` and add claim/fetch/reclaim indexes from the example Liquibase SQL
 - Idempotency: `message_id` is deterministic from Kafka `topic:partition:offset` by default
 
@@ -178,6 +214,98 @@ Metrics emitted when enabled:
 - ShedLock ensures one claim section runs at a time across shared infrastructure.
 - In Kubernetes, claim coordination remains cluster-wide as long as pods share the same database and `superduper.worker.shedlock.claim-lock-name`.
 - Reactive processing still scales horizontally; lock coordination only guards the claim entry point.
+
+## Operational Monitoring
+
+### Metrics
+
+| Metric | Tags | Meaning |
+|---|---|---|
+| `superduper.consumer.received.total` | `mode`, optional `topic`, optional `exception` | Kafka records received |
+| `superduper.consumer.persisted.total` | `mode`, optional `topic`, optional `exception` | Consumer writes persisted |
+| `superduper.consumer.failed.total` | `mode`, optional `topic`, optional `exception` | Consumer persistence failures |
+| `superduper.worker.claim.total` | `mode`, optional `exception`, `claimed_count` | Claim loop executions |
+| `superduper.worker.processed.total` | `mode`, optional `exception` | Messages completed successfully |
+| `superduper.worker.retried.total` | `mode`, optional `exception` | Messages moved to `FAILED` |
+| `superduper.worker.stopped.total` | `mode`, optional `exception` | Messages moved to `STOPPED` |
+| `superduper.worker.failed.total` | `mode`, optional `exception` | Worker execution failures |
+| `superduper.worker.redriven.total` | `mode` | Messages redriven to `READY` |
+| `superduper.maintenance.total` | `mode`, `operation`, optional `exception`, `result` | Heartbeat and reclaim runs |
+| `superduper.maintenance.reclaimed.total` | `mode`, `operation`, optional `exception` | Rows reclaimed during maintenance |
+| `superduper.queue.backlog` | `mode`, `status` | Current queue depth for `READY`, `FAILED`, `STOPPED`, `PROCESSING` |
+| `superduper.consumer.persist.duration` | same as consumer counters | Consumer persistence latency |
+| `superduper.worker.claim.duration` | same as worker claim counter | Claim latency |
+| `superduper.worker.process.duration` | same as worker outcome counters | Per-message processing latency |
+| `superduper.maintenance.duration` | same as maintenance counters | Heartbeat or reclaim latency |
+
+### Key log lines
+
+| Log line | Level | Meaning |
+|---|---|---|
+| `consumer.received ...` | INFO | Consumer received a record |
+| `consumer.persisted ...` | DEBUG | Consumer write succeeded |
+| `consumer.failed ...` | ERROR | Consumer write failed |
+| `worker.claimed ...` | INFO | Claim loop completed |
+| `worker.processed ...` | DEBUG | Single message processed successfully |
+| `worker.batch.completed ...` | INFO | Batch summary with processed/failed/stopped counts |
+| `worker.retry ...` | WARN | Message moved to `FAILED` |
+| `worker.stopped ...` | ERROR | Message moved to `STOPPED` |
+| `worker.redriven ...` | INFO | Manual redrive completed |
+| `maintenance.ok ...` | INFO | Heartbeat or reclaim run succeeded |
+| `maintenance.failed ...` | ERROR | Heartbeat or reclaim run failed |
+
+Example:
+
+```text
+worker.batch.completed mode=blocking workerId=worker-a batchSize=100 processed=94 failed=5 stopped=1 durationMs=87
+consumer.persisted mode=reactive topic=orders partition=3 offset=991 durationMs=4
+app.handler.completed correlation_id=order-42 message_type=OrderCreated message_id=2b6c3d7e-8b34-4f60-a1e6-5c9c18b9f0d1 key=customer-17 outcome=SUCCESS durationMs=12
+```
+
+Recommended Prometheus / Grafana queries:
+
+- backlog growth: `sum by (status) (superduper_queue_backlog)`
+- claim rate: `sum(rate(superduper_worker_claim_total[5m]))`
+- failure rate: `sum(rate(superduper_worker_failed_total[5m])) + sum(rate(superduper_worker_retried_total[5m]))`
+- stopped alert: `sum(superduper_queue_backlog{status="STOPPED"}) > 0`
+- missing heartbeats: alert when `increase(superduper_maintenance_total{operation="heartbeat",result="success"}[5m]) == 0`
+- orphan reclaim activity: `sum(rate(superduper_maintenance_reclaimed_total{operation="orphan-reclaim"}[5m]))`
+
+Operational checks:
+
+- alert on sustained `READY` backlog growth combined with flat claim rate
+- alert on any non-zero `STOPPED` backlog
+- watch `PROCESSING` backlog and reclaim counters for stale rows or missing heartbeats
+- include `correlation_id` and `message_type` in your application-level handler logs when you need message-specific diagnostics
+
+## Claim Query Performance
+
+Expected plan characteristics:
+
+- PostgreSQL claim plan should use `idx_messages_ready_claim_id_key`, `idx_messages_failed_claim_retry_id_key`, or `idx_messages_processing_key_id`
+- PostgreSQL fetch plan should use `idx_messages_processing_worker_key_id`
+- MariaDB claim plan should use `idx_messages_claim_status_id_key`, `idx_messages_claim_failed_status_retry_id_key`, or `idx_messages_processing_exists_key_status`
+- MariaDB fetch plan should use `idx_messages_processing_worker_status_container_key_id`
+- neither dialect should regress to a full table scan for the core `messages` access paths
+
+Run the explain-plan guardrails locally:
+
+```bash
+mvn -q -pl repository-jdbc -Dtest=JdbcWorkerClaimExplainIntegrationTest,JdbcWorkerClaimExplainMariaDbIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -q -pl repository-r2dbc -Dtest=R2dbcWorkerClaimExplainIntegrationTest,R2dbcWorkerClaimExplainMariaDbIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+Regression warning signs:
+
+- PostgreSQL plans showing `Seq Scan` on `messages`
+- MariaDB `EXPLAIN` rows with `type=ALL` on claim or fetch
+- missing claim or processing index names in the plan output
+- row estimates or filtered percentages jumping sharply after schema or query changes
+
+Reference the Liquibase changelogs for required indexes:
+
+- `schema-liquibase/src/main/resources/db/changelog/superduper/002-worker-claim-indexes-postgres.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/003-worker-claim-indexes-mariadb.sql`
 
 ## Consumer Metadata SPI
 

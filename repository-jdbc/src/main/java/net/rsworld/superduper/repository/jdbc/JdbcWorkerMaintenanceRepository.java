@@ -20,13 +20,14 @@ public class JdbcWorkerMaintenanceRepository implements WorkerMaintenanceReposit
     }
 
     @Override
-    public void reclaimStaleProcessing(int orphanTimeoutSec) {
-        jdbc.update(dialect.reclaimStaleProcessingSql(), new MapSqlParameterSource().addValue("t", orphanTimeoutSec));
+    public int reclaimStaleProcessing(int orphanTimeoutSec) {
+        return jdbc.update(
+                dialect.reclaimStaleProcessingSql(), new MapSqlParameterSource().addValue("t", orphanTimeoutSec));
     }
 
     @Override
-    public void reclaimMissingHeartbeats(int heartbeatWindowSec) {
-        jdbc.update(
+    public int reclaimMissingHeartbeats(int heartbeatWindowSec) {
+        return jdbc.update(
                 dialect.reclaimMissingHeartbeatsSql(), new MapSqlParameterSource().addValue("hb", heartbeatWindowSec));
     }
 }

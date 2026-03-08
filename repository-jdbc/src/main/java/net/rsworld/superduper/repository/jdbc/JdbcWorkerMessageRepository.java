@@ -1,6 +1,7 @@
 package net.rsworld.superduper.repository.jdbc;
 
 import java.util.List;
+import java.util.Map;
 import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -35,15 +36,50 @@ public class JdbcWorkerMessageRepository implements WorkerMessageRepository {
         return jdbc.query(
                 dialect.fetchClaimedForWorkerSql(),
                 new MapSqlParameterSource().addValue("cid", workerId),
-                (rs, rn) -> new ClaimedMessage(
-                        rs.getLong("id"),
-                        rs.getString("message_id"),
-                        rs.getString("message_key"),
-                        rs.getString("content"),
-                        rs.getInt("retry_count"),
-                        rs.getString("container_id"),
-                        rs.getString("correlation_id"),
-                        rs.getString("message_type")));
+                claimedMessageRowMapper());
+    }
+
+    @Override
+    public List<ClaimedMessage> findByStatus(String status, int limit) {
+        return jdbc.query(
+                dialect.findByStatusSql(),
+                new MapSqlParameterSource().addValue("status", status).addValue("limit", limit),
+                claimedMessageRowMapper());
+    }
+
+    @Override
+    public int redriveById(long id) {
+        return jdbc.update(dialect.redriveByIdSql(), new MapSqlParameterSource().addValue("id", id));
+    }
+
+    @Override
+    public int redriveByStatus(String status, int limit) {
+        return jdbc.update(
+                dialect.redriveByStatusSql(),
+                new MapSqlParameterSource().addValue("status", status).addValue("limit", limit));
+    }
+
+    @Override
+    public Map<String, Long> countByStatus() {
+        return jdbc.query(dialect.countByStatusSql(), rs -> {
+            Map<String, Long> counts = new java.util.LinkedHashMap<>();
+            while (rs.next()) {
+                counts.put(rs.getString("status"), rs.getLong("cnt"));
+            }
+            return counts;
+        });
+    }
+
+    private static org.springframework.jdbc.core.RowMapper<ClaimedMessage> claimedMessageRowMapper() {
+        return (rs, rn) -> new ClaimedMessage(
+                rs.getLong("id"),
+                rs.getString("message_id"),
+                rs.getString("message_key"),
+                rs.getString("content"),
+                rs.getInt("retry_count"),
+                rs.getString("container_id"),
+                rs.getString("correlation_id"),
+                rs.getString("message_type"));
     }
 
     @Override

@@ -37,6 +37,7 @@ public record ObservabilitySettings(
             case SUCCESS -> successEnabled;
             case FAILURE -> failureEnabled;
             case RETRY -> retryEnabled;
+            case REDRIVE -> lifecycleEnabled;
             case TIMING -> timingEnabled;
         };
     }

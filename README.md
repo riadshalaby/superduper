@@ -24,49 +24,46 @@ When multiple containers consume messages concurrently and persist them for late
 ## High-Level Architecture
 
 ```mermaid
-graph LR
-  subgraph Kafka
-    T[Topic(s)]
+sequenceDiagram
+  autonumber
+  participant K as Kafka Topic
+  participant C as Consumer
+  participant M as messages table
+  participant L as shedlock
+  participant W as Worker
+  participant H as MessageHandler / ReactiveMessageHandler
+  participant HB as container_heartbeats
+  participant O as Orphan Reclaimer
+
+  K->>C: Consume record
+  C->>M: INSERT status=READY
+
+  loop claim loop
+    W->>L: Acquire claim lock
+    W->>M: Claim eligible READY / FAILED rows\nset status=PROCESSING, container_id=workerId
+    W->>M: Fetch claimed rows ordered by message_key, id
+
+    loop per claimed row
+      W->>H: Invoke business logic
+      alt success
+        H-->>W: SUCCESS
+        W->>M: UPDATE status=PROCESSED\nset processed_at=NOW()
+      else failure with retries left
+        H-->>W: FAILURE / exception
+        W->>M: UPDATE status=FAILED\nincrement retry_count
+      else retry limit reached
+        H-->>W: FAILURE / exception
+        W->>M: UPDATE status=STOPPED
+      end
+    end
   end
 
-  subgraph Apps
-    C1[Consumer (Spring-Kafka)]
-    C2[Consumer (Spring-Kafka)]
-    W1[Worker JDBC]
-    W2[Worker Reactive]
+  par heartbeat loop
+    W->>HB: Upsert worker heartbeat
+  and orphan recovery loop
+    O->>M: Reset stale PROCESSING rows to READY
+    O->>HB: Check missing / expired heartbeats
   end
-
-  subgraph DB[(PostgreSQL / MariaDB)]
-    M[(messages)]
-    H[(container_heartbeats)]
-    L[(shedlock)]
-  end
-
-  T -->|consume| C1
-  T -->|consume| C2
-  C1 -->|INSERT READY| M
-  C2 -->|INSERT READY| M
-
-  W1 -->|ShedLock claim batch| L
-  W1 -->|UPDATE ... PROCESSING| M
-  W1 -->|business logic| W1B[MessageHandler] --> W1
-  W1 -->|UPDATE PROCESSED / FAILED / STOPPED| M
-  W1 -->|upsert| H
-
-  W2 -->|claim batch (reactive)| M
-  W2 -->|business logic (Reactive)| W2B[ReactiveMessageHandler] --> W2
-  W2 -->|UPDATE PROCESSED / FAILED / STOPPED| M
-  W2 -->|upsert| H
-
-  ORP[Orphan Reclaimer] -->|RESET stale PROCESSING -> READY| M
-  HB[Heartbeat] -->|UPDATE last_heartbeat| H
-
-  classDef db fill:#f7f7f7,stroke:#888
-  classDef comp fill:#eef7ff,stroke:#669
-  classDef infra fill:#fff5e6,stroke:#c93
-  class M,H,L db
-  class C1,C2,W1,W2,W1B,W2B comp
-  class ORP,HB infra
 ```
 
 ---
@@ -197,6 +194,7 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
 - **Ingest deduplication on redelivery:** `message_id` is deterministic from `topic:partition:offset` by default, and consumer writes use upsert semantics, so the same Kafka record does not create duplicate rows.
 - **Ownership-safe processing updates:** Worker status updates (`PROCESSED`/`FAILED`/`STOPPED`) require both `id` and `container_id` to match. A stale worker cannot overwrite a row after another worker reclaims it.
 - **At-least-once processing overall:** Each claim cycle processes a row at most once for the owning worker, but orphan reclaim can reassign and reprocess messages after failures/timeouts.
+- **Operational redrive:** `FAILED` and `STOPPED` rows can be inspected and explicitly redriven to `READY` without bypassing the normal per-key ordering rules.
 - **Handler contract:** user handlers should be idempotent because reprocessing can occur.
 
 ---
