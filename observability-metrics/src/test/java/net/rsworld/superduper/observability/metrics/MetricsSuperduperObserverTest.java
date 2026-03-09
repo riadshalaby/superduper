@@ -32,8 +32,9 @@ class MetricsSuperduperObserverTest {
         observer.workerRedriven(worker, 2);
         observer.workerFailed(worker, new IllegalArgumentException("worker"));
         observer.maintenanceSucceeded(maintenance, 4);
+        observer.maintenanceCleanup(new MaintenanceObservation("blocking", "worker-a", "cleanup-processed", 4L), 3);
         observer.maintenanceFailed(maintenance, new RuntimeException("maintenance"));
-        observer.queueBacklogObserved("blocking", Map.of("READY", 7L, "FAILED", 2L, "STOPPED", 1L, "PROCESSING", 3L));
+        observer.queueBacklogObserved("blocking", Map.of("READY", 7L, "FAILED", 2L, "STOPPED", 1L, "PROCESSED", 3L));
 
         assertThat(counterCount(
                         registry,
@@ -127,6 +128,14 @@ class MetricsSuperduperObserverTest {
                         "result",
                         "failure"))
                 .isEqualTo(1.0d);
+        assertThat(counterCount(
+                        registry,
+                        "superduper.maintenance.cleanup.total",
+                        "mode",
+                        "blocking",
+                        "operation",
+                        "cleanup-processed"))
+                .isEqualTo(3.0d);
 
         assertThat(timerCount(
                         registry,
@@ -194,7 +203,7 @@ class MetricsSuperduperObserverTest {
                 .isEqualTo(2.0d);
         assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "STOPPED"))
                 .isEqualTo(1.0d);
-        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "PROCESSING"))
+        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "PROCESSED"))
                 .isEqualTo(3.0d);
     }
 

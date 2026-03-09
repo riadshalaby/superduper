@@ -267,3 +267,25 @@ services:
       SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-blocking}
       SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./examples/observability/prometheus-multi.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./examples/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./examples/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro

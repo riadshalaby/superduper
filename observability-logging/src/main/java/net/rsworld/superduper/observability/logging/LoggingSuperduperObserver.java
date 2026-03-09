@@ -282,6 +282,23 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
     }
 
     @Override
+    public void maintenanceCleanup(MaintenanceObservation observation, int deletedCount) {
+        if (!settings.logEnabled()
+                || !settings.allows(ObservabilityComponent.MAINTENANCE, ObservabilitySignal.LIFECYCLE)) {
+            return;
+        }
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        log.info(
+                "maintenance.cleanup mode={} operation={} deletedCount={} durationMs={}",
+                observation.mode(),
+                observation.operation(),
+                deletedCount,
+                observation.durationMs());
+    }
+
+    @Override
     public void maintenanceFailed(MaintenanceObservation observation, Throwable error) {
         if (!settings.logEnabled()
                 || !settings.allows(ObservabilityComponent.MAINTENANCE, ObservabilitySignal.FAILURE)) {

@@ -42,4 +42,34 @@ public class R2dbcWorkerMaintenanceRepository implements ReactiveWorkerMaintenan
                 .map(Long::intValue)
                 .defaultIfEmpty(0);
     }
+
+    @Override
+    public Mono<Integer> deleteProcessedOlderThan(int retentionDays) {
+        return db.sql(dialect.deleteProcessedOlderThanSql())
+                .bind("retentionDays", retentionDays)
+                .fetch()
+                .rowsUpdated()
+                .map(Long::intValue)
+                .defaultIfEmpty(0);
+    }
+
+    @Override
+    public Mono<Integer> deleteStoppedOlderThan(int retentionDays) {
+        return db.sql(dialect.deleteStoppedOlderThanSql())
+                .bind("retentionDays", retentionDays)
+                .fetch()
+                .rowsUpdated()
+                .map(Long::intValue)
+                .defaultIfEmpty(0);
+    }
+
+    @Override
+    public Mono<Integer> deleteStaleHeartbeats(int retentionDays) {
+        return db.sql(dialect.deleteStaleHeartbeatsSql())
+                .bind("retentionDays", retentionDays)
+                .fetch()
+                .rowsUpdated()
+                .map(Long::intValue)
+                .defaultIfEmpty(0);
+    }
 }

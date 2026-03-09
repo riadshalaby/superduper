@@ -1,29 +1,25 @@
 # ROADMAP
 
-Goal: stabilize the `0.4.x` line for production operations after the metadata and batch-throughput changes introduced in `0.4.0`.
+Goal: turn the `0.4.x` operational foundation into a smoother adoption and day-2 operations story after the `0.4.1` redrive and observability release.
 
-## Priority 1: Redrive and Failure Operations
+## Priority 1: Operator Entry Points and Examples
 
-Objective: make failure handling operable without ad hoc database access.
+Objective: make the new redrive and queue-health capabilities easy to use in real applications.
 
-- Provide an operator-facing workflow to inspect and redrive `FAILED` and `STOPPED` messages without manual SQL.
-- Define and document the retry/redrive contract for both blocking and reactive stacks.
-- Add integration tests for redrive behavior, including same-key batches previously released back to `READY`.
+- Add example application flows for inspecting `FAILED` and `STOPPED` messages and redriving them without direct SQL.
+- Show how queue-health polling and observability outputs should be enabled in starter-based applications.
+- Document safe operational usage patterns for admin workflows in blocking and reactive deployments.
+- add Prometheus and Grafana to the example applications so to demonstrate observability. Create a dashboard for all metrics available.
 
-## Priority 2: Observability and Runtime Diagnostics
+## Priority 2: Queue Retention and Cleanup
 
-Objective: make queue health and failure patterns visible through logs and metrics.
+Objective: define how queue tables stay manageable once production traffic accumulates.
 
-- Expand metrics and logs for claim/release/retry behavior so hot-key and failure scenarios are diagnosable without direct database inspection.
-- Document operational monitoring for worker heartbeats, stale `PROCESSING` rows, and backlog growth.
-- Emit clear per-batch summaries: total processed, total failed, and total stopped.
-- Log per-message processing details at `DEBUG` level not at info level.
-- Add examples for metadata fields introduced in `0.4.0`, including expected representation in logs and dashboards.
+- Add a supported cleanup/archive story for old `PROCESSED` rows and terminal failures.
+- Document retention guidance and operational tradeoffs for `messages` and `container_heartbeats`.
+- Cover cleanup behavior with integration tests so retention tasks do not interfere with claim, redrive, or orphan recovery.
+- define a retention policy for `messages` and `container_heartbeats` tables. 14 days for `messages` and 1 day for `container_heartbeats`.
+- create a cleanup task and make its schedule configurable.
 
-## Priority 3: Claim-Path Performance Regression Guardrails
-
-Objective: prevent claim-query regressions before release.
-
-- Add repeatable benchmarks or explain-plan validation for Postgres and MariaDB claim queries under mixed-key and hot-key workloads.
-- Track the cost of the batch-claim strategy so SQL or index regressions are detected early.
-- Keep checks lightweight enough for CI, or runnable as targeted pre-release validation.
+## Priority 3:
+- prepare the `0.5.x` release.

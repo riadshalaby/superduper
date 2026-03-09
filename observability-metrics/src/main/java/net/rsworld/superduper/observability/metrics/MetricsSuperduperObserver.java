@@ -22,7 +22,7 @@ import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 
 public class MetricsSuperduperObserver implements SuperduperObserver {
     private static final String WORKER_PROCESS_DURATION = "superduper.worker.process.duration";
-    private static final List<String> BACKLOG_STATUSES = List.of("READY", "FAILED", "STOPPED", "PROCESSING");
+    private static final List<String> BACKLOG_STATUSES = List.of("READY", "FAILED", "STOPPED", "PROCESSED");
 
     private final MeterRegistry meterRegistry;
     private final ObservabilitySettings settings;
@@ -171,6 +171,19 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         counter("superduper.maintenance.reclaimed.total", tags).increment(reclaimedCount);
         recordDuration(
                 "superduper.maintenance.duration", tags, observation.durationMs(), ObservabilityComponent.MAINTENANCE);
+    }
+
+    @Override
+    public void maintenanceCleanup(MaintenanceObservation observation, int deletedCount) {
+        loggingDelegate.maintenanceCleanup(observation, deletedCount);
+        if (!settings.metricsEnabled()
+                || !settings.allows(ObservabilityComponent.MAINTENANCE, ObservabilitySignal.LIFECYCLE)) {
+            return;
+        }
+        Counter.builder("superduper.maintenance.cleanup.total")
+                .tags("mode", observation.mode(), "operation", observation.operation())
+                .register(meterRegistry)
+                .increment(deletedCount);
     }
 
     @Override

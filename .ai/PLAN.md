@@ -1,45 +1,304 @@
-# Plan — v0.4.1
+# Plan — v0.4.2
 
 Status: **ready**
 
-Goal: stabilize the `0.4.x` line for production operations — operable failure handling, improved observability, and claim-path regression guardrails.
+Goal: make redrive and queue-health capabilities easy to adopt in real applications, and add a configurable cleanup task with per-status retention so `messages` and `container_heartbeats` tables stay manageable under production traffic.
+
+Design decisions:
+- Cleanup uses **hard delete** (no archive table).
+- Retention periods are **per-status**: `PROCESSED` and `STOPPED` get independent retention settings.
 
 ---
 
-## Priority 1: Redrive and Failure Operations
+## Priority 1: Operator Entry Points and Examples
 
-Approach: **service-layer + repository-layer**. New repository methods for query/redrive, wrapped by dedicated service classes with validation and observability integration.
-
-### Step 1.1 — Repository API: add redrive query and mutation methods
+### Step 1.1 — Add redrive and queue-health examples to blocking app
 
 **Files to modify:**
 
-- `repository-api/.../WorkerMessageRepository.java`
-- `repository-api/.../ReactiveWorkerMessageRepository.java`
+- `examples/app-blocking/src/main/java/.../BlockingExampleApplication.java` (or new class below)
+
+**New file:**
+
+- `examples/app-blocking/src/main/java/.../ExampleBlockingOperatorEndpoints.java`
+
+Create a simple `@RestController` that exposes operator endpoints backed by the library's `RedriveService` and `QueueHealthService`:
+
+```java
+@RestController
+@RequestMapping("/ops")
+public class ExampleBlockingOperatorEndpoints {
+
+    private final RedriveService redriveService;
+    private final WorkerMessageRepository repository;
+
+    /** GET /ops/queue — returns Map<String, Long> of status counts. */
+    @GetMapping("/queue")
+    public Map<String, Long> queueHealth();
+
+    /** GET /ops/messages?status=FAILED&limit=20 — inspect messages by status. */
+    @GetMapping("/messages")
+    public List<ClaimedMessage> inspect(@RequestParam String status,
+                                        @RequestParam(defaultValue = "20") int limit);
+
+    /** POST /ops/redrive/{id} — redrive a single message. */
+    @PostMapping("/redrive/{id}")
+    public Map<String, Object> redriveOne(@PathVariable long id);
+
+    /** POST /ops/redrive?status=FAILED&limit=100 — batch redrive. */
+    @PostMapping("/redrive")
+    public Map<String, Object> redriveBatch(@RequestParam String status,
+                                            @RequestParam(defaultValue = "100") int limit);
+}
+```
+
+Endpoints return simple JSON maps/lists — no custom DTOs. Error handling via `@ExceptionHandler` for `IllegalArgumentException` (invalid status) returning 400.
+
+### Step 1.2 — Add redrive and queue-health examples to reactive app
+
+**New file:**
+
+- `examples/app-reactive/src/main/java/.../ExampleReactiveOperatorEndpoints.java`
+
+Same contract as Step 1.1 but using `ReactiveRedriveService`, `ReactiveWorkerMessageRepository`, and returning `Mono`/`Flux` from WebFlux `@RestController`.
+
+### Step 1.3 — Enable queue-health and observability in example configs
+
+**Files to modify:**
+
+- `examples/app-blocking/src/main/resources/application.yml`
+- `examples/app-reactive/src/main/resources/application.yml`
+
+Add to both:
+
+```yaml
+superduper:
+  worker:
+    queue-health:
+      enabled: true
+      interval-ms: 30000
+  observability:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+```
+
+This ensures the example apps demonstrate queue-health polling, full observability, and Prometheus-scrapable metrics out of the box.
+
+### Step 1.4 — Add Actuator and Prometheus dependencies to example apps
+
+**Files to modify:**
+
+- `examples/app-blocking/pom.xml`
+- `examples/app-reactive/pom.xml`
+
+Add the following dependencies to both example app POMs:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-registry-prometheus</artifactId>
+</dependency>
+```
+
+Also add `spring-boot-starter-web` to `app-blocking` (it currently only has `spring-boot-starter` and `spring-boot-starter-jdbc`, and needs a web server for the operator endpoints from Step 1.1 and the Actuator endpoints).
+
+`app-reactive` already has `spring-boot-starter-webflux`, which supports Actuator natively.
+
+### Step 1.5 — Add Prometheus and Grafana to Docker Compose
+
+**New files:**
+
+- `examples/observability/prometheus.yml` — Prometheus scrape configuration.
+- `examples/observability/grafana/provisioning/datasources/prometheus.yml` — Grafana datasource provisioning (auto-register Prometheus).
+- `examples/observability/grafana/provisioning/dashboards/dashboard.yml` — Grafana dashboard provisioning config.
+- `examples/observability/grafana/dashboards/superduper.json` — Pre-built Grafana dashboard JSON.
+
+**Files to modify:**
+
+- `docker-compose.yml` — add Prometheus and Grafana services.
+- `docker-compose.multi.yml` — add Prometheus and Grafana services with worker scrape targets.
+
+**Prometheus configuration (`examples/observability/prometheus.yml`):**
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: superduper
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - host.docker.internal:8080
+    # Multi-container variant adds worker-1:8080 through worker-5:8080
+```
+
+For `docker-compose.multi.yml`, use a separate `prometheus-multi.yml` or a file-based service discovery config that covers all worker instances.
+
+**Docker Compose services to add:**
+
+```yaml
+prometheus:
+  image: prom/prometheus:latest
+  ports:
+    - "9090:9090"
+  volumes:
+    - ./examples/observability/prometheus.yml:/etc/prometheus/prometheus.yml
+
+grafana:
+  image: grafana/grafana:latest
+  ports:
+    - "3000:3000"
+  environment:
+    - GF_SECURITY_ADMIN_USER=admin
+    - GF_SECURITY_ADMIN_PASSWORD=admin
+    - GF_AUTH_ANONYMOUS_ENABLED=true
+    - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+  volumes:
+    - ./examples/observability/grafana/provisioning:/etc/grafana/provisioning
+    - ./examples/observability/grafana/dashboards:/var/lib/grafana/dashboards
+```
+
+### Step 1.6 — Create Grafana dashboard for all SuperDuper metrics
+
+**New file:**
+
+- `examples/observability/grafana/dashboards/superduper.json`
+
+The dashboard should cover all metrics emitted by `MetricsSuperduperObserver` and `QueueHealthService`, organized into panels:
+
+**Row 1 — Queue Health (gauges)**
+- `superduper.queue.backlog{status=READY}` — messages waiting to be claimed.
+- `superduper.queue.backlog{status=FAILED}` — messages awaiting retry.
+- `superduper.queue.backlog{status=STOPPED}` — messages requiring intervention.
+- `superduper.queue.backlog{status=PROCESSING}` — messages currently in-flight.
+- Panel type: stat panels or gauge panels, one per status.
+
+**Row 2 — Consumer Throughput (counters)**
+- `rate(superduper.consumer.received.total[5m])` — ingest rate.
+- `rate(superduper.consumer.persisted.total[5m])` — persist rate.
+- `rate(superduper.consumer.failed.total[5m])` — consumer failure rate.
+- `superduper.consumer.persist.duration` (p50, p95, p99) — ingest latency.
+- Panel type: time series graphs.
+
+**Row 3 — Worker Processing (counters + timers)**
+- `rate(superduper.worker.processed.total[5m])` — processing rate.
+- `rate(superduper.worker.retried.total[5m])` — retry rate.
+- `rate(superduper.worker.stopped.total[5m])` — stopped rate.
+- `rate(superduper.worker.failed.total[5m])` — error rate.
+- `rate(superduper.worker.claim.total[5m])` — claim rate.
+- `superduper.worker.process.duration` (p50, p95, p99) — processing latency.
+- `superduper.worker.claim.duration` (p50, p95, p99) — claim latency.
+- Panel type: time series graphs.
+
+**Row 4 — Redrive (counters)**
+- `rate(superduper.worker.redriven.total[5m])` — redrive rate.
+- Panel type: time series graph.
+
+**Row 5 — Maintenance (counters + timers)**
+- `superduper.maintenance.total{result=success}` vs `{result=failure}` — heartbeat/orphan health.
+- `rate(superduper.maintenance.reclaimed.total[5m])` — orphan reclaim rate.
+- `superduper.maintenance.duration` — maintenance operation latency.
+- Panel type: time series graphs.
+
+**Row 6 — Cleanup (counters, added by Priority 2)**
+- `rate(superduper.maintenance.cleanup.total{operation=cleanup-processed}[5m])`
+- `rate(superduper.maintenance.cleanup.total{operation=cleanup-stopped}[5m])`
+- `rate(superduper.maintenance.cleanup.total{operation=cleanup-heartbeats}[5m])`
+- Panel type: time series graph.
+
+Dashboard variables:
+- `mode` — filter by `blocking` or `reactive`.
+- `instance` — filter by Prometheus target instance.
+
+Use Grafana dashboard JSON model format. Dashboard UID: `superduper-overview`. Auto-provisioned on Grafana startup via the provisioning config.
+
+### Step 1.7 — Document operator workflows in USAGE.md
+
+**Files to modify:**
+
+- `docs/USAGE.md`
+
+Add an "Operator Workflows" section covering:
+
+1. **Inspecting failures** — how to call `RedriveService.inspect("FAILED", limit)` or hit the example REST endpoint.
+2. **Redriving messages** — single-message and batch workflows, what happens to retry count, how per-key ordering is preserved after redrive.
+3. **Monitoring queue health** — enabling `queue-health.enabled=true`, reading the gauge metrics, and setting up alerts on backlog growth.
+4. **Blocking vs. reactive** — call-site differences (`RedriveService` vs. `ReactiveRedriveService`), both use the same repository contract.
+5. **Safety notes** — warn against redriving while the key has a `PROCESSING` sibling (the claim query naturally handles this, but document the behavior).
+6. **Prometheus and Grafana** — how to start the observability stack (`docker compose up`), access Prometheus at `localhost:9090`, access Grafana at `localhost:3000` (admin/admin), and find the pre-built SuperDuper dashboard.
+
+### Step 1.8 — Update EXAMPLES.md
+
+**Files to modify:**
+
+- `docs/EXAMPLES.md`
+
+Add instructions for:
+
+**Operator endpoints:**
+- How to query queue health: `curl localhost:8080/ops/queue`
+- How to inspect failed messages: `curl localhost:8080/ops/messages?status=FAILED&limit=10`
+- How to redrive a single message: `curl -X POST localhost:8080/ops/redrive/42`
+- How to batch-redrive: `curl -X POST 'localhost:8080/ops/redrive?status=STOPPED&limit=50'`
+- Expected JSON responses for each.
+
+**Observability stack:**
+- Starting Prometheus and Grafana with Docker Compose.
+- Verifying metrics scraping: `curl localhost:8080/actuator/prometheus | grep superduper`
+- Accessing the Grafana dashboard at `http://localhost:3000/d/superduper-overview`.
+- Screenshot or description of expected dashboard panels.
+
+---
+
+## Priority 2: Queue Retention and Cleanup
+
+### Step 2.1 — Repository API: add cleanup methods
+
+**Files to modify:**
+
+- `repository-api/.../WorkerMaintenanceRepository.java`
+- `repository-api/.../ReactiveWorkerMaintenanceRepository.java`
 
 **New methods (blocking):**
 
 ```java
-List<ClaimedMessage> findByStatus(String status, int limit);
-int redriveById(long id);
-int redriveByStatus(String status, int limit);
+int deleteProcessedOlderThan(int retentionDays);
+int deleteStoppedOlderThan(int retentionDays);
+int deleteStaleHeartbeats(int retentionDays);
 ```
 
 **New methods (reactive):**
 
 ```java
-Flux<ClaimedMessage> findByStatus(String status, int limit);
-Mono<Integer> redriveById(long id);
-Mono<Integer> redriveByStatus(String status, int limit);
+Mono<Integer> deleteProcessedOlderThan(int retentionDays);
+Mono<Integer> deleteStoppedOlderThan(int retentionDays);
+Mono<Integer> deleteStaleHeartbeats(int retentionDays);
 ```
 
 **Semantics:**
 
-- `findByStatus` — returns messages in `FAILED` or `STOPPED` status, ordered by `id`, capped by `limit`. Reuses the existing `ClaimedMessage` record (it already carries all needed fields).
-- `redriveById` — sets `status='READY'`, `retry_count=0`, `container_id=NULL`, `last_updated=NOW()` for a single row WHERE `id=? AND status IN ('FAILED','STOPPED')`. Returns number of rows updated (0 or 1).
-- `redriveByStatus` — same transition but applies to up to `limit` rows matching the given status, ordered by `id`. Returns number of rows updated.
+- `deleteProcessedOlderThan` — `DELETE FROM messages WHERE status = 'PROCESSED' AND last_updated < NOW() - INTERVAL :days DAY`. Returns number of rows deleted.
+- `deleteStoppedOlderThan` — `DELETE FROM messages WHERE status = 'STOPPED' AND last_updated < NOW() - INTERVAL :days DAY`. Returns number of rows deleted.
+- `deleteStaleHeartbeats` — `DELETE FROM container_heartbeats WHERE last_heartbeat < NOW() - INTERVAL :days DAY`. Returns number of rows deleted.
 
-### Step 1.2 — SQL Dialect: add redrive SQL
+### Step 2.2 — SQL Dialect: add cleanup SQL
 
 **Files to modify:**
 
@@ -53,56 +312,55 @@ Mono<Integer> redriveByStatus(String status, int limit);
 **New dialect methods:**
 
 ```java
-String findByStatusSql();
-String redriveByIdSql();
-String redriveByStatusSql();
+String deleteProcessedOlderThanSql();
+String deleteStoppedOlderThanSql();
+String deleteStaleHeartbeatsSql();
 ```
 
 **SQL templates (Postgres):**
 
 ```sql
--- findByStatusSql
-SELECT id, message_id, message_key, content, retry_count, container_id, correlation_id, message_type
-FROM messages WHERE status = :status ORDER BY id LIMIT :limit;
+-- deleteProcessedOlderThanSql
+DELETE FROM messages WHERE status = 'PROCESSED'
+  AND last_updated < NOW() - MAKE_INTERVAL(days => :retentionDays);
 
--- redriveByIdSql
-UPDATE messages
-SET status = 'READY', retry_count = 0, container_id = NULL, last_updated = NOW()
-WHERE id = :id AND status IN ('FAILED', 'STOPPED');
+-- deleteStoppedOlderThanSql
+DELETE FROM messages WHERE status = 'STOPPED'
+  AND last_updated < NOW() - MAKE_INTERVAL(days => :retentionDays);
 
--- redriveByStatusSql (Postgres)
-UPDATE messages
-SET status = 'READY', retry_count = 0, container_id = NULL, last_updated = NOW()
-WHERE id IN (
-  SELECT id FROM messages WHERE status = :status ORDER BY id LIMIT :limit
-);
+-- deleteStaleHeartbeatsSql
+DELETE FROM container_heartbeats
+  WHERE last_heartbeat < NOW() - MAKE_INTERVAL(days => :retentionDays);
 ```
 
 **SQL templates (MariaDB):**
 
 ```sql
--- redriveByStatusSql (MariaDB — needs subquery wrapper)
-UPDATE messages m
-JOIN (
-  SELECT id FROM (
-    SELECT id FROM messages WHERE status = :status ORDER BY id LIMIT :limit
-  ) redrive_ids
-) r ON r.id = m.id
-SET m.status = 'READY', m.retry_count = 0, m.container_id = NULL, m.last_updated = NOW();
+-- deleteProcessedOlderThanSql
+DELETE FROM messages WHERE status = 'PROCESSED'
+  AND last_updated < TIMESTAMPADD(DAY, -:retentionDays, NOW());
+
+-- deleteStoppedOlderThanSql
+DELETE FROM messages WHERE status = 'STOPPED'
+  AND last_updated < TIMESTAMPADD(DAY, -:retentionDays, NOW());
+
+-- deleteStaleHeartbeatsSql
+DELETE FROM container_heartbeats
+  WHERE last_heartbeat < TIMESTAMPADD(DAY, -:retentionDays, NOW());
 ```
 
-`findByStatusSql` and `redriveByIdSql` are dialect-independent and can use a shared default.
+Note: follow the existing interval syntax pattern used in `reclaimStaleProcessingSql()` — Postgres uses `INTERVAL '... seconds'` while MariaDB uses `TIMESTAMPADD`. Adapt the day-based variant consistently.
 
-### Step 1.3 — Repository implementations: wire redrive SQL
+### Step 2.3 — Repository implementations: wire cleanup SQL
 
 **Files to modify:**
 
-- `repository-jdbc/.../JdbcWorkerMessageRepository.java`
-- `repository-r2dbc/.../R2dbcWorkerMessageRepository.java`
+- `repository-jdbc/.../JdbcWorkerMaintenanceRepository.java`
+- `repository-r2dbc/.../R2dbcWorkerMaintenanceRepository.java`
 
-Implement the three new interface methods by delegating to the dialect SQL strings, binding parameters, and executing via `NamedParameterJdbcTemplate` (JDBC) or `DatabaseClient` (R2DBC). Follow the existing patterns in each class.
+Implement the three new interface methods. Bind `:retentionDays` parameter, execute delete, return affected row count. Follow existing patterns in each class.
 
-### Step 1.4 — Observer API: add redrive signal
+### Step 2.4 — Observer API: add cleanup signal
 
 **Files to modify:**
 
@@ -111,284 +369,192 @@ Implement the three new interface methods by delegating to the dialect SQL strin
 **New method:**
 
 ```java
-default void workerRedriven(WorkerObservation observation, int redrivenCount) {}
+default void maintenanceCleanup(MaintenanceObservation observation, int deletedCount) {}
 ```
 
-Default no-op so existing implementations compile without changes, but we update the concrete implementations in Step 1.5.
-
-### Step 1.5 — Observer implementations: emit redrive events
+### Step 2.5 — Observer implementations: emit cleanup events
 
 **Files to modify:**
 
-- `observability-api/.../ObservabilitySignal.java` — add `REDRIVE` signal (if the enum exists, otherwise add to the signal-filtering logic in `ObservabilitySettings`).
-- `observability-logging/.../LoggingSuperduperObserver.java` — log `"worker.redriven mode={} workerId={} redrivenCount={} durationMs={}"` at INFO level.
-- `observability-metrics/.../MetricsSuperduperObserver.java` — register counter `superduper.worker.redriven.total` with tag `mode`.
+- `observability-logging/.../LoggingSuperduperObserver.java` — log at INFO level:
 
-### Step 1.6 — Redrive service classes
+```
+maintenance.cleanup mode={} operation={} deletedCount={} durationMs={}
+```
 
-**New files:**
+Where `operation` is `"cleanup-processed"`, `"cleanup-stopped"`, or `"cleanup-heartbeats"`.
 
-- `worker-blocking/.../RedriveService.java`
-- `worker-reactive/.../ReactiveRedriveService.java`
+- `observability-metrics/.../MetricsSuperduperObserver.java` — register counter `superduper.maintenance.cleanup.total` with tags `mode` and `operation`.
 
-**RedriveService (blocking):**
+### Step 2.6 — Configuration: add retention properties
+
+**Files to modify:**
+
+- `starter-autoselect/.../WorkerProperties.java`
+
+**New nested class:**
 
 ```java
-public class RedriveService {
-
-    private final WorkerMessageRepository repository;
-    private final SuperduperObserver observer;
-    private final String workerId;
-
-    /** Inspect messages in FAILED or STOPPED status. */
-    public List<ClaimedMessage> inspect(String status, int limit);
-
-    /** Redrive a single message by id. Returns true if the message was redriven. */
-    public boolean redriveOne(long id);
-
-    /** Redrive up to limit messages in the given status. Returns count redriven. */
-    public int redriveBatch(String status, int limit);
+public static class Retention {
+    private boolean enabled = false;
+    private int processedRetentionDays = 14;
+    private int stoppedRetentionDays = 30;
+    private int heartbeatRetentionDays = 1;
+    private long intervalMs = 86400000; // 24 hours
+    private long initialDelayMs = 60000; // 1 minute
 }
 ```
 
-- `inspect` validates that `status` is `FAILED` or `STOPPED`, then delegates to `repository.findByStatus()`.
-- `redriveOne` delegates to `repository.redriveById()`, emits `workerRedriven(observation, count)`.
-- `redriveBatch` delegates to `repository.redriveByStatus()`, emits `workerRedriven(observation, count)`.
-- All methods guard against invalid status values (throw `IllegalArgumentException` for anything other than `FAILED`/`STOPPED`).
+Accessible via `superduper.worker.retention.*` properties.
 
-**ReactiveRedriveService:** same contract but returns `Flux`/`Mono`.
+### Step 2.7 — Cleanup service classes
 
-### Step 1.7 — Auto-configuration: wire redrive services
+**New files:**
+
+- `worker-blocking/.../CleanupService.java`
+- `worker-reactive/.../ReactiveCleanupService.java`
+
+**CleanupService (blocking):**
+
+```java
+public class CleanupService {
+
+    private final WorkerMaintenanceRepository repository;
+    private final SuperduperObserver observer;
+    private final int processedRetentionDays;
+    private final int stoppedRetentionDays;
+    private final int heartbeatRetentionDays;
+
+    @Scheduled(
+        fixedDelayString = "${superduper.worker.retention.interval-ms:86400000}",
+        initialDelayString = "${superduper.worker.retention.initial-delay-ms:60000}")
+    public void cleanup() {
+        long start = System.currentTimeMillis();
+
+        int deletedProcessed = repository.deleteProcessedOlderThan(processedRetentionDays);
+        int deletedStopped = repository.deleteStoppedOlderThan(stoppedRetentionDays);
+        int deletedHeartbeats = repository.deleteStaleHeartbeats(heartbeatRetentionDays);
+
+        long duration = System.currentTimeMillis() - start;
+
+        // Emit one observation per category so metrics/logs distinguish them
+        observer.maintenanceCleanup(
+            new MaintenanceObservation("blocking", "n/a", "cleanup-processed", duration),
+            deletedProcessed);
+        observer.maintenanceCleanup(
+            new MaintenanceObservation("blocking", "n/a", "cleanup-stopped", duration),
+            deletedStopped);
+        observer.maintenanceCleanup(
+            new MaintenanceObservation("blocking", "n/a", "cleanup-heartbeats", duration),
+            deletedHeartbeats);
+    }
+}
+```
+
+**ReactiveCleanupService:** same contract, reactive chain with `Mono.zip()` or sequential `flatMap`, ending with observer emissions. Blocks on `.block()` in the `@Scheduled` method (same pattern as `ReactiveOrphanReclaimer`).
+
+### Step 2.8 — Auto-configuration: wire cleanup services
 
 **Files to modify:**
 
 - `starter-autoselect/.../AutoSelectConfiguration.java`
 
-Register `RedriveService` bean (blocking stack) and `ReactiveRedriveService` bean (reactive stack) alongside the existing worker/heartbeat/orphan beans, injecting the same `workerId`, repository, and observer.
+Register `CleanupService` bean (blocking stack) and `ReactiveCleanupService` bean (reactive stack), conditional on `superduper.worker.retention.enabled=true`. Inject retention properties from `WorkerProperties.Retention`.
 
-### Step 1.8 — Integration tests for redrive
+### Step 2.9 — Integration tests for cleanup
 
 **New test files:**
 
-- `repository-jdbc/.../JdbcRedriveIntegrationTest.java` (Postgres)
-- `repository-jdbc/.../JdbcRedriveMariaDbIntegrationTest.java` (MariaDB)
-- `repository-r2dbc/.../R2dbcRedriveIntegrationTest.java` (Postgres)
-- `repository-r2dbc/.../R2dbcRedriveMariaDbIntegrationTest.java` (MariaDB)
-- `worker-blocking/.../RedriveServiceTest.java` (unit, mocked repo)
-- `worker-reactive/.../ReactiveRedriveServiceTest.java` (unit, mocked repo)
+- `repository-jdbc/.../JdbcCleanupIntegrationTest.java` (Postgres)
+- `repository-jdbc/.../JdbcCleanupMariaDbIntegrationTest.java` (MariaDB)
+- `repository-r2dbc/.../R2dbcCleanupIntegrationTest.java` (Postgres)
+- `repository-r2dbc/.../R2dbcCleanupMariaDbIntegrationTest.java` (MariaDB)
+- `worker-blocking/.../CleanupServiceTest.java` (unit, mocked repo)
+- `worker-reactive/.../ReactiveCleanupServiceTest.java` (unit, mocked repo)
 
 **Scenarios to cover:**
 
-1. `findByStatus("FAILED", N)` returns only `FAILED` rows, ordered by `id`, capped at `N`.
-2. `findByStatus("STOPPED", N)` returns only `STOPPED` rows.
-3. `redriveById(id)` transitions a `FAILED` row to `READY` with `retry_count=0`, `container_id=NULL`.
-4. `redriveById(id)` transitions a `STOPPED` row to `READY`.
-5. `redriveById(id)` returns 0 for a `PROCESSING` or `READY` row (no-op).
-6. `redriveByStatus("FAILED", N)` redrives up to N rows.
-7. Same-key redrive: redrive a `STOPPED` message when another message for the same key is `READY` — verify the claim query picks them up in `id` order on the next cycle.
-8. Same-key redrive with `PROCESSING` sibling: redrive a `STOPPED` message whose key has a `PROCESSING` sibling — verify the redriven row is not claimed until the `PROCESSING` sibling completes.
-9. Observer emission: `workerRedriven` is called with correct count.
+1. `deleteProcessedOlderThan(14)` deletes `PROCESSED` rows with `last_updated` older than 14 days, returns correct count.
+2. `deleteProcessedOlderThan(14)` does **not** delete `PROCESSED` rows within the retention window.
+3. `deleteProcessedOlderThan(14)` does **not** delete rows in other statuses (`READY`, `PROCESSING`, `FAILED`, `STOPPED`).
+4. `deleteStoppedOlderThan(30)` deletes only `STOPPED` rows older than 30 days.
+5. `deleteStoppedOlderThan(30)` does **not** delete `FAILED` rows (they may still be redriven).
+6. `deleteStaleHeartbeats(1)` deletes heartbeat rows older than 1 day, preserves recent ones.
+7. **Non-interference with claim:** seed rows with mixed statuses and ages. Run cleanup, then run `claimBatch`. Verify the claim query returns the correct `READY` and retry-eligible `FAILED` rows — cleanup must not affect claimable rows.
+8. **Non-interference with redrive:** seed `STOPPED` rows, some within retention, some outside. Run cleanup. Verify `redriveByStatus("STOPPED", N)` only sees the surviving (within-retention) rows.
+9. **Non-interference with orphan recovery:** seed `PROCESSING` rows with stale `last_updated`. Run cleanup (should not touch `PROCESSING`). Run `reclaimStaleProcessing`. Verify reclaim still works.
+10. **Observer emission:** verify `maintenanceCleanup` is called with correct counts per category.
 
-### Step 1.9 — Documentation
+### Step 2.10 — Enable cleanup in example apps
 
 **Files to modify:**
 
-- `docs/USAGE.md` — add "Redrive" section documenting the `RedriveService` / `ReactiveRedriveService` API, the retry/redrive contract, and example usage.
-- `README.md` — add a short mention of redrive capability under the algorithm or delivery-guarantees section.
+- `examples/app-blocking/src/main/resources/application.yml`
+- `examples/app-reactive/src/main/resources/application.yml`
+
+Add:
+
+```yaml
+superduper:
+  worker:
+    retention:
+      enabled: true
+      processed-retention-days: 14
+      stopped-retention-days: 30
+      heartbeat-retention-days: 1
+      interval-ms: 86400000    # 24 hours
+```
+
+### Step 2.11 — Documentation: retention guidance
+
+**Files to modify:**
+
+- `docs/USAGE.md`
+
+Add a "Queue Retention and Cleanup" section covering:
+
+1. **Configuration reference** — all `superduper.worker.retention.*` properties with defaults.
+2. **Retention policy** — explain the per-status retention model: `PROCESSED` (default 14 days), `STOPPED` (default 30 days), `container_heartbeats` (default 1 day).
+3. **What is NOT cleaned up** — `READY`, `PROCESSING`, and `FAILED` rows are never deleted by the cleanup task. `FAILED` rows may still be redriven; `PROCESSING` rows are live work; `READY` rows are pending.
+4. **Operational tradeoffs** — shorter retention reduces table size and improves query performance; longer retention preserves investigation capability for `STOPPED` messages.
+5. **Large-table considerations** — for tables with millions of rows, the `DELETE` statement may lock rows briefly. Recommend running cleanup during low-traffic windows or reducing `interval-ms` with smaller retention to spread the load.
+6. **Manual cleanup** — users who need archive-before-delete can disable the built-in task (`retention.enabled=false`) and implement their own `SELECT INTO ... DELETE` workflow.
+7. **Monitoring cleanup** — the `superduper.maintenance.cleanup.total` counter and `maintenance.cleanup` log lines confirm execution and deleted counts.
 
 ---
 
-## Priority 2: Observability and Runtime Diagnostics
+## Priority 3: Prepare the 0.5.x Release
 
-### Step 2.1 — Batch summary observation
-
-**Files to modify:**
-
-- `observability-api/.../WorkerObservation.java` — no structural change needed; the existing fields (`batchSize`, `durationMs`) are sufficient for batch-level events.
-- `observability-api/.../SuperduperObserver.java` — add:
-
-```java
-default void workerBatchCompleted(WorkerObservation observation, int processed, int failed, int stopped) {}
-```
-
-- `observability-logging/.../LoggingSuperduperObserver.java` — log batch summary at INFO level:
-
-```
-worker.batch.completed mode={} workerId={} batchSize={} processed={} failed={} stopped={} durationMs={}
-```
-
-- `observability-metrics/.../MetricsSuperduperObserver.java` — no new metric needed; the existing per-message counters already track processed/retried/stopped totals. The batch-completed log line is the primary deliverable here.
-
-### Step 2.2 — Emit batch summary from worker services
+### Step 3.1 — Update ROADMAP.md
 
 **Files to modify:**
 
-- `worker-blocking/.../SuperDuperWorkerService.java` — after `process()` completes, count outcomes (processed, failed, stopped) and call `observer.workerBatchCompleted(observation, processed, failed, stopped)`.
-- `worker-reactive/.../SuperDuperWorkerReactiveService.java` — same, accumulate counts across the reactive chain and emit batch summary on completion.
+- `ROADMAP.md`
 
-Track counts by adding simple counters in the process loop / reactive chain (no new fields on `ClaimedMessage`).
+After all v0.4.2 code is merged, rewrite `ROADMAP.md` to scope the `0.5.x` line. Candidate topics (to be refined based on user feedback):
 
-### Step 2.3 — Move per-message processing logs to DEBUG
+- Breaking API changes deferred from `0.4.x` (if any).
+- Multi-topic support / topic-level isolation.
+- Pluggable retry strategies (exponential backoff, jitter).
+- Schema versioning and migration tooling improvements.
+- Spring Boot 3.x / Jakarta alignment validation.
 
-**Files to modify:**
-
-- `observability-logging/.../LoggingSuperduperObserver.java`
-  - Change `workerProcessed` log from `info()` to `debug()`.
-  - Change `consumerSucceeded` log from `info()` to `debug()`.
-  - Keep `workerRetried` at WARN, `workerStopped` at ERROR, `workerFailed` at ERROR (unchanged).
-  - Keep `workerClaimed` at INFO (lifecycle event, low frequency).
-  - The new `workerBatchCompleted` at INFO replaces per-message INFO noise.
-
-### Step 2.4 — Expand maintenance observability: reclaim counts
-
-**Files to modify:**
-
-- `observability-api/.../MaintenanceObservation.java` — this is a record; no change needed because we can pass reclaim counts through the observer method signature instead.
-- `observability-api/.../SuperduperObserver.java` — change signature (or add overload):
-
-```java
-default void maintenanceSucceeded(MaintenanceObservation observation, int reclaimedCount) {
-    maintenanceSucceeded(observation); // backward compat
-}
-```
-
-- `repository-api/.../WorkerMaintenanceRepository.java` — change `reclaimStaleProcessing` and `reclaimMissingHeartbeats` return types from `void` to `int` (number of rows reclaimed).
-- `repository-api/.../ReactiveWorkerMaintenanceRepository.java` — change return types from `Mono<Void>` to `Mono<Integer>`.
-- `repository-jdbc/.../JdbcWorkerMaintenanceRepository.java` — return `jdbcTemplate.update(...)` result (already returns int from JDBC, just not exposed).
-- `repository-r2dbc/.../R2dbcWorkerMaintenanceRepository.java` — capture `rowsUpdated()` from the reactive result.
-- `worker-blocking/.../OrphanReclaimer.java` — pass reclaim counts to `maintenanceSucceeded(observation, count)`.
-- `worker-reactive/.../ReactiveOrphanReclaimer.java` — same.
-- `observability-logging/.../LoggingSuperduperObserver.java` — log reclaim count:
-
-```
-maintenance.ok mode={} workerId={} operation={} reclaimedCount={} durationMs={}
-```
-
-- `observability-metrics/.../MetricsSuperduperObserver.java` — add gauge or counter `superduper.maintenance.reclaimed.total` with tags `mode`, `operation`.
-
-### Step 2.5 — Queue-health metrics
-
-**Files to modify:**
-
-- `repository-api/.../WorkerMessageRepository.java` — add:
-
-```java
-Map<String, Long> countByStatus();
-```
-
-- `repository-api/.../ReactiveWorkerMessageRepository.java` — add:
-
-```java
-Mono<Map<String, Long>> countByStatus();
-```
-
-- SQL dialects — add `countByStatusSql()`:
-
-```sql
-SELECT status, COUNT(*) AS cnt FROM messages GROUP BY status;
-```
-
-- JDBC/R2DBC implementations — implement query, return map of `status -> count`.
-- `observability-metrics/.../MetricsSuperduperObserver.java` — register a `Gauge` backed by periodic polling (or the caller polls and sets). Gauge names:
-  - `superduper.queue.backlog{status=READY}` — messages waiting to be claimed.
-  - `superduper.queue.backlog{status=FAILED}` — messages awaiting retry.
-  - `superduper.queue.backlog{status=STOPPED}` — messages requiring intervention.
-  - `superduper.queue.backlog{status=PROCESSING}` — messages currently in-flight.
-
-Implementation note: to avoid coupling the observer to a repository, add a lightweight `QueueHealthService` (blocking) / `ReactiveQueueHealthService` (reactive) in the worker modules that periodically polls `countByStatus()` and publishes gauge values. Auto-configure alongside other services. Schedule at a configurable interval (default: 60s).
-
-**New files:**
-
-- `worker-blocking/.../QueueHealthService.java`
-- `worker-reactive/.../ReactiveQueueHealthService.java`
-
-### Step 2.6 — Documentation: operational monitoring
-
-**Files to modify:**
-
-- `docs/USAGE.md` — add "Operational Monitoring" section:
-  - Table of all metric names, tags, and what they represent.
-  - Table of key log lines and their levels.
-  - Example log output with `correlation_id` and `message_type` metadata fields.
-  - Recommended Grafana/Prometheus queries for: backlog growth, claim rate, failure rate, stopped-message alerts.
-  - Heartbeat monitoring: how to alert on missing heartbeats.
-  - Orphan reclaim: how to detect stale `PROCESSING` rows.
-
----
-
-## Priority 3: Claim-Path Performance Regression Guardrails
-
-### Step 3.1 — MariaDB explain-plan integration test
-
-**Context:** `JdbcWorkerClaimExplainIntegrationTest` already exists for Postgres. Add the MariaDB equivalent.
-
-**New files:**
-
-- `repository-jdbc/.../JdbcWorkerClaimExplainMariaDbIntegrationTest.java`
-
-**Approach:**
-
-- Use Testcontainers with MariaDB.
-- Seed the table with a representative dataset (e.g., 10k rows: mixed `READY`, `FAILED`, `PROCESSING`, `PROCESSED` across 100 distinct keys).
-- Run `EXPLAIN` on the claim query and assert:
-  - The query uses the expected indexes (`idx_messages_ready_claim_id_key`, `idx_messages_processing_key_id`).
-  - No full table scan (`type` is not `ALL`).
-- Run `EXPLAIN` on the fetch query and assert index usage.
-
-### Step 3.2 — R2DBC explain-plan integration tests
-
-**New files:**
-
-- `repository-r2dbc/.../R2dbcWorkerClaimExplainIntegrationTest.java` (Postgres)
-- `repository-r2dbc/.../R2dbcWorkerClaimExplainMariaDbIntegrationTest.java` (MariaDB)
-
-Same dataset and assertions as the JDBC variants, executed through the R2DBC `DatabaseClient`.
-
-### Step 3.3 — Hot-key and mixed-key scenarios
-
-**Files to modify:**
-
-- `repository-jdbc/.../JdbcWorkerClaimExplainIntegrationTest.java` (existing, Postgres)
-- `repository-jdbc/.../JdbcWorkerClaimExplainMariaDbIntegrationTest.java` (new, Step 3.1)
-- `repository-r2dbc/.../R2dbcWorkerClaimExplainIntegrationTest.java` (new, Step 3.2)
-- `repository-r2dbc/.../R2dbcWorkerClaimExplainMariaDbIntegrationTest.java` (new, Step 3.2)
-
-**Add parameterized test scenarios:**
-
-1. **Uniform distribution** — 10k rows, 100 keys, ~100 rows/key. All `READY`.
-2. **Hot-key skew** — 10k rows, 1 key has 5k rows, remaining 99 keys split the rest.
-3. **Mixed status** — 10k rows across all statuses (`READY`, `FAILED`, `PROCESSING`, `PROCESSED`, `STOPPED`), 100 keys.
-4. **High-retry FAILED** — 10k rows, 2k in `FAILED` with `retry_count` near `maxRetries`.
-
-For each scenario, validate `EXPLAIN` output shows index usage and no sequential scan.
-
-### Step 3.4 — Document expected query plans
-
-**Files to modify:**
-
-- `docs/USAGE.md` — add "Claim Query Performance" section:
-  - Expected `EXPLAIN` output for Postgres and MariaDB claim queries.
-  - Required indexes (reference the Liquibase changelogs).
-  - How to run the explain-plan tests locally as pre-release validation.
-  - Warning signs of regression (sequential scan, missing index, high row estimate).
+This step is documentation-only and does not require code changes.
 
 ---
 
 ## Implementation Order
 
-The priorities have limited inter-dependencies. Recommended order:
-
 | Phase | Steps | Rationale |
 |---|---|---|
-| Phase A | 2.3, 2.4 | Logging level changes and reclaim-count returns are small, self-contained refactors. Do first to reduce diff noise in later phases. |
-| Phase B | 1.1 → 1.3 | Repository API + dialect SQL + implementations. Foundation for redrive services. |
-| Phase C | 1.4 → 1.5 | Observer API + implementations for redrive signal. |
-| Phase D | 1.6 → 1.7 | Redrive service classes + auto-configuration. |
-| Phase E | 2.1 → 2.2 | Batch summary observer signal + worker integration. Depends on observer pattern established in Phase C. |
-| Phase F | 2.5 | Queue-health metrics. Independent of redrive but benefits from the observer pattern. |
-| Phase G | 1.8 | Redrive integration tests. Run after services are wired. |
-| Phase H | 3.1 → 3.3 | Explain-plan tests. Fully independent; can run in parallel with other phases. |
-| Phase I | 1.9, 2.6, 3.4 | Documentation. Last, after all code is stable. |
+| Phase A | 2.1 → 2.3 | Repository API + dialect SQL + implementations for cleanup. Foundation layer, no service dependencies. |
+| Phase B | 2.4 → 2.5 | Observer API + implementations for cleanup signal. Small, self-contained. |
+| Phase C | 2.6 → 2.8 | Configuration properties + cleanup services + auto-configuration. Depends on Phase A and B. |
+| Phase D | 2.9 | Cleanup integration tests. Run after services are wired. |
+| Phase E | 1.1 → 1.4 | Example app operator endpoints + dependencies + config. Independent of cleanup work. Can run in parallel with Phases A–D. |
+| Phase F | 1.5 → 1.6 | Prometheus + Grafana Docker Compose services and dashboard. Depends on Phase E (Actuator must be wired). |
+| Phase G | 2.10, 1.7, 1.8, 2.11 | Documentation and example config updates. Last, after all code is stable. |
+| Phase H | 3.1 | ROADMAP update for 0.5.x. After merge. |
 
 ---
 
@@ -398,48 +564,49 @@ The priorities have limited inter-dependencies. Recommended order:
 
 | File | Module | Purpose |
 |---|---|---|
-| `RedriveService.java` | `worker-blocking` | Blocking redrive workflow |
-| `ReactiveRedriveService.java` | `worker-reactive` | Reactive redrive workflow |
-| `QueueHealthService.java` | `worker-blocking` | Periodic queue-status gauge publisher |
-| `ReactiveQueueHealthService.java` | `worker-reactive` | Reactive queue-status gauge publisher |
-| `JdbcRedriveIntegrationTest.java` | `repository-jdbc` | Postgres redrive IT |
-| `JdbcRedriveMariaDbIntegrationTest.java` | `repository-jdbc` | MariaDB redrive IT |
-| `R2dbcRedriveIntegrationTest.java` | `repository-r2dbc` | Postgres redrive IT (reactive) |
-| `R2dbcRedriveMariaDbIntegrationTest.java` | `repository-r2dbc` | MariaDB redrive IT (reactive) |
-| `RedriveServiceTest.java` | `worker-blocking` | Redrive unit test |
-| `ReactiveRedriveServiceTest.java` | `worker-reactive` | Redrive unit test |
-| `JdbcWorkerClaimExplainMariaDbIntegrationTest.java` | `repository-jdbc` | MariaDB explain-plan IT |
-| `R2dbcWorkerClaimExplainIntegrationTest.java` | `repository-r2dbc` | Postgres explain-plan IT (reactive) |
-| `R2dbcWorkerClaimExplainMariaDbIntegrationTest.java` | `repository-r2dbc` | MariaDB explain-plan IT (reactive) |
+| `ExampleBlockingOperatorEndpoints.java` | `examples/app-blocking` | REST endpoints for redrive and queue inspection |
+| `ExampleReactiveOperatorEndpoints.java` | `examples/app-reactive` | WebFlux endpoints for redrive and queue inspection |
+| `CleanupService.java` | `worker-blocking` | Scheduled cleanup task (blocking) |
+| `ReactiveCleanupService.java` | `worker-reactive` | Scheduled cleanup task (reactive) |
+| `JdbcCleanupIntegrationTest.java` | `repository-jdbc` | Postgres cleanup IT |
+| `JdbcCleanupMariaDbIntegrationTest.java` | `repository-jdbc` | MariaDB cleanup IT |
+| `R2dbcCleanupIntegrationTest.java` | `repository-r2dbc` | Postgres cleanup IT (reactive) |
+| `R2dbcCleanupMariaDbIntegrationTest.java` | `repository-r2dbc` | MariaDB cleanup IT (reactive) |
+| `CleanupServiceTest.java` | `worker-blocking` | Cleanup unit test |
+| `ReactiveCleanupServiceTest.java` | `worker-reactive` | Cleanup unit test |
+| `examples/observability/prometheus.yml` | examples | Prometheus scrape config |
+| `examples/observability/prometheus-multi.yml` | examples | Prometheus scrape config for multi-container demo |
+| `examples/observability/grafana/provisioning/datasources/prometheus.yml` | examples | Grafana datasource auto-provisioning |
+| `examples/observability/grafana/provisioning/dashboards/dashboard.yml` | examples | Grafana dashboard provisioning config |
+| `examples/observability/grafana/dashboards/superduper.json` | examples | Pre-built Grafana dashboard (all SuperDuper metrics) |
 
 ### Modified files
 
 | File | Module | Change |
 |---|---|---|
-| `WorkerMessageRepository.java` | `repository-api` | Add `findByStatus`, `redriveById`, `redriveByStatus`, `countByStatus` |
-| `ReactiveWorkerMessageRepository.java` | `repository-api` | Reactive equivalents |
-| `WorkerMaintenanceRepository.java` | `repository-api` | Change reclaim return type `void` → `int` |
-| `ReactiveWorkerMaintenanceRepository.java` | `repository-api` | Change reclaim return type `Mono<Void>` → `Mono<Integer>` |
-| `JdbcSqlDialect.java` | `repository-jdbc` | Add dialect methods for redrive + countByStatus SQL |
-| `PostgresJdbcSqlDialect.java` | `repository-jdbc` | Implement new dialect methods |
-| `MariaDbJdbcSqlDialect.java` | `repository-jdbc` | Implement new dialect methods |
-| `JdbcWorkerMessageRepository.java` | `repository-jdbc` | Implement new interface methods |
-| `JdbcWorkerMaintenanceRepository.java` | `repository-jdbc` | Return reclaim row count |
-| `R2dbcSqlDialect.java` | `repository-r2dbc` | Add dialect methods for redrive + countByStatus SQL |
-| `PostgresR2dbcSqlDialect.java` | `repository-r2dbc` | Implement new dialect methods |
-| `MariaDbR2dbcSqlDialect.java` | `repository-r2dbc` | Implement new dialect methods |
-| `R2dbcWorkerMessageRepository.java` | `repository-r2dbc` | Implement new interface methods |
-| `R2dbcWorkerMaintenanceRepository.java` | `repository-r2dbc` | Return reclaim row count |
-| `SuperduperObserver.java` | `observability-api` | Add `workerRedriven`, `workerBatchCompleted`, overloaded `maintenanceSucceeded` |
-| `LoggingSuperduperObserver.java` | `observability-logging` | Implement new signals; change `workerProcessed`/`consumerSucceeded` to DEBUG |
-| `MetricsSuperduperObserver.java` | `observability-metrics` | Add `redriven.total` counter, `reclaimed.total` counter, `queue.backlog` gauges |
-| `SuperDuperWorkerService.java` | `worker-blocking` | Emit batch summary after `process()` |
-| `SuperDuperWorkerReactiveService.java` | `worker-reactive` | Emit batch summary after reactive chain completes |
-| `OrphanReclaimer.java` | `worker-blocking` | Pass reclaim count to observer |
-| `ReactiveOrphanReclaimer.java` | `worker-reactive` | Pass reclaim count to observer |
-| `AutoSelectConfiguration.java` | `starter-autoselect` | Wire `RedriveService`, `ReactiveRedriveService`, `QueueHealthService`, `ReactiveQueueHealthService` |
-| `docs/USAGE.md` | docs | Redrive section, operational monitoring, claim performance |
-| `README.md` | root | Mention redrive capability |
+| `WorkerMaintenanceRepository.java` | `repository-api` | Add `deleteProcessedOlderThan`, `deleteStoppedOlderThan`, `deleteStaleHeartbeats` |
+| `ReactiveWorkerMaintenanceRepository.java` | `repository-api` | Reactive equivalents |
+| `JdbcSqlDialect.java` | `repository-jdbc` | Add dialect methods for cleanup SQL |
+| `PostgresJdbcSqlDialect.java` | `repository-jdbc` | Implement cleanup SQL (Postgres interval syntax) |
+| `MariaDbJdbcSqlDialect.java` | `repository-jdbc` | Implement cleanup SQL (MariaDB TIMESTAMPADD syntax) |
+| `JdbcWorkerMaintenanceRepository.java` | `repository-jdbc` | Implement cleanup interface methods |
+| `R2dbcSqlDialect.java` | `repository-r2dbc` | Add dialect methods for cleanup SQL |
+| `PostgresR2dbcSqlDialect.java` | `repository-r2dbc` | Implement cleanup SQL |
+| `MariaDbR2dbcSqlDialect.java` | `repository-r2dbc` | Implement cleanup SQL |
+| `R2dbcWorkerMaintenanceRepository.java` | `repository-r2dbc` | Implement cleanup interface methods |
+| `SuperduperObserver.java` | `observability-api` | Add `maintenanceCleanup` signal |
+| `LoggingSuperduperObserver.java` | `observability-logging` | Log cleanup events at INFO |
+| `MetricsSuperduperObserver.java` | `observability-metrics` | Add `superduper.maintenance.cleanup.total` counter |
+| `WorkerProperties.java` | `starter-autoselect` | Add nested `Retention` class with per-status settings |
+| `AutoSelectConfiguration.java` | `starter-autoselect` | Wire `CleanupService` / `ReactiveCleanupService` |
+| `pom.xml` | `examples/app-blocking` | Add `spring-boot-starter-actuator`, `spring-boot-starter-web`, `micrometer-registry-prometheus` |
+| `pom.xml` | `examples/app-reactive` | Add `spring-boot-starter-actuator`, `micrometer-registry-prometheus` |
+| `application.yml` | `examples/app-blocking` | Enable queue-health, observability, Actuator, Prometheus endpoint, retention |
+| `application.yml` | `examples/app-reactive` | Enable queue-health, observability, Actuator, Prometheus endpoint, retention |
+| `docker-compose.yml` | root | Add Prometheus and Grafana services |
+| `docker-compose.multi.yml` | root | Add Prometheus and Grafana services with multi-worker scrape targets |
+| `docs/USAGE.md` | docs | Operator workflows, Prometheus/Grafana setup, retention guidance |
+| `docs/EXAMPLES.md` | docs | Operator endpoint curl examples, observability stack instructions |
 
 ---
 
@@ -447,7 +614,11 @@ The priorities have limited inter-dependencies. Recommended order:
 
 - [ ] `mvn -q -DskipTests test-compile` — all modules compile.
 - [ ] `mvn -T 1C -q test` — all existing + new tests pass.
-- [ ] Redrive integration tests pass on Postgres and MariaDB (JDBC + R2DBC).
-- [ ] Explain-plan tests pass on Postgres and MariaDB (JDBC + R2DBC).
+- [ ] Cleanup integration tests pass on Postgres and MariaDB (JDBC + R2DBC).
+- [ ] Non-interference tests confirm cleanup does not affect claim, redrive, or orphan recovery.
+- [ ] Example apps start and operator endpoints return expected JSON.
+- [ ] `curl localhost:8080/actuator/prometheus | grep superduper` returns all expected metrics.
+- [ ] `docker compose up` starts Prometheus (`:9090`) and Grafana (`:3000`) without errors.
+- [ ] Grafana dashboard `superduper-overview` loads and displays panels for all metric categories.
 - [ ] `mvn -q spotless:apply` — formatting clean.
 - [ ] No new public API without Javadoc.

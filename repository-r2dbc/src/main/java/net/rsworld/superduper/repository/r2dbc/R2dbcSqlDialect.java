@@ -27,5 +27,11 @@ public interface R2dbcSqlDialect {
 
     String reclaimMissingHeartbeatsSql();
 
+    String deleteProcessedOlderThanSql();
+
+    String deleteStoppedOlderThanSql();
+
+    String deleteStaleHeartbeatsSql();
+
     String countByStatusSql();
 }

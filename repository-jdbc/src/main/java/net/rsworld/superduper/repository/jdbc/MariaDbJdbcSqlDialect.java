@@ -113,6 +113,26 @@ public final class MariaDbJdbcSqlDialect implements JdbcSqlDialect {
     }
 
     @Override
+    public String deleteProcessedOlderThanSql() {
+        return ("DELETE FROM %s WHERE status='PROCESSED' "
+                        + "AND last_updated < TIMESTAMPADD(DAY, -:retentionDays, NOW())")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String deleteStoppedOlderThanSql() {
+        return ("DELETE FROM %s WHERE status='STOPPED' "
+                        + "AND last_updated < TIMESTAMPADD(DAY, -:retentionDays, NOW())")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String deleteStaleHeartbeatsSql() {
+        return ("DELETE FROM %s WHERE last_heartbeat < TIMESTAMPADD(DAY, -:retentionDays, NOW())")
+                .formatted(heartbeatsTable);
+    }
+
+    @Override
     public String heartbeatUpsertSql() {
         return ("INSERT INTO %s (container_id, last_heartbeat) VALUES (:cid, NOW()) "
                         + "ON DUPLICATE KEY UPDATE last_heartbeat = VALUES(last_heartbeat)")

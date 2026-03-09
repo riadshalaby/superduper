@@ -15,6 +15,7 @@ public class WorkerProperties {
     private long orphanInitialDelayMs = 15000;
     private final Shedlock shedlock = new Shedlock();
     private final QueueHealth queueHealth = new QueueHealth();
+    private final Retention retention = new Retention();
 
     public int getBatchSize() {
         return batchSize;
@@ -96,6 +97,10 @@ public class WorkerProperties {
         return queueHealth;
     }
 
+    public Retention getRetention() {
+        return retention;
+    }
+
     public static class Shedlock {
         private String tableName = "shedlock";
         private String claimLockName = "superduper-claim-batch";
@@ -153,6 +158,64 @@ public class WorkerProperties {
 
         public void setIntervalMs(long intervalMs) {
             this.intervalMs = intervalMs;
+        }
+    }
+
+    /** Configuration for scheduled queue-retention cleanup. */
+    public static class Retention {
+        private boolean enabled = false;
+        private int processedRetentionDays = 14;
+        private int stoppedRetentionDays = 30;
+        private int heartbeatRetentionDays = 1;
+        private long intervalMs = 86400000;
+        private long initialDelayMs = 60000;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getProcessedRetentionDays() {
+            return processedRetentionDays;
+        }
+
+        public void setProcessedRetentionDays(int processedRetentionDays) {
+            this.processedRetentionDays = processedRetentionDays;
+        }
+
+        public int getStoppedRetentionDays() {
+            return stoppedRetentionDays;
+        }
+
+        public void setStoppedRetentionDays(int stoppedRetentionDays) {
+            this.stoppedRetentionDays = stoppedRetentionDays;
+        }
+
+        public int getHeartbeatRetentionDays() {
+            return heartbeatRetentionDays;
+        }
+
+        public void setHeartbeatRetentionDays(int heartbeatRetentionDays) {
+            this.heartbeatRetentionDays = heartbeatRetentionDays;
+        }
+
+        public long getIntervalMs() {
+            return intervalMs;
+        }
+
+        public void setIntervalMs(long intervalMs) {
+            this.intervalMs = intervalMs;
+        }
+
+        public long getInitialDelayMs() {
+            return initialDelayMs;
+        }
+
+        public void setInitialDelayMs(long initialDelayMs) {
+            this.initialDelayMs = initialDelayMs;
         }
     }
 }

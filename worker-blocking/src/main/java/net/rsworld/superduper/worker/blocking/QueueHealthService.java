@@ -49,7 +49,7 @@ public class QueueHealthService {
         normalized.put("READY", counts.getOrDefault("READY", 0L));
         normalized.put("FAILED", counts.getOrDefault("FAILED", 0L));
         normalized.put("STOPPED", counts.getOrDefault("STOPPED", 0L));
-        normalized.put("PROCESSING", counts.getOrDefault("PROCESSING", 0L));
+        normalized.put("PROCESSED", counts.getOrDefault("PROCESSED", 0L));
         return normalized;
     }
 }

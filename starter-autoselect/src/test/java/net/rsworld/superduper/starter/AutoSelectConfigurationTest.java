@@ -19,12 +19,14 @@ import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
+import net.rsworld.superduper.worker.blocking.CleanupService;
 import net.rsworld.superduper.worker.blocking.HeartbeatService;
 import net.rsworld.superduper.worker.blocking.MessageHandler;
 import net.rsworld.superduper.worker.blocking.OrphanReclaimer;
 import net.rsworld.superduper.worker.blocking.QueueHealthService;
 import net.rsworld.superduper.worker.blocking.RedriveService;
 import net.rsworld.superduper.worker.blocking.SuperDuperWorkerService;
+import net.rsworld.superduper.worker.reactive.ReactiveCleanupService;
 import net.rsworld.superduper.worker.reactive.ReactiveHeartbeatService;
 import net.rsworld.superduper.worker.reactive.ReactiveMessageHandler;
 import net.rsworld.superduper.worker.reactive.ReactiveOrphanReclaimer;
@@ -114,6 +116,7 @@ class AutoSelectConfigurationTest {
         OrphanReclaimer rec = cfg.jdbcOrphanReclaimer(maintenanceRepository, observer, workerProperties);
         RedriveService redriveService = cfg.jdbcRedriveService(mr, observer);
         QueueHealthService queueHealthService = cfg.jdbcQueueHealthService(mr, observer);
+        CleanupService cleanupService = cfg.jdbcCleanupService(maintenanceRepository, observer, workerProperties);
 
         assertThat(lp).isNotNull();
         assertThat(exec).isNotNull();
@@ -123,16 +126,24 @@ class AutoSelectConfigurationTest {
         assertThat(rec).isNotNull();
         assertThat(redriveService).isNotNull();
         assertThat(queueHealthService).isNotNull();
+        assertThat(cleanupService).isNotNull();
 
         when(maintenanceRepository.reclaimStaleProcessing(anyInt())).thenReturn(1);
         when(maintenanceRepository.reclaimMissingHeartbeats(anyInt())).thenReturn(2);
+        when(maintenanceRepository.deleteProcessedOlderThan(anyInt())).thenReturn(3);
+        when(maintenanceRepository.deleteStoppedOlderThan(anyInt())).thenReturn(4);
+        when(maintenanceRepository.deleteStaleHeartbeats(anyInt())).thenReturn(5);
         when(mr.countByStatus()).thenReturn(java.util.Map.of("READY", 1L));
         hb.heartbeat();
         rec.reclaim();
         queueHealthService.poll();
+        cleanupService.cleanup();
         verify(maintenanceRepository).heartbeat(anyString());
         verify(maintenanceRepository).reclaimStaleProcessing(anyInt());
         verify(maintenanceRepository).reclaimMissingHeartbeats(anyInt());
+        verify(maintenanceRepository).deleteProcessedOlderThan(anyInt());
+        verify(maintenanceRepository).deleteStoppedOlderThan(anyInt());
+        verify(maintenanceRepository).deleteStaleHeartbeats(anyInt());
         verify(mr).countByStatus();
     }
 
@@ -151,22 +162,32 @@ class AutoSelectConfigurationTest {
         ReactiveOrphanReclaimer rec = cfg.reactiveOrphanReclaimer(maintenanceRepository, observer, workerProperties);
         ReactiveRedriveService redriveService = cfg.reactiveRedriveService(mr, observer);
         ReactiveQueueHealthService queueHealthService = cfg.reactiveQueueHealthService(mr, observer);
+        ReactiveCleanupService cleanupService =
+                cfg.reactiveCleanupService(maintenanceRepository, observer, workerProperties);
         assertThat(svc).isNotNull();
         assertThat(hb).isNotNull();
         assertThat(rec).isNotNull();
         assertThat(redriveService).isNotNull();
         assertThat(queueHealthService).isNotNull();
+        assertThat(cleanupService).isNotNull();
 
         when(maintenanceRepository.heartbeat(anyString())).thenReturn(reactor.core.publisher.Mono.empty());
         when(maintenanceRepository.reclaimStaleProcessing(anyInt())).thenReturn(reactor.core.publisher.Mono.just(1));
         when(maintenanceRepository.reclaimMissingHeartbeats(anyInt())).thenReturn(reactor.core.publisher.Mono.just(2));
+        when(maintenanceRepository.deleteProcessedOlderThan(anyInt())).thenReturn(reactor.core.publisher.Mono.just(3));
+        when(maintenanceRepository.deleteStoppedOlderThan(anyInt())).thenReturn(reactor.core.publisher.Mono.just(4));
+        when(maintenanceRepository.deleteStaleHeartbeats(anyInt())).thenReturn(reactor.core.publisher.Mono.just(5));
         when(mr.countByStatus()).thenReturn(reactor.core.publisher.Mono.just(java.util.Map.of("READY", 1L)));
         hb.heartbeat();
         rec.reclaim();
         queueHealthService.poll();
+        cleanupService.cleanup();
         verify(maintenanceRepository).heartbeat(anyString());
         verify(maintenanceRepository).reclaimStaleProcessing(anyInt());
         verify(maintenanceRepository).reclaimMissingHeartbeats(anyInt());
+        verify(maintenanceRepository).deleteProcessedOlderThan(anyInt());
+        verify(maintenanceRepository).deleteStoppedOlderThan(anyInt());
+        verify(maintenanceRepository).deleteStaleHeartbeats(anyInt());
         verify(mr).countByStatus();
     }
 
@@ -189,6 +210,25 @@ class AutoSelectConfigurationTest {
                         "superduper.worker.queue-health.enabled=true",
                         "superduper.worker.queue-health.interval-ms=15000")
                 .run(context -> assertThat(context).hasSingleBean(ReactiveQueueHealthService.class));
+    }
+
+    @Test
+    void cleanupBeansAreDisabledByDefault() {
+        jdbcContextRunner().run(context -> assertThat(context).doesNotHaveBean(CleanupService.class));
+        reactiveContextRunner().run(context -> assertThat(context).doesNotHaveBean(ReactiveCleanupService.class));
+    }
+
+    @Test
+    void cleanupBeansCanBeEnabledPerStack() {
+        jdbcContextRunner()
+                .withPropertyValues(
+                        "superduper.worker.retention.enabled=true", "superduper.worker.retention.interval-ms=86400000")
+                .run(context -> assertThat(context).hasSingleBean(CleanupService.class));
+
+        reactiveContextRunner()
+                .withPropertyValues(
+                        "superduper.worker.retention.enabled=true", "superduper.worker.retention.interval-ms=86400000")
+                .run(context -> assertThat(context).hasSingleBean(ReactiveCleanupService.class));
     }
 
     @Test

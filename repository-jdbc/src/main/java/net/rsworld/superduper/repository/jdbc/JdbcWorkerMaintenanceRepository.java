@@ -30,4 +30,25 @@ public class JdbcWorkerMaintenanceRepository implements WorkerMaintenanceReposit
         return jdbc.update(
                 dialect.reclaimMissingHeartbeatsSql(), new MapSqlParameterSource().addValue("hb", heartbeatWindowSec));
     }
+
+    @Override
+    public int deleteProcessedOlderThan(int retentionDays) {
+        return jdbc.update(
+                dialect.deleteProcessedOlderThanSql(),
+                new MapSqlParameterSource().addValue("retentionDays", retentionDays));
+    }
+
+    @Override
+    public int deleteStoppedOlderThan(int retentionDays) {
+        return jdbc.update(
+                dialect.deleteStoppedOlderThanSql(),
+                new MapSqlParameterSource().addValue("retentionDays", retentionDays));
+    }
+
+    @Override
+    public int deleteStaleHeartbeats(int retentionDays) {
+        return jdbc.update(
+                dialect.deleteStaleHeartbeatsSql(),
+                new MapSqlParameterSource().addValue("retentionDays", retentionDays));
+    }
 }

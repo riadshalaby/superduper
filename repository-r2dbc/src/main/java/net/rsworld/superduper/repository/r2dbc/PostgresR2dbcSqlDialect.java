@@ -120,4 +120,24 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
                         + "WHERE last_heartbeat >= (NOW() - (:hb * INTERVAL '1 second'))))")
                 .formatted(messagesTable, heartbeatsTable);
     }
+
+    @Override
+    public String deleteProcessedOlderThanSql() {
+        return ("DELETE FROM %s WHERE status='PROCESSED' "
+                        + "AND last_updated < (NOW() - (:retentionDays * INTERVAL '1 day'))")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String deleteStoppedOlderThanSql() {
+        return ("DELETE FROM %s WHERE status='STOPPED' "
+                        + "AND last_updated < (NOW() - (:retentionDays * INTERVAL '1 day'))")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String deleteStaleHeartbeatsSql() {
+        return ("DELETE FROM %s WHERE last_heartbeat < (NOW() - (:retentionDays * INTERVAL '1 day'))")
+                .formatted(heartbeatsTable);
+    }
 }

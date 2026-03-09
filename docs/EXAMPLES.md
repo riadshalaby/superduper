@@ -27,6 +27,32 @@
    ORDER BY message_key, id;
    ```
 
+Operator endpoints:
+
+```bash
+curl http://localhost:8080/ops/queue
+curl 'http://localhost:8080/ops/messages?status=FAILED&limit=10'
+curl -X POST http://localhost:8080/ops/redrive/42
+curl -X POST 'http://localhost:8080/ops/redrive?status=STOPPED&limit=50'
+```
+
+Expected response shapes:
+
+- `GET /ops/queue`: `{"READY":12,"FAILED":1,"STOPPED":0,"PROCESSED":975}`
+- `GET /ops/messages`: JSON array of `ClaimedMessage` rows
+- `POST /ops/redrive/{id}`: `{"id":42,"redriven":true}`
+- `POST /ops/redrive`: `{"status":"STOPPED","limit":50,"redriven":3}`
+
+Observability stack:
+
+```bash
+curl http://localhost:8080/actuator/prometheus | grep superduper
+```
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+- Dashboard: `http://localhost:3000/d/superduper-overview`
+
 ## Running Locally (Multi-Container Demo)
 
 This mode runs:
@@ -53,6 +79,8 @@ Inspect services:
 
 - Kafka UI: `http://localhost:8089`
 - Adminer: `http://localhost:8090`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
   - System: `PostgreSQL`
   - Server: `postgres`
   - Username: `superduper`
@@ -73,6 +101,15 @@ Stop and clean up:
 ./examples/run-multi.sh down
 ./examples/run-multi.sh down --volumes
 ```
+
+The multi-container compose file provisions Prometheus against `worker-1` through `worker-5` and auto-loads the `Superduper Overview` dashboard in Grafana.
+
+Seeder behavior in the multi-container demo:
+
+- the seeder uses at least `count / 10` distinct keys, so `--seeder-count 5000` produces at least `500` keys
+- configured `superduper.seeder.keys` is treated as a floor, not a hard cap
+- only the dedicated key `order-0` receives failure payloads
+- failure traffic is intentionally sparse: `retry-once` every `200th` message and `always-fail` every `1000th` message
 
 ## Simple Use Case (1000 Messages Demo)
 
