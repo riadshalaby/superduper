@@ -58,5 +58,13 @@ public interface SuperduperObserver {
      */
     default void queueBacklogObserved(String mode, Map<String, Long> statusCounts) {}
 
+    /**
+     * Records a cleanup maintenance result.
+     *
+     * @param observation the cleanup observation context
+     * @param deletedCount the number of deleted rows
+     */
+    default void maintenanceCleanup(MaintenanceObservation observation, int deletedCount) {}
+
     void maintenanceFailed(MaintenanceObservation observation, Throwable error);
 }

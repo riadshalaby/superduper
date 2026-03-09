@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.4.2-SNAPSHOT</version>
+    <version>0.4.2</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>example-seeder</artifactId>
@@ -21,6 +21,11 @@
     <dependency>
       <groupId>org.springframework.kafka</groupId>
       <artifactId>spring-kafka</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

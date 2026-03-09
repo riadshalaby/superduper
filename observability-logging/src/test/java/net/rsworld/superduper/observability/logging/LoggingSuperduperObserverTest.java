@@ -58,11 +58,12 @@ class LoggingSuperduperObserverTest {
         observer.workerRedriven(worker, 2);
         observer.workerFailed(worker, new RuntimeException("worker"));
         observer.maintenanceSucceeded(maintenance, 4);
+        observer.maintenanceCleanup(new MaintenanceObservation("blocking", "worker-a", "cleanup-processed", 4L), 3);
         observer.maintenanceFailed(maintenance, new RuntimeException("maintenance"));
 
         List<String> messages =
                 appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
-        assertThat(messages).hasSize(12);
+        assertThat(messages).hasSize(13);
         assertThat(messages).anyMatch(m -> m.startsWith("consumer.received"));
         assertThat(messages).anyMatch(m -> m.startsWith("consumer.persisted") && m.contains("durationMs="));
         assertThat(messages).anyMatch(m -> m.startsWith("consumer.failed"));
@@ -74,6 +75,7 @@ class LoggingSuperduperObserverTest {
         assertThat(messages).anyMatch(m -> m.startsWith("worker.redriven"));
         assertThat(messages).anyMatch(m -> m.startsWith("worker.failed"));
         assertThat(messages).anyMatch(m -> m.startsWith("maintenance.ok") && m.contains("reclaimedCount=4"));
+        assertThat(messages).anyMatch(m -> m.startsWith("maintenance.cleanup") && m.contains("deletedCount=3"));
         assertThat(messages).anyMatch(m -> m.startsWith("maintenance.failed"));
     }
 

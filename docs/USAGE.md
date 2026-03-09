@@ -181,6 +181,110 @@ Redrive contract:
 - a redriven row is still subject to the normal per-key claim ordering rules
 - if a sibling row for the same key is already `PROCESSING`, the redriven row remains unclaimable until that sibling completes
 
+## Operator Workflows
+
+### Inspecting failures
+
+Blocking applications can inspect terminal failures directly with `RedriveService`:
+
+```java
+List<ClaimedMessage> failed = redriveService.inspect("FAILED", 20);
+```
+
+Reactive applications use the same repository contract through `ReactiveRedriveService`:
+
+```java
+reactiveRedriveService.inspect("FAILED", 20).collectList();
+```
+
+The example apps expose the same workflow over HTTP:
+
+```bash
+curl 'http://localhost:8080/ops/messages?status=FAILED&limit=20'
+```
+
+### Redriving messages
+
+Single-message redrive:
+
+```java
+boolean redriven = redriveService.redriveOne(42L);
+```
+
+Batch redrive:
+
+```java
+int redriven = redriveService.redriveBatch("STOPPED", 50);
+```
+
+Reactive calls return `Mono<Boolean>` and `Mono<Integer>`:
+
+```java
+reactiveRedriveService.redriveOne(42L);
+reactiveRedriveService.redriveBatch("STOPPED", 50);
+```
+
+HTTP equivalents:
+
+```bash
+curl -X POST http://localhost:8080/ops/redrive/42
+curl -X POST 'http://localhost:8080/ops/redrive?status=STOPPED&limit=50'
+```
+
+Redrive resets the row to `READY`, clears `container_id`, resets `retry_count` to `0`, and still respects the normal claim ordering rules for that key.
+
+### Monitoring queue health
+
+Enable periodic queue-health polling:
+
+```yaml
+superduper:
+  worker:
+    queue-health:
+      enabled: true
+      interval-ms: 30000
+```
+
+The example apps also expose an operator view for the same backlog counts:
+
+```bash
+curl http://localhost:8080/ops/queue
+```
+
+Metrics backends receive `superduper.queue.backlog{mode,status}` gauges for `READY`, `FAILED`, `STOPPED`, and `PROCESSED`. Alert on sustained `READY` backlog growth, any non-zero `STOPPED`, and use `PROCESSED` as a coarse completion counter between cleanup runs.
+
+### Blocking vs. reactive
+
+- Blocking stacks call `RedriveService` and `WorkerMessageRepository`.
+- Reactive stacks call `ReactiveRedriveService` and `ReactiveWorkerMessageRepository`.
+- Both stacks persist the same schema, use the same status model, and preserve the same per-key claim ordering.
+
+### Safety notes
+
+- Only redrive `FAILED` or `STOPPED` rows.
+- Avoid bulk redrive without checking whether a key still has a `PROCESSING` sibling. The claim query will still prevent out-of-order execution, but the row will remain queued until that sibling finishes.
+- `FAILED` rows stay available for later redrive; cleanup never deletes them.
+
+### Prometheus and Grafana
+
+Start the local infrastructure plus the observability stack:
+
+```bash
+docker compose up -d
+```
+
+Then run one example app and verify scraping:
+
+```bash
+curl http://localhost:8080/actuator/prometheus | grep superduper
+```
+
+Access:
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (`admin` / `admin`)
+- Dashboard: `http://localhost:3000/d/superduper-overview`
+
 ## Tuning & Operational Guidance
 
 - Batch size: `superduper.worker.batch-size`
@@ -232,7 +336,8 @@ Redrive contract:
 | `superduper.worker.redriven.total` | `mode` | Messages redriven to `READY` |
 | `superduper.maintenance.total` | `mode`, `operation`, optional `exception`, `result` | Heartbeat and reclaim runs |
 | `superduper.maintenance.reclaimed.total` | `mode`, `operation`, optional `exception` | Rows reclaimed during maintenance |
-| `superduper.queue.backlog` | `mode`, `status` | Current queue depth for `READY`, `FAILED`, `STOPPED`, `PROCESSING` |
+| `superduper.maintenance.cleanup.total` | `mode`, `operation` | Rows deleted by cleanup |
+| `superduper.queue.backlog` | `mode`, `status` | Current row counts for `READY`, `FAILED`, `STOPPED`, `PROCESSED` |
 | `superduper.consumer.persist.duration` | same as consumer counters | Consumer persistence latency |
 | `superduper.worker.claim.duration` | same as worker claim counter | Claim latency |
 | `superduper.worker.process.duration` | same as worker outcome counters | Per-message processing latency |
@@ -252,6 +357,7 @@ Redrive contract:
 | `worker.stopped ...` | ERROR | Message moved to `STOPPED` |
 | `worker.redriven ...` | INFO | Manual redrive completed |
 | `maintenance.ok ...` | INFO | Heartbeat or reclaim run succeeded |
+| `maintenance.cleanup ...` | INFO | Cleanup deleted retained rows |
 | `maintenance.failed ...` | ERROR | Heartbeat or reclaim run failed |
 
 Example:
@@ -270,13 +376,69 @@ Recommended Prometheus / Grafana queries:
 - stopped alert: `sum(superduper_queue_backlog{status="STOPPED"}) > 0`
 - missing heartbeats: alert when `increase(superduper_maintenance_total{operation="heartbeat",result="success"}[5m]) == 0`
 - orphan reclaim activity: `sum(rate(superduper_maintenance_reclaimed_total{operation="orphan-reclaim"}[5m]))`
+- cleanup rate: `sum(rate(superduper_maintenance_cleanup_total[5m]))`
 
 Operational checks:
 
 - alert on sustained `READY` backlog growth combined with flat claim rate
 - alert on any non-zero `STOPPED` backlog
-- watch `PROCESSING` backlog and reclaim counters for stale rows or missing heartbeats
+- use reclaim counters and direct database checks to investigate stale `PROCESSING` rows or missing heartbeats
 - include `correlation_id` and `message_type` in your application-level handler logs when you need message-specific diagnostics
+
+## Queue Retention and Cleanup
+
+Enable cleanup with per-status retention:
+
+```yaml
+superduper:
+  worker:
+    retention:
+      enabled: true
+      processed-retention-days: 14
+      stopped-retention-days: 30
+      heartbeat-retention-days: 1
+      interval-ms: 86400000
+      initial-delay-ms: 60000
+```
+
+Configuration reference:
+
+- `superduper.worker.retention.enabled`: enable scheduled cleanup, default `false`
+- `superduper.worker.retention.processed-retention-days`: delete old `PROCESSED` rows after this many days, default `14`
+- `superduper.worker.retention.stopped-retention-days`: delete old `STOPPED` rows after this many days, default `30`
+- `superduper.worker.retention.heartbeat-retention-days`: delete old `container_heartbeats` rows after this many days, default `1`
+- `superduper.worker.retention.interval-ms`: cleanup schedule interval, default `86400000`
+- `superduper.worker.retention.initial-delay-ms`: cleanup startup delay, default `60000`
+
+Retention policy:
+
+- `PROCESSED` rows are deleted after `14` days by default.
+- `STOPPED` rows are deleted after `30` days by default.
+- `container_heartbeats` rows are deleted after `1` day by default.
+
+What is not cleaned up:
+
+- `READY` rows are never deleted by cleanup.
+- `PROCESSING` rows are never deleted by cleanup.
+- `FAILED` rows are never deleted by cleanup because they may still be redriven.
+
+Operational tradeoffs:
+
+- shorter retention keeps `messages` and `container_heartbeats` smaller and helps index efficiency
+- longer `STOPPED` retention keeps more time for manual investigation and audit
+- cleanup uses hard deletes, so deleted rows are not archived by the library
+
+Manual cleanup workflow:
+
+- if you need archive-before-delete, leave `superduper.worker.retention.enabled=false`
+- run your own scheduled workflow that first copies eligible `PROCESSED` or `STOPPED` rows into an archive table or external store, then deletes the archived ids from `messages`
+- apply the same pattern to `container_heartbeats` if heartbeat history must be retained outside the live table
+
+Large-table considerations:
+
+- cleanup is a plain `DELETE`, so very large tables can still hold row locks briefly
+- prefer running cleanup during lower-traffic windows when message volume is high
+- if cleanup batches are too large, reduce retention windows or run cleanup more frequently to spread the work
 
 ## Claim Query Performance
 

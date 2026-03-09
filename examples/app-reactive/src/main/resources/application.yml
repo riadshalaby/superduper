@@ -14,14 +14,28 @@ spring:
 superduper:
   consumer:
     type: reactor # selects reactive worker stack; Kafka consumer is still Spring Kafka
+  observability:
+    enabled: true
+    outputs:
+      metrics:
+        enabled: true
   kafka:
     bootstrap-servers: ${SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     group-id: example-reactive
     topic: superduper.example
   worker:
-    batch-size: 5000
     max-retries: 3
     claim-interval-ms: 2000
+    batch-size: 500
+    queue-health:
+      enabled: true
+      interval-ms: 30000
+    retention:
+      enabled: true
+      processed-retention-days: 14
+      stopped-retention-days: 30
+      heartbeat-retention-days: 1
+      interval-ms: 86400000
   example:
     seed:
       enabled: false
@@ -29,6 +43,19 @@ superduper:
       keys: 20
       await-timeout-seconds: 180
       readiness-timeout-seconds: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
 logging:
   level:

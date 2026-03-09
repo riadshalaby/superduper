@@ -25,6 +25,12 @@ public interface JdbcSqlDialect {
 
     String reclaimMissingHeartbeatsSql();
 
+    String deleteProcessedOlderThanSql();
+
+    String deleteStoppedOlderThanSql();
+
+    String deleteStaleHeartbeatsSql();
+
     String heartbeatUpsertSql();
 
     String countByStatusSql();

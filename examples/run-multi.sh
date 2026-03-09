@@ -89,7 +89,7 @@ case "$cmd" in
     echo "Building jars..."
     mvn -DskipTests -q package
 
-    base_services=(zookeeper kafka kafka-init kafka-ui postgres adminer)
+    base_services=(zookeeper kafka kafka-init kafka-ui postgres adminer prometheus grafana)
     all_seeders=(seeder-1 seeder-2 seeder-3 seeder-4 seeder-5)
     all_workers=(worker-1 worker-2 worker-3 worker-4 worker-5)
     selected_seeders=("${all_seeders[@]:0:instance_count}")
@@ -117,6 +117,8 @@ case "$cmd" in
     echo "Services:"
     echo "  Kafka UI:  http://localhost:8089"
     echo "  Adminer:   http://localhost:8090  (System: PostgreSQL, Server: postgres, User: superduper, Password: superduper, DB: superduper)"
+    echo "  Prometheus: http://localhost:9090"
+    echo "  Grafana:    http://localhost:3000"
     echo ""
     echo "To follow seeder logs:  docker compose -f $COMPOSE_FILE logs -f ${selected_seeders[*]}"
     echo "To follow worker logs:  docker compose -f $COMPOSE_FILE logs -f ${selected_workers[*]}"

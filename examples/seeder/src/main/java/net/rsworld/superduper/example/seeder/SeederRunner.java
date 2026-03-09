@@ -17,6 +17,10 @@ import org.springframework.stereotype.Component;
 @Component
 class SeederRunner implements CommandLineRunner {
     private static final Logger log = LoggerFactory.getLogger(SeederRunner.class);
+    private static final int MIN_KEY_SHARE_DIVISOR = 10;
+    private static final int RETRY_ONCE_EVERY = 200;
+    private static final int ALWAYS_FAIL_EVERY = 1000;
+    private static final String FAILURE_KEY = "order-0";
 
     private final String bootstrapServers;
     private final String topic;
@@ -40,6 +44,7 @@ class SeederRunner implements CommandLineRunner {
     @Override
     public void run(String... args) throws ExecutionException, InterruptedException {
         String runToken = UUID.randomUUID().toString();
+        int effectiveKeys = effectiveKeyCount(count, keys);
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
@@ -50,7 +55,7 @@ class SeederRunner implements CommandLineRunner {
         long startedAt = System.nanoTime();
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
             for (int i = 1; i <= count; i++) {
-                String key = "order-" + (i % keys);
+                String key = keyFor(i, effectiveKeys);
                 String content = contentFor(i, runToken);
                 producer.send(new ProducerRecord<>(topic, key, content)).get();
             }
@@ -59,21 +64,52 @@ class SeederRunner implements CommandLineRunner {
 
         long elapsedMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
         log.info(
-                "[Seeder] instance={} runToken={} published={} topic={} elapsedMs={}",
+                "[Seeder] instance={} runToken={} published={} topic={} keys={} failureKey={} failurePattern=retry-once/every-{},always-fail/every-{} elapsedMs={}",
                 instanceId,
                 runToken,
                 count,
                 topic,
+                effectiveKeys,
+                FAILURE_KEY,
+                RETRY_ONCE_EVERY,
+                ALWAYS_FAIL_EVERY,
                 elapsedMs);
     }
 
+    static int effectiveKeyCount(int count, int configuredKeys) {
+        return Math.max(Math.max(1, configuredKeys), ceilDiv(count, MIN_KEY_SHARE_DIVISOR));
+    }
+
+    static String keyFor(int i, int effectiveKeys) {
+        if (isFailureIndex(i) || effectiveKeys == 1) {
+            return FAILURE_KEY;
+        }
+        return "order-" + (1 + ((i - 1) % (effectiveKeys - 1)));
+    }
+
     private String contentFor(int i, String runToken) {
-        if (i % 40 == 0) {
+        if (isAlwaysFailIndex(i)) {
             return "always-fail instance=" + instanceId + " runToken=" + runToken + " #" + i;
         }
-        if (i % 10 == 0) {
+        if (isRetryOnceIndex(i)) {
             return "retry-once instance=" + instanceId + " runToken=" + runToken + " #" + i;
         }
         return "ok instance=" + instanceId + " runToken=" + runToken + " #" + i;
+    }
+
+    static boolean isFailureIndex(int i) {
+        return isAlwaysFailIndex(i) || isRetryOnceIndex(i);
+    }
+
+    private static boolean isAlwaysFailIndex(int i) {
+        return i % ALWAYS_FAIL_EVERY == 0;
+    }
+
+    private static boolean isRetryOnceIndex(int i) {
+        return i % RETRY_ONCE_EVERY == 0 && !isAlwaysFailIndex(i);
+    }
+
+    private static int ceilDiv(int dividend, int divisor) {
+        return Math.max(1, (dividend + divisor - 1) / divisor);
     }
 }

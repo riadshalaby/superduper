@@ -123,4 +123,24 @@ public final class MariaDbR2dbcSqlDialect implements R2dbcSqlDialect {
                         + "WHERE last_heartbeat >= TIMESTAMPADD(SECOND, -:hb, NOW())))")
                 .formatted(messagesTable, heartbeatsTable);
     }
+
+    @Override
+    public String deleteProcessedOlderThanSql() {
+        return ("DELETE FROM %s WHERE status='PROCESSED' "
+                        + "AND last_updated < TIMESTAMPADD(DAY, -:retentionDays, NOW())")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String deleteStoppedOlderThanSql() {
+        return ("DELETE FROM %s WHERE status='STOPPED' "
+                        + "AND last_updated < TIMESTAMPADD(DAY, -:retentionDays, NOW())")
+                .formatted(messagesTable);
+    }
+
+    @Override
+    public String deleteStaleHeartbeatsSql() {
+        return ("DELETE FROM %s WHERE last_heartbeat < TIMESTAMPADD(DAY, -:retentionDays, NOW())")
+                .formatted(heartbeatsTable);
+    }
 }

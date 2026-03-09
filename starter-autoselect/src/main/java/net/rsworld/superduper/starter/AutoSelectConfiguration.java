@@ -18,12 +18,14 @@ import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
+import net.rsworld.superduper.worker.blocking.CleanupService;
 import net.rsworld.superduper.worker.blocking.HeartbeatService;
 import net.rsworld.superduper.worker.blocking.MessageHandler;
 import net.rsworld.superduper.worker.blocking.OrphanReclaimer;
 import net.rsworld.superduper.worker.blocking.QueueHealthService;
 import net.rsworld.superduper.worker.blocking.RedriveService;
 import net.rsworld.superduper.worker.blocking.SuperDuperWorkerService;
+import net.rsworld.superduper.worker.reactive.ReactiveCleanupService;
 import net.rsworld.superduper.worker.reactive.ReactiveHeartbeatService;
 import net.rsworld.superduper.worker.reactive.ReactiveMessageHandler;
 import net.rsworld.superduper.worker.reactive.ReactiveOrphanReclaimer;
@@ -153,6 +155,23 @@ public class AutoSelectConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "spring", matchIfMissing = true)
+    @ConditionalOnProperty(name = "superduper.worker.retention.enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    public CleanupService jdbcCleanupService(
+            WorkerMaintenanceRepository maintenanceRepository,
+            SuperduperObserver observer,
+            WorkerProperties workerProperties) {
+        WorkerProperties.Retention retention = workerProperties.getRetention();
+        return new CleanupService(
+                maintenanceRepository,
+                observer,
+                retention.getProcessedRetentionDays(),
+                retention.getStoppedRetentionDays(),
+                retention.getHeartbeatRetentionDays());
+    }
+
+    @Bean
     @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
     @ConditionalOnMissingBean
     public SuperDuperWorkerReactiveService reactiveWorker(
@@ -207,5 +226,22 @@ public class AutoSelectConfiguration {
     public ReactiveQueueHealthService reactiveQueueHealthService(
             ReactiveWorkerMessageRepository messageRepository, SuperduperObserver observer) {
         return new ReactiveQueueHealthService(messageRepository, observer);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
+    @ConditionalOnProperty(name = "superduper.worker.retention.enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    public ReactiveCleanupService reactiveCleanupService(
+            ReactiveWorkerMaintenanceRepository maintenanceRepository,
+            SuperduperObserver observer,
+            WorkerProperties workerProperties) {
+        WorkerProperties.Retention retention = workerProperties.getRetention();
+        return new ReactiveCleanupService(
+                maintenanceRepository,
+                observer,
+                retention.getProcessedRetentionDays(),
+                retention.getStoppedRetentionDays(),
+                retention.getHeartbeatRetentionDays());
     }
 }

@@ -9,6 +9,7 @@ Objective: make the new redrive and queue-health capabilities easy to use in rea
 - Add example application flows for inspecting `FAILED` and `STOPPED` messages and redriving them without direct SQL.
 - Show how queue-health polling and observability outputs should be enabled in starter-based applications.
 - Document safe operational usage patterns for admin workflows in blocking and reactive deployments.
+- add Prometheus and Grafana to the example applications so to demonstrate observability. Create a dashboard for all metrics available.
 
 ## Priority 2: Queue Retention and Cleanup
 
