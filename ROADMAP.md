@@ -17,11 +17,8 @@ Objective: define how queue tables stay manageable once production traffic accum
 - Add a supported cleanup/archive story for old `PROCESSED` rows and terminal failures.
 - Document retention guidance and operational tradeoffs for `messages` and `container_heartbeats`.
 - Cover cleanup behavior with integration tests so retention tasks do not interfere with claim, redrive, or orphan recovery.
+- define a retention policy for `messages` and `container_heartbeats` tables. 14 days for `messages` and 1 day for `container_heartbeats`.
+- create a cleanup task and make its schedule configurable.
 
-## Priority 3: CI and Release Hardening
-
-Objective: make the new guardrails and release flow repeatable with less manual effort.
-
-- Promote claim-plan regression checks into a reliable pre-release or CI workflow.
-- Tighten release automation and documentation around version bumps, tagging, and post-release branch setup.
-- Keep container-heavy validation reproducible and scoped so release verification remains practical.
+## Priority 3:
+- prepare the `0.5.x` release.
