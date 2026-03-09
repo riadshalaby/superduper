@@ -1,25 +1,27 @@
 # ROADMAP
 
-Goal: turn the `0.4.x` operational foundation into a smoother adoption and day-2 operations story after the `0.4.1` redrive and observability release.
+Goal: shape the `0.5.x` line around larger API and operability improvements after the `0.4.x` operator and retention work.
 
-## Priority 1: Operator Entry Points and Examples
+## Priority 1: Delivery Controls
 
-Objective: make the new redrive and queue-health capabilities easy to use in real applications.
+Objective: make retry and scheduling behavior more adaptable across workloads.
 
-- Add example application flows for inspecting `FAILED` and `STOPPED` messages and redriving them without direct SQL.
-- Show how queue-health polling and observability outputs should be enabled in starter-based applications.
-- Document safe operational usage patterns for admin workflows in blocking and reactive deployments.
-- add Prometheus and Grafana to the example applications so to demonstrate observability. Create a dashboard for all metrics available.
+- Evaluate pluggable retry strategies such as exponential backoff and jitter.
+- Clarify where retry policy should live: worker service, repository contract, or starter configuration.
+- Define how future retry controls interact with ordering guarantees and redrive workflows.
 
-## Priority 2: Queue Retention and Cleanup
+## Priority 2: Topic and Tenant Isolation
 
-Objective: define how queue tables stay manageable once production traffic accumulates.
+Objective: improve support for more complex Kafka topologies.
 
-- Add a supported cleanup/archive story for old `PROCESSED` rows and terminal failures.
-- Document retention guidance and operational tradeoffs for `messages` and `container_heartbeats`.
-- Cover cleanup behavior with integration tests so retention tasks do not interfere with claim, redrive, or orphan recovery.
-- define a retention policy for `messages` and `container_heartbeats` tables. 14 days for `messages` and 1 day for `container_heartbeats`.
-- create a cleanup task and make its schedule configurable.
+- Explore multi-topic support and topic-level isolation rules.
+- Document whether per-topic worker groups, retention, and observability need separate controls.
+- Validate how current metadata resolution and ordering assumptions scale beyond a single topic.
 
-## Priority 3:
-- prepare the `0.5.x` release.
+## Priority 3: Platform Alignment
+
+Objective: reduce future upgrade friction.
+
+- Review deferred breaking API changes for a `0.5.x` boundary.
+- Revisit schema versioning and migration tooling ergonomics.
+- Validate Spring Boot and Jakarta compatibility expectations for the next major line.
