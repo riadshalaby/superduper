@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE IF NOT EXISTS ${table.name} (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   topic VARCHAR(255) NOT NULL DEFAULT 'default',
   message_id VARCHAR(36) UNIQUE NOT NULL,
@@ -15,16 +15,11 @@ CREATE TABLE IF NOT EXISTS messages (
   last_updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_messages_topic_status_key_id ON messages(topic, status, message_key, id);
+CREATE INDEX idx_${table.name}_topic_status_key_id
+    ON ${table.name} (topic, status, message_key, id);
 
-CREATE TABLE IF NOT EXISTS container_heartbeats (
-  container_id VARCHAR(255) PRIMARY KEY,
-  last_heartbeat TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
+    ON ${table.name} (topic, status, container_id, message_key, id);
 
-CREATE TABLE IF NOT EXISTS shedlock (
-  name VARCHAR(64) PRIMARY KEY,
-  lock_until TIMESTAMP(3) NOT NULL,
-  locked_at TIMESTAMP(3) NOT NULL,
-  locked_by VARCHAR(255) NOT NULL
-);
+CREATE INDEX idx_${table.name}_processing_stale_status_last_updated
+    ON ${table.name} (topic, status, last_updated);

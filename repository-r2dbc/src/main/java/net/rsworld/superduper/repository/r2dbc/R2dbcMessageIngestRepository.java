@@ -30,8 +30,21 @@ public class R2dbcMessageIngestRepository implements ReactiveMessageIngestReposi
             Instant occurredAt,
             String correlationId,
             String messageType) {
+        return upsertReadyMessage("default", messageId, messageKey, content, occurredAt, correlationId, messageType);
+    }
+
+    @Override
+    public Mono<Void> upsertReadyMessage(
+            String topic,
+            String messageId,
+            String messageKey,
+            String content,
+            Instant occurredAt,
+            String correlationId,
+            String messageType) {
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         var statement = db.sql(dialect.upsertReadyMessageSql())
+                .bind("topic", topic)
                 .bind("messageId", messageId)
                 .bind("messageKey", messageKey)
                 .bind("content", content)

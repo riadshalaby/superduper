@@ -25,8 +25,14 @@ public class R2dbcWorkerMaintenanceRepository implements ReactiveWorkerMaintenan
 
     @Override
     public Mono<Integer> reclaimStaleProcessing(int orphanTimeoutSec) {
+        return reclaimStaleProcessing(orphanTimeoutSec, "default");
+    }
+
+    @Override
+    public Mono<Integer> reclaimStaleProcessing(int orphanTimeoutSec, String topic) {
         return db.sql(dialect.reclaimStaleProcessingSql())
                 .bind("t", orphanTimeoutSec)
+                .bind("topic", topic)
                 .fetch()
                 .rowsUpdated()
                 .map(Long::intValue)
@@ -35,8 +41,14 @@ public class R2dbcWorkerMaintenanceRepository implements ReactiveWorkerMaintenan
 
     @Override
     public Mono<Integer> reclaimMissingHeartbeats(int heartbeatWindowSec) {
+        return reclaimMissingHeartbeats(heartbeatWindowSec, "default");
+    }
+
+    @Override
+    public Mono<Integer> reclaimMissingHeartbeats(int heartbeatWindowSec, String topic) {
         return db.sql(dialect.reclaimMissingHeartbeatsSql())
                 .bind("hb", heartbeatWindowSec)
+                .bind("topic", topic)
                 .fetch()
                 .rowsUpdated()
                 .map(Long::intValue)
@@ -45,8 +57,14 @@ public class R2dbcWorkerMaintenanceRepository implements ReactiveWorkerMaintenan
 
     @Override
     public Mono<Integer> deleteProcessedOlderThan(int retentionDays) {
+        return deleteProcessedOlderThan(retentionDays, "default");
+    }
+
+    @Override
+    public Mono<Integer> deleteProcessedOlderThan(int retentionDays, String topic) {
         return db.sql(dialect.deleteProcessedOlderThanSql())
                 .bind("retentionDays", retentionDays)
+                .bind("topic", topic)
                 .fetch()
                 .rowsUpdated()
                 .map(Long::intValue)
@@ -55,8 +73,14 @@ public class R2dbcWorkerMaintenanceRepository implements ReactiveWorkerMaintenan
 
     @Override
     public Mono<Integer> deleteStoppedOlderThan(int retentionDays) {
+        return deleteStoppedOlderThan(retentionDays, "default");
+    }
+
+    @Override
+    public Mono<Integer> deleteStoppedOlderThan(int retentionDays, String topic) {
         return db.sql(dialect.deleteStoppedOlderThanSql())
                 .bind("retentionDays", retentionDays)
+                .bind("topic", topic)
                 .fetch()
                 .rowsUpdated()
                 .map(Long::intValue)

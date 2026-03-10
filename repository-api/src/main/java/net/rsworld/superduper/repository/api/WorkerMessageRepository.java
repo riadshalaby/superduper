@@ -4,9 +4,17 @@ import java.util.List;
 import java.util.Map;
 
 public interface WorkerMessageRepository {
-    long claimBatch(String workerId, int batchSize, int maxRetries);
+    default long claimBatch(String workerId, int batchSize, int maxRetries) {
+        return claimBatch(workerId, batchSize, maxRetries, "default");
+    }
 
-    List<ClaimedMessage> fetchClaimedForWorker(String workerId);
+    long claimBatch(String workerId, int batchSize, int maxRetries, String topic);
+
+    default List<ClaimedMessage> fetchClaimedForWorker(String workerId) {
+        return fetchClaimedForWorker(workerId, "default");
+    }
+
+    List<ClaimedMessage> fetchClaimedForWorker(String workerId, String topic);
 
     /**
      * Finds messages in the given terminal failure status ordered by id.
@@ -15,7 +23,11 @@ public interface WorkerMessageRepository {
      * @param limit the maximum number of rows to return
      * @return matching rows ordered by id
      */
-    List<ClaimedMessage> findByStatus(String status, int limit);
+    default List<ClaimedMessage> findByStatus(String status, int limit) {
+        return findByStatus(status, limit, "default");
+    }
+
+    List<ClaimedMessage> findByStatus(String status, int limit, String topic);
 
     int releaseMessages(List<Long> ids, String containerId);
 
@@ -40,12 +52,20 @@ public interface WorkerMessageRepository {
      * @param limit the maximum number of rows to update
      * @return the number of updated rows
      */
-    int redriveByStatus(String status, int limit);
+    default int redriveByStatus(String status, int limit) {
+        return redriveByStatus(status, limit, "default");
+    }
+
+    int redriveByStatus(String status, int limit, String topic);
 
     /**
      * Counts queued messages grouped by status.
      *
      * @return a map of status to row count
      */
-    Map<String, Long> countByStatus();
+    default Map<String, Long> countByStatus() {
+        return countByStatus("default");
+    }
+
+    Map<String, Long> countByStatus(String topic);
 }

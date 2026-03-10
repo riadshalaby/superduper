@@ -28,10 +28,11 @@ public class ReactiveHeartbeatService {
         maintenanceRepository
                 .heartbeat(workerId)
                 .doOnSuccess(x -> observer.maintenanceSucceeded(
-                        new MaintenanceObservation("reactive", workerId, "heartbeat", elapsedMs(started))))
+                        new MaintenanceObservation("reactive", "all", workerId, "heartbeat", elapsedMs(started))))
                 .onErrorResume(e -> {
                     observer.maintenanceFailed(
-                            new MaintenanceObservation("reactive", workerId, "heartbeat", elapsedMs(started)), e);
+                            new MaintenanceObservation("reactive", "all", workerId, "heartbeat", elapsedMs(started)),
+                            e);
                     return reactor.core.publisher.Mono.empty();
                 })
                 .block();

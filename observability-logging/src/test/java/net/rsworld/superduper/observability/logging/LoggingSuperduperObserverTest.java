@@ -44,8 +44,9 @@ class LoggingSuperduperObserverTest {
         LoggingSuperduperObserver observer = new LoggingSuperduperObserver(enabledSettings(true));
 
         ConsumerObservation consumer = new ConsumerObservation("reactive", "topic-a", 1, 11L, "key-a", 8, 6L);
-        WorkerObservation worker = new WorkerObservation("blocking", "worker-a", 91L, 2, 10, 7L);
-        MaintenanceObservation maintenance = new MaintenanceObservation("blocking", "worker-a", "heartbeat", 4L);
+        WorkerObservation worker = new WorkerObservation("blocking", "topic-a", "worker-a", 91L, 2, 10, 7L);
+        MaintenanceObservation maintenance =
+                new MaintenanceObservation("blocking", "topic-a", "worker-a", "heartbeat", 4L);
 
         observer.consumerReceived(consumer);
         observer.consumerSucceeded(consumer);
@@ -58,7 +59,8 @@ class LoggingSuperduperObserverTest {
         observer.workerRedriven(worker, 2);
         observer.workerFailed(worker, new RuntimeException("worker"));
         observer.maintenanceSucceeded(maintenance, 4);
-        observer.maintenanceCleanup(new MaintenanceObservation("blocking", "worker-a", "cleanup-processed", 4L), 3);
+        observer.maintenanceCleanup(
+                new MaintenanceObservation("blocking", "topic-a", "worker-a", "cleanup-processed", 4L), 3);
         observer.maintenanceFailed(maintenance, new RuntimeException("maintenance"));
 
         List<String> messages =
@@ -84,7 +86,7 @@ class LoggingSuperduperObserverTest {
         LoggingSuperduperObserver observer = new LoggingSuperduperObserver(enabledSettings(false));
 
         ConsumerObservation consumer = new ConsumerObservation("reactive", "topic-a", 1, 11L, "key-a", 8, 6L);
-        WorkerObservation worker = new WorkerObservation("blocking", "worker-a", 91L, 2, 10, 7L);
+        WorkerObservation worker = new WorkerObservation("blocking", "topic-a", "worker-a", 91L, 2, 10, 7L);
 
         observer.consumerSucceeded(consumer);
         observer.workerClaimed(worker, 5);

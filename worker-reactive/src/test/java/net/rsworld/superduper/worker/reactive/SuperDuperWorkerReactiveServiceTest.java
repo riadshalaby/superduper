@@ -103,7 +103,7 @@ class SuperDuperWorkerReactiveServiceTest {
     void schedule_usesShedlockForClaimSection() {
         ReactiveWorkerMessageRepository mr = mock(ReactiveWorkerMessageRepository.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
-        when(mr.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(Mono.just(0L));
+        when(mr.claimBatch(anyString(), anyInt(), anyInt(), anyString())).thenReturn(Mono.just(0L));
         doAnswer(invocation -> {
                     Runnable task = invocation.getArgument(0);
                     task.run();
@@ -124,7 +124,7 @@ class SuperDuperWorkerReactiveServiceTest {
         svc.schedule();
 
         verify(lockExec).executeWithLock(any(Runnable.class), any());
-        verify(mr).claimBatch(anyString(), anyInt(), anyInt());
+        verify(mr).claimBatch(anyString(), anyInt(), anyInt(), anyString());
     }
 
     @Test
@@ -133,8 +133,8 @@ class SuperDuperWorkerReactiveServiceTest {
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
         AtomicBoolean executedOnVirtualThread = new AtomicBoolean(false);
 
-        when(mr.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(Mono.just(1L));
-        when(mr.fetchClaimedForWorker(anyString()))
+        when(mr.claimBatch(anyString(), anyInt(), anyInt(), anyString())).thenReturn(Mono.just(1L));
+        when(mr.fetchClaimedForWorker(anyString(), anyString()))
                 .thenReturn(Flux.just(new ClaimedMessage(1L, "mid-1", "k1", "v1", 0, "cid", null, null)));
         when(mr.markProcessed(anyLong(), anyString())).thenReturn(Mono.just(true));
         doAnswer(invocation -> {
@@ -169,8 +169,8 @@ class SuperDuperWorkerReactiveServiceTest {
         ReactiveWorkerMessageRepository mr = mock(ReactiveWorkerMessageRepository.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
 
-        when(mr.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(Mono.just(3L));
-        when(mr.fetchClaimedForWorker(anyString()))
+        when(mr.claimBatch(anyString(), anyInt(), anyInt(), anyString())).thenReturn(Mono.just(3L));
+        when(mr.fetchClaimedForWorker(anyString(), anyString()))
                 .thenReturn(Flux.just(
                         new ClaimedMessage(1L, "mid-1", "k1", "v1", 0, "cid", null, null),
                         new ClaimedMessage(2L, "mid-2", "k1", "v2", 0, "cid", null, null),
@@ -208,8 +208,8 @@ class SuperDuperWorkerReactiveServiceTest {
         SuperduperObserver observer = mock(SuperduperObserver.class);
         LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
 
-        when(mr.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(Mono.just(2L));
-        when(mr.fetchClaimedForWorker(anyString()))
+        when(mr.claimBatch(anyString(), anyInt(), anyInt(), anyString())).thenReturn(Mono.just(2L));
+        when(mr.fetchClaimedForWorker(anyString(), anyString()))
                 .thenReturn(Flux.just(
                         new ClaimedMessage(1L, "mid-1", "k1", "v1", 0, "cid", null, null),
                         new ClaimedMessage(2L, "mid-2", "k2", "v2", 0, "cid", null, null)));

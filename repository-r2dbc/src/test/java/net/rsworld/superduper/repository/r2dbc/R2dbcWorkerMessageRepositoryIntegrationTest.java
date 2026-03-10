@@ -112,6 +112,31 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         assertThat(status).isEqualTo("STOPPED");
     }
 
+    @Test
+    void claimBatch_isolatesKeysPerTopic() {
+        resetData();
+        insert("a1", "shared-key", "va1", "READY", "topic-a");
+        insert("a2", "shared-key", "va2", "READY", "topic-a");
+        insert("b1", "shared-key", "vb1", "READY", "topic-b");
+        insert("b2", "shared-key", "vb2", "READY", "topic-b");
+
+        Long claimedTopicA = repo.claimBatch("w-topic-a", 10, 5, "topic-a").block();
+        Long claimedTopicB = repo.claimBatch("w-topic-b", 10, 5, "topic-b").block();
+
+        assertThat(claimedTopicA).isEqualTo(2);
+        assertThat(claimedTopicB).isEqualTo(2);
+        assertThat(repo.fetchClaimedForWorker("w-topic-a", "topic-a")
+                        .collectList()
+                        .block())
+                .extracting(row -> row.topic() + ":" + row.messageId())
+                .containsExactly("topic-a:a1", "topic-a:a2");
+        assertThat(repo.fetchClaimedForWorker("w-topic-b", "topic-b")
+                        .collectList()
+                        .block())
+                .extracting(row -> row.topic() + ":" + row.messageId())
+                .containsExactly("topic-b:b1", "topic-b:b2");
+    }
+
     private static void resetData() {
         db.sql("TRUNCATE TABLE messages RESTART IDENTITY").fetch().rowsUpdated().block();
     }
@@ -123,6 +148,19 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
                 .bind("messageKey", messageKey)
                 .bind("content", content)
                 .bind("status", status)
+                .fetch()
+                .rowsUpdated()
+                .block();
+    }
+
+    private static void insert(String messageId, String messageKey, String content, String status, String topic) {
+        db.sql(
+                        "INSERT INTO messages(message_id,message_key,content,status,topic) VALUES (:messageId,:messageKey,:content,:status,:topic)")
+                .bind("messageId", messageId)
+                .bind("messageKey", messageKey)
+                .bind("content", content)
+                .bind("status", status)
+                .bind("topic", topic)
                 .fetch()
                 .rowsUpdated()
                 .block();

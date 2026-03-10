@@ -68,8 +68,9 @@ class ObservabilitySettingsTest {
         NoopSuperduperObserver observer = NoopSuperduperObserver.INSTANCE;
 
         ConsumerObservation consumer = new ConsumerObservation("reactive", "topic-a", 1, 42L, "key-a", 12, 8L);
-        WorkerObservation worker = new WorkerObservation("blocking", "worker-a", 99L, 2, 10, 16L);
-        MaintenanceObservation maintenance = new MaintenanceObservation("blocking", "worker-a", "heartbeat", 5L);
+        WorkerObservation worker = new WorkerObservation("blocking", "topic-a", "worker-a", 99L, 2, 10, 16L);
+        MaintenanceObservation maintenance =
+                new MaintenanceObservation("blocking", "topic-a", "worker-a", "heartbeat", 5L);
 
         assertThat(NoopSuperduperObserver.INSTANCE).isSameAs(observer);
         assertThatCode(() -> {
@@ -85,7 +86,7 @@ class ObservabilitySettingsTest {
                     observer.workerFailed(worker, new RuntimeException("worker"));
                     observer.maintenanceSucceeded(maintenance);
                     observer.maintenanceSucceeded(maintenance, 4);
-                    observer.queueBacklogObserved("blocking", Map.of("READY", 2L));
+                    observer.queueBacklogObserved("blocking", "topic-a", Map.of("READY", 2L));
                     observer.maintenanceFailed(maintenance, new RuntimeException("maintenance"));
                 })
                 .doesNotThrowAnyException();

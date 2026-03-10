@@ -9,14 +9,14 @@ This document is optimized for fast repo navigation by humans and agents.
 | `observability-api` | `superduper-observability-api` | Observer SPI and observation payloads | `SuperduperObserver`, `ObservabilitySettings`, `ConsumerObservation`, `WorkerObservation`, `MaintenanceObservation` |
 | `observability-logging` | `superduper-observability-logging` | Logging-based observer implementation | `LoggingSuperduperObserver` |
 | `observability-metrics` | `superduper-observability-metrics` | Micrometer-backed observer implementation | `MetricsSuperduperObserver` |
-| `repository-api` | `superduper-repository-api` | Storage contracts for ingest, claim, and maintenance | `MessageIngestRepository`, `WorkerMessageRepository`, `ReactiveWorkerMessageRepository`, `WorkerMaintenanceRepository`, `ReactiveWorkerMaintenanceRepository` |
+| `repository-api` | `superduper-repository-api` | Storage contracts for ingest, claim, maintenance, and topic-aware factory/registry views | `MessageIngestRepository`, `WorkerMessageRepository`, `ReactiveWorkerMessageRepository`, `WorkerMaintenanceRepository`, `ReactiveWorkerMaintenanceRepository`, `TopicRegistryView`, `TopicRepositoryFactory` |
 | `repository-jdbc` | `superduper-repository-jdbc` | JDBC repository implementations and SQL dialects | `JdbcMessageIngestRepository`, `JdbcWorkerMessageRepository`, `JdbcWorkerMaintenanceRepository`, `PostgresJdbcSqlDialect`, `MariaDbJdbcSqlDialect`, `JdbcRepositoryAutoConfiguration` |
 | `repository-r2dbc` | `superduper-repository-r2dbc` | R2DBC repository implementations and SQL dialects | `R2dbcMessageIngestRepository`, `R2dbcWorkerMessageRepository`, `R2dbcWorkerMaintenanceRepository`, `PostgresR2dbcSqlDialect`, `MariaDbR2dbcSqlDialect`, `R2dbcRepositoryAutoConfiguration` |
-| `worker-blocking` | `superduper-worker-blocking` | Scheduled blocking worker loop, heartbeat, orphan reclaim | `SuperDuperWorkerService`, `HeartbeatService`, `OrphanReclaimer`, `MessageHandler`, `ProcessingResult` |
-| `worker-reactive` | `superduper-worker-reactive` | Scheduled reactive worker loop, heartbeat, orphan reclaim | `SuperDuperWorkerReactiveService`, `ReactiveHeartbeatService`, `ReactiveOrphanReclaimer`, `ReactiveMessageHandler`, `ProcessingResult` |
+| `worker-blocking` | `superduper-worker-blocking` | Scheduled blocking worker loop, heartbeat, reclaim, cleanup, redrive, and per-topic coordination | `SuperDuperWorkerService`, `TopicWorkerCoordinator`, `TopicWorkerInstance`, `HeartbeatService`, `OrphanReclaimer`, `CleanupService`, `RedriveService`, `QueueHealthService`, `MessageHandler`, `ProcessingResult` |
+| `worker-reactive` | `superduper-worker-reactive` | Scheduled reactive worker loop, heartbeat, reclaim, cleanup, redrive, and per-topic coordination | `SuperDuperWorkerReactiveService`, `ReactiveTopicWorkerCoordinator`, `ReactiveTopicWorkerInstance`, `ReactiveHeartbeatService`, `ReactiveOrphanReclaimer`, `ReactiveCleanupService`, `ReactiveRedriveService`, `ReactiveQueueHealthService`, `ReactiveMessageHandler`, `ProcessingResult` |
 | `consumer-kafka-blocking` | `superduper-consumer-kafka-blocking` | Spring Kafka consumer that persists records through JDBC repositories | `KafkaConsumerService`, `KafkaConsumerAutoConfiguration` |
 | `consumer-kafka-reactive` | `superduper-consumer-kafka-reactive` | Spring Kafka consumer that persists records through R2DBC repositories | `KafkaReactiveR2dbcConsumerService`, `KafkaReactiveR2dbcAutoConfiguration` |
-| `starter-autoselect` | `superduper-starter-autoselect` | Auto-selects worker stack and observer backend from properties | `AutoSelectConfiguration`, `WorkerProperties`, `ObservabilityProperties` |
+| `starter-autoselect` | `superduper-starter-autoselect` | Auto-selects worker stack and observer backend from properties and resolves topic-aware worker topology | `AutoSelectConfiguration`, `WorkerProperties`, `ObservabilityProperties`, `TopicProperties`, `TopicRegistry`, `RepositoryFactory` |
 | `schema-liquibase` | `superduper-schema-liquibase` | Database schema and index changelogs | `db.changelog-master.yaml`, `001-init-schema-postgres.sql`, `001-init-schema-mariadb.sql`, `002-worker-claim-indexes-postgres.sql`, `003-worker-claim-indexes-mariadb.sql` |
 | `examples/app-blocking` | `example-app-blocking` | Runnable JDBC example application | `BlockingExampleApplication`, `ExampleBlockingSeeder`, `ExampleBlockingMessageHandler` |
 | `examples/app-reactive` | `example-app-reactive` | Runnable reactive example application | `ReactiveExampleApplication`, `ExampleReactiveSeeder`, `ExampleReactiveMessageHandler` |
@@ -79,16 +79,17 @@ graph TD
 
 1. Kafka records are consumed by `consumer-kafka-blocking` or `consumer-kafka-reactive`.
 2. The consumer uses `ConsumerMetadataResolver` to resolve `message_id`, `occurred_at`, `correlation_id`, and `message_type`, then persists the row as `READY` in `messages`.
-3. `starter-autoselect` wires either `SuperDuperWorkerService` or `SuperDuperWorkerReactiveService` based on `superduper.consumer.type`.
-4. The worker enters a short ShedLock-protected claim section and marks eligible rows as `PROCESSING`, including multiple rows for the same key when no row for that key is already `PROCESSING`.
-5. The worker fetches its claimed rows, processes them per key in `id` order, and invokes the user extension point:
+3. `starter-autoselect` resolves either the legacy single-topic path or the `superduper.topics` registry, then wires `TopicWorkerCoordinator` or `ReactiveTopicWorkerCoordinator` based on `superduper.consumer.type`.
+4. Each configured topic gets its own claim loop, handler binding, batch settings, and ShedLock name.
+5. The worker enters a short ShedLock-protected claim section and marks eligible rows as `PROCESSING`, including multiple rows for the same key when no row for that key is already `PROCESSING` for that same topic.
+6. The worker fetches its claimed rows, processes them per key in `id` order, and invokes the user extension point:
    - blocking: `MessageHandler`
    - reactive: `ReactiveMessageHandler`
-6. A handler result updates the row:
+7. A handler result updates the row:
    - `SUCCESS` -> `PROCESSED`
    - `FAILURE` -> `FAILED` with incremented retry count, then `STOPPED` once max retries is reached
-7. Heartbeat services upsert `container_heartbeats` for active workers.
-8. Orphan reclaimer services reset stale or dead-worker `PROCESSING` rows back to `READY`.
+8. Heartbeat services upsert `container_heartbeats` for active workers.
+9. Cleanup, orphan reclaim, queue-health, and redrive services iterate the topic registry and route to the correct shared or dedicated repository instance.
 
 ## Extension Points
 
@@ -103,6 +104,7 @@ graph TD
 - Worker claim/process: `WorkerMessageRepository`, `ReactiveWorkerMessageRepository`
 - Maintenance: `WorkerMaintenanceRepository`, `ReactiveWorkerMaintenanceRepository`
 - Consumer metadata: `ConsumerMetadataResolver`
+- Topic-aware wiring: `TopicRegistryView`, `TopicConfigView`, `TopicRepositoryFactory`
 
 These ports isolate service logic from dialect-specific SQL.
 
@@ -129,3 +131,11 @@ Practical difference:
 - PostgreSQL uses a CTE plus `UPDATE ... FROM candidate`.
 - MariaDB uses a nested derived table to satisfy `SKIP LOCKED` and `UPDATE JOIN` constraints.
 - Both dialects preserve the same behavioral contract: no concurrent ownership, retry-aware claim eligibility, and worker-enforced per-key order inside each batch.
+
+## Multi-Topic Model
+
+- `messages.topic` stores the Kafka topic name, with `"default"` reserved for the backward-compatible single-topic path.
+- `TopicRegistry` resolves handler bean name, batch size, max retries, optional dedicated table, and per-topic claim lock name.
+- Shared-table topics use the default repositories with `topic = :topic` predicates.
+- Dedicated-table topics use repositories created by `RepositoryFactory` / `TopicRepositoryFactory`.
+- Maintenance operations are topic-aware too: queue health, reclaim, cleanup, and redrive all route through the same topic registry instead of assuming the shared `messages` table.

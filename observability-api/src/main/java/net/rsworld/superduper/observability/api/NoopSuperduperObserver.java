@@ -68,7 +68,7 @@ public final class NoopSuperduperObserver implements SuperduperObserver {
     }
 
     @Override
-    public void queueBacklogObserved(String mode, Map<String, Long> statusCounts) {
+    public void queueBacklogObserved(String mode, String topic, Map<String, Long> statusCounts) {
         // Intentionally no-op.
     }
 

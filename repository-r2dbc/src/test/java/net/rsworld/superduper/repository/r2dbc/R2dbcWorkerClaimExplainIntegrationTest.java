@@ -53,14 +53,11 @@ class R2dbcWorkerClaimExplainIntegrationTest {
         resetData();
         seedScenario(scenario);
 
-        String claimPlan = explain(dialect.claimBatchSql(), "w-claim", 200, 5);
-        String fetchPlan = explainFetch(dialect.fetchClaimedForWorkerSql(), "w-fetch");
+        String claimPlan = explain(dialect.claimBatchSql(), "w-claim", 200, 5, "default");
+        String fetchPlan = explainFetch(dialect.fetchClaimedForWorkerSql(), "w-fetch", "default");
 
         assertThat(claimPlan)
-                .containsAnyOf(
-                        "idx_messages_ready_claim_id_key",
-                        "idx_messages_failed_claim_retry_id_key",
-                        "idx_messages_processing_key_id")
+                .containsAnyOf("idx_messages_topic_status_key_id", "idx_messages_processing_worker_key_id")
                 .doesNotContain("Seq Scan");
         assertThat(fetchPlan).contains("idx_messages_processing_worker_key_id").doesNotContain("Seq Scan");
     }
@@ -77,18 +74,21 @@ class R2dbcWorkerClaimExplainIntegrationTest {
         String insertSql =
                 switch (scenario) {
                     case "uniform" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', 'READY', 0, "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, "
+                                + "LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', 'READY', 0, "
                                 + "NOW() - ((g % 1000) || ' seconds')::interval FROM generate_series(1, 10000) g";
                     case "hot-key" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, "
+                                + "LPAD(g::text, 36, '0'), "
                                 + "CASE WHEN g <= 5000 THEN 'hot-key' ELSE 'k' || ((g - 5000) % 99) END, "
                                 + "'v', 'READY', 0, NOW() - ((g % 1000) || ' seconds')::interval "
                                 + "FROM generate_series(1, 10000) g";
                     case "mixed-status" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,container_id,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,container_id,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, "
+                                + "LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
                                 + "CASE WHEN g % 5 = 0 THEN 'FAILED' "
                                 + "WHEN g % 7 = 0 THEN 'PROCESSING' "
                                 + "WHEN g % 11 = 0 THEN 'STOPPED' "
@@ -99,8 +99,9 @@ class R2dbcWorkerClaimExplainIntegrationTest {
                                 + "NOW() - ((g % 1000) || ' seconds')::interval "
                                 + "FROM generate_series(1, 10000) g";
                     case "high-retry-failed" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, "
+                                + "LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
                                 + "CASE WHEN g % 5 = 0 THEN 'FAILED' ELSE 'READY' END, "
                                 + "CASE WHEN g % 5 = 0 THEN 4 + (g % 2) ELSE 0 END, "
                                 + "NOW() - ((g % 1000) || ' seconds')::interval "
@@ -108,30 +109,33 @@ class R2dbcWorkerClaimExplainIntegrationTest {
                     default -> throw new IllegalArgumentException("Unknown scenario: " + scenario);
                 };
         db.sql(insertSql).fetch().rowsUpdated().block();
-        db.sql("UPDATE messages SET status='PROCESSING', container_id='w-fetch' WHERE id % 97 = 0")
+        db.sql("UPDATE messages SET status='PROCESSING', container_id='w-fetch' "
+                        + "WHERE id % 97 = 0 AND topic = 'default'")
                 .fetch()
                 .rowsUpdated()
                 .block();
     }
 
-    private static String explain(String sql, String cid, int batch, int maxRetries) {
+    private static String explain(String sql, String cid, int batch, int maxRetries, String topic) {
         return String.join(
                 System.lineSeparator(),
                 db.sql("EXPLAIN " + sql)
                         .bind("cid", cid)
                         .bind("batch", batch)
                         .bind("maxRetries", maxRetries)
+                        .bind("topic", topic)
                         .map((row, metadata) -> row.get(0, String.class))
                         .all()
                         .collectList()
                         .block());
     }
 
-    private static String explainFetch(String sql, String cid) {
+    private static String explainFetch(String sql, String cid, String topic) {
         return String.join(
                 System.lineSeparator(),
                 db.sql("EXPLAIN " + sql)
                         .bind("cid", cid)
+                        .bind("topic", topic)
                         .map((row, metadata) -> row.get(0, String.class))
                         .all()
                         .collectList()

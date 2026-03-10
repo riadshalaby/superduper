@@ -92,14 +92,40 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
         assertThat(status).isEqualTo("STOPPED");
     }
 
+    @Test
+    void claimBatch_isolatesKeysPerTopic_onMariaDb() {
+        resetData();
+        insert("a1", "shared-key", "va1", "READY", "topic-a");
+        insert("a2", "shared-key", "va2", "READY", "topic-a");
+        insert("b1", "shared-key", "vb1", "READY", "topic-b");
+        insert("b2", "shared-key", "vb2", "READY", "topic-b");
+
+        long claimedTopicA = repo.claimBatch("w-topic-a", 10, 5, "topic-a");
+        long claimedTopicB = repo.claimBatch("w-topic-b", 10, 5, "topic-b");
+
+        assertThat(claimedTopicA).isEqualTo(2);
+        assertThat(claimedTopicB).isEqualTo(2);
+        assertThat(repo.fetchClaimedForWorker("w-topic-a", "topic-a"))
+                .extracting(row -> row.topic() + ":" + row.messageId())
+                .containsExactly("topic-a:a1", "topic-a:a2");
+        assertThat(repo.fetchClaimedForWorker("w-topic-b", "topic-b"))
+                .extracting(row -> row.topic() + ":" + row.messageId())
+                .containsExactly("topic-b:b1", "topic-b:b2");
+    }
+
     private static void resetData() {
         jdbc.getJdbcTemplate().execute("TRUNCATE TABLE messages");
     }
 
     private static void insert(String messageId, String messageKey, String content, String status) {
+        insert(messageId, messageKey, content, status, "default");
+    }
+
+    private static void insert(String messageId, String messageKey, String content, String status, String topic) {
         jdbc.getJdbcTemplate()
                 .update(
-                        "INSERT INTO messages(message_id,message_key,content,status) VALUES (?,?,?,?)",
+                        "INSERT INTO messages(topic,message_id,message_key,content,status) VALUES (?,?,?,?,?)",
+                        topic,
                         messageId,
                         messageKey,
                         content,

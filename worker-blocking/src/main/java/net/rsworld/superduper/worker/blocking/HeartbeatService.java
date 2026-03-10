@@ -27,10 +27,10 @@ public class HeartbeatService {
         try {
             maintenanceRepository.heartbeat(workerId);
             observer.maintenanceSucceeded(
-                    new MaintenanceObservation("blocking", workerId, "heartbeat", elapsedMs(started)));
+                    new MaintenanceObservation("blocking", "all", workerId, "heartbeat", elapsedMs(started)));
         } catch (RuntimeException e) {
             observer.maintenanceFailed(
-                    new MaintenanceObservation("blocking", workerId, "heartbeat", elapsedMs(started)), e);
+                    new MaintenanceObservation("blocking", "all", workerId, "heartbeat", elapsedMs(started)), e);
             throw e;
         }
     }

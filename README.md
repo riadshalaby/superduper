@@ -73,6 +73,7 @@ sequenceDiagram
 ```sql
 -- messages
 id               BIGINT AUTO_INCREMENT / SERIAL PRIMARY KEY
+topic            VARCHAR(255) NOT NULL DEFAULT 'default'
 message_id       VARCHAR(36) UNIQUE NOT NULL
 message_key      VARCHAR(255) NOT NULL
 content          TEXT
@@ -93,7 +94,7 @@ container_heartbeats(container_id PRIMARY KEY, last_heartbeat TIMESTAMP)
 shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), locked_by VARCHAR(255))
 ```
 
-**Indexes:** `messages(message_key, id)` is the baseline for per-key order checks. For production workloads, add the claim/fetch/reclaim indexes shown in the example Liquibase files (`002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`).
+**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus the processing/reclaim indexes shown in `002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`.
 
 ---
 
@@ -121,8 +122,9 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
      SELECT m1.id
      FROM messages m1
      LEFT JOIN messages p
-       ON p.message_key = m1.message_key AND p.status = 'PROCESSING'
+       ON p.topic = m1.topic AND p.message_key = m1.message_key AND p.status = 'PROCESSING'
      WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries))
+       AND m1.topic = :topic
        AND p.id IS NULL
      ORDER BY m1.id
      LIMIT :batch
@@ -142,8 +144,9 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
        SELECT m1.id
        FROM messages m1
        LEFT JOIN messages p
-         ON p.message_key = m1.message_key AND p.status = 'PROCESSING'
+         ON p.topic = m1.topic AND p.message_key = m1.message_key AND p.status = 'PROCESSING'
        WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries))
+         AND m1.topic = :topic
          AND p.id IS NULL
        ORDER BY m1.id
        LIMIT :batch
@@ -158,7 +161,7 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
    ```sql
    SELECT id, message_key, content, retry_count, container_id, correlation_id, message_type
    FROM messages
-   WHERE status='PROCESSING' AND container_id=:cid
+   WHERE status='PROCESSING' AND container_id=:cid AND topic=:topic
    ORDER BY message_key, id;
    ```
    - Then it invokes your business function:
@@ -200,6 +203,33 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
 ---
 
 ## Project Documentation
+
+## Multi-Topic Configuration
+
+Single-topic mode still works with `superduper.kafka.topic`. Multi-topic mode uses `superduper.topics` and maps each Kafka topic to a handler, optional per-topic overrides, and an optional dedicated table.
+
+```yaml
+superduper:
+  consumer:
+    type: spring
+  topics:
+    orders:
+      kafka-topic: orders.events
+      handler: ordersMessageHandler
+      batch-size: 200
+      max-retries: 5
+    invoices:
+      kafka-topic: invoices.events
+      handler: invoicesMessageHandler
+      table: invoices_messages
+```
+
+In multi-topic mode:
+
+- the `messages.topic` column stores the Kafka topic name
+- workers claim and fetch per topic
+- backlog, cleanup, reclaim, and redrive operations route to the correct shared or dedicated table
+- observability always carries the topic dimension for worker and maintenance signals
 
 > See [docs/USAGE.md](docs/USAGE.md) for integration guide and configuration reference.
 >

@@ -32,7 +32,7 @@ class SuperDuperWorkerServiceTest {
         List<ClaimedMessage> claimedRows = List.of(
                 new ClaimedMessage(1L, "mid-1", "k1", "v1", 0, "cid", null, null),
                 new ClaimedMessage(2L, "mid-2", "k2", "v2", 1, "cid", null, null));
-        when(messageRepository.fetchClaimedForWorker(any())).thenReturn(claimedRows);
+        when(messageRepository.fetchClaimedForWorker(any(), any())).thenReturn(claimedRows);
 
         MessageHandler handler = row -> row.id() == 1L ? ProcessingResult.SUCCESS : ProcessingResult.FAILURE;
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
@@ -53,7 +53,7 @@ class SuperDuperWorkerServiceTest {
     @Test
     void process_passesMessageIdToHandler() {
         WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
-        when(messageRepository.fetchClaimedForWorker(any()))
+        when(messageRepository.fetchClaimedForWorker(any(), any()))
                 .thenReturn(List.of(new ClaimedMessage(10L, "mid-10", "k1", "v1", 0, "cid", null, null)));
         when(messageRepository.markProcessed(anyLong(), anyString())).thenReturn(true);
 
@@ -79,7 +79,7 @@ class SuperDuperWorkerServiceTest {
     @Test
     void process_failureBelowLimit_marksFailed() {
         WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
-        when(messageRepository.fetchClaimedForWorker(any()))
+        when(messageRepository.fetchClaimedForWorker(any(), any()))
                 .thenReturn(List.of(new ClaimedMessage(10L, "mid-10", "k1", "v1", 0, "cid", null, null)));
         when(messageRepository.markFailed(anyLong(), anyInt(), anyString())).thenReturn(true);
 
@@ -103,7 +103,7 @@ class SuperDuperWorkerServiceTest {
     @Test
     void process_releasesRemainingRowsForKeyAfterFailure() {
         WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
-        when(messageRepository.fetchClaimedForWorker(any()))
+        when(messageRepository.fetchClaimedForWorker(any(), any()))
                 .thenReturn(List.of(
                         new ClaimedMessage(10L, "mid-10", "k1", "v1", 0, "cid", null, null),
                         new ClaimedMessage(11L, "mid-11", "k1", "v2", 0, "cid", null, null),
@@ -135,8 +135,9 @@ class SuperDuperWorkerServiceTest {
     void schedule_emitsBatchSummary() {
         WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
         SuperduperObserver observer = mock(SuperduperObserver.class);
-        when(messageRepository.claimBatch(anyString(), anyInt(), anyInt())).thenReturn(2L);
-        when(messageRepository.fetchClaimedForWorker(anyString()))
+        when(messageRepository.claimBatch(anyString(), anyInt(), anyInt(), anyString()))
+                .thenReturn(2L);
+        when(messageRepository.fetchClaimedForWorker(anyString(), anyString()))
                 .thenReturn(List.of(
                         new ClaimedMessage(1L, "mid-1", "k1", "v1", 0, "cid", null, null),
                         new ClaimedMessage(2L, "mid-2", "k2", "v2", 0, "cid", null, null)));

@@ -20,14 +20,11 @@ import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
-@Service
 @SuppressWarnings("java:S107")
 public class SuperDuperWorkerReactiveService {
     private static final String MODE_REACTIVE = "reactive";
@@ -38,6 +35,7 @@ public class SuperDuperWorkerReactiveService {
     private final ReactiveMessageHandler handler;
     private final SuperduperObserver observer;
     private final String workerId;
+    private final String topic;
     private final int batchSize;
     private final int maxRetries;
     private final String claimLockName;
@@ -66,7 +64,8 @@ public class SuperDuperWorkerReactiveService {
                 claimLockName,
                 lockAtMostForMs,
                 lockAtLeastForMs,
-                ManagementFactory.getRuntimeMXBean().getName());
+                ManagementFactory.getRuntimeMXBean().getName(),
+                "default");
     }
 
     SuperDuperWorkerReactiveService(
@@ -80,6 +79,32 @@ public class SuperDuperWorkerReactiveService {
             long lockAtMostForMs,
             long lockAtLeastForMs,
             String workerId) {
+        this(
+                messageRepository,
+                lockExec,
+                handler,
+                observer,
+                batchSize,
+                maxRetries,
+                claimLockName,
+                lockAtMostForMs,
+                lockAtLeastForMs,
+                workerId,
+                "default");
+    }
+
+    SuperDuperWorkerReactiveService(
+            ReactiveWorkerMessageRepository messageRepository,
+            LockingTaskExecutor lockExec,
+            ReactiveMessageHandler handler,
+            SuperduperObserver observer,
+            int batchSize,
+            int maxRetries,
+            String claimLockName,
+            long lockAtMostForMs,
+            long lockAtLeastForMs,
+            String workerId,
+            String topic) {
         this.messageRepository = messageRepository;
         this.lockExec = lockExec;
         this.handler = handler;
@@ -90,6 +115,7 @@ public class SuperDuperWorkerReactiveService {
         this.lockAtMostFor = Duration.ofMillis(lockAtMostForMs);
         this.lockAtLeastFor = Duration.ofMillis(lockAtLeastForMs);
         this.workerId = workerId;
+        this.topic = topic;
         this.vtExecutor = Executors.newVirtualThreadPerTaskExecutor();
         this.vtScheduler = Schedulers.fromExecutorService(vtExecutor);
     }
@@ -113,9 +139,6 @@ public class SuperDuperWorkerReactiveService {
                 2000);
     }
 
-    @Scheduled(
-            fixedDelayString = "${superduper.worker.claim-interval-ms:5000}",
-            initialDelayString = "${superduper.worker.claim-initial-delay-ms:3000}")
     public void schedule() {
         long started = System.nanoTime();
         AtomicLong claimedCount = new AtomicLong(0L);
@@ -124,11 +147,12 @@ public class SuperDuperWorkerReactiveService {
                     (Runnable) () -> claimedCount.set(claimBatch()),
                     new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
-                    new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)),
+                    new WorkerObservation(MODE_REACTIVE, topic, workerId, null, null, batchSize, elapsedMs(started)),
                     Math.toIntExact(claimedCount.get()));
         } catch (RuntimeException e) {
             observer.workerFailed(
-                    new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)), e);
+                    new WorkerObservation(MODE_REACTIVE, topic, workerId, null, null, batchSize, elapsedMs(started)),
+                    e);
             return;
         }
 
@@ -137,18 +161,19 @@ public class SuperDuperWorkerReactiveService {
         }
 
         messageRepository
-                .fetchClaimedForWorker(workerId)
+                .fetchClaimedForWorker(workerId, topic)
                 .collectList()
                 .flatMap(this::processBatch)
                 .doOnSuccess(outcome -> observer.workerBatchCompleted(
                         new WorkerObservation(
-                                MODE_REACTIVE, workerId, null, null, outcome.batchSize(), outcome.durationMs()),
+                                MODE_REACTIVE, topic, workerId, null, null, outcome.batchSize(), outcome.durationMs()),
                         outcome.processed(),
                         outcome.failed(),
                         outcome.stopped()))
                 .onErrorResume(e -> {
                     observer.workerFailed(
-                            new WorkerObservation(MODE_REACTIVE, workerId, null, null, batchSize, elapsedMs(started)),
+                            new WorkerObservation(
+                                    MODE_REACTIVE, topic, workerId, null, null, batchSize, elapsedMs(started)),
                             e);
                     return Mono.empty();
                 })
@@ -159,7 +184,7 @@ public class SuperDuperWorkerReactiveService {
 
     long claimBatch() {
         return messageRepository
-                .claimBatch(workerId, batchSize, maxRetries)
+                .claimBatch(workerId, batchSize, maxRetries, topic)
                 .blockOptional()
                 .orElse(0L);
     }
@@ -231,7 +256,8 @@ public class SuperDuperWorkerReactiveService {
                 .map(result -> new HandlerOutcome(result, null))
                 .onErrorResume(e -> {
                     observer.workerFailed(
-                            new WorkerObservation(MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)),
+                            new WorkerObservation(
+                                    MODE_REACTIVE, topic, workerId, id, retry, batchSize, elapsedMs(started)),
                             e);
                     return Mono.just(new HandlerOutcome(ProcessingResult.FAILURE, e));
                 })
@@ -243,7 +269,7 @@ public class SuperDuperWorkerReactiveService {
                                 return Mono.just(new ProcessResult(true, MessageOutcome.NONE));
                             }
                             observer.workerProcessed(new WorkerObservation(
-                                    MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)));
+                                    MODE_REACTIVE, topic, workerId, id, retry, batchSize, elapsedMs(started)));
                             return Mono.just(new ProcessResult(true, MessageOutcome.PROCESSED));
                         });
                     }
@@ -251,7 +277,7 @@ public class SuperDuperWorkerReactiveService {
                     if (outcome.failureCause() == null) {
                         observer.workerFailed(
                                 new WorkerObservation(
-                                        MODE_REACTIVE, workerId, id, retry, batchSize, elapsedMs(started)),
+                                        MODE_REACTIVE, topic, workerId, id, retry, batchSize, elapsedMs(started)),
                                 new IllegalStateException("Message handler returned FAILURE"));
                     }
                     int next = retry + 1;
@@ -262,7 +288,7 @@ public class SuperDuperWorkerReactiveService {
                                 return Mono.just(new ProcessResult(false, MessageOutcome.NONE));
                             }
                             observer.workerRetried(new WorkerObservation(
-                                    MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
+                                    MODE_REACTIVE, topic, workerId, id, next, batchSize, elapsedMs(started)));
                             return Mono.just(new ProcessResult(false, MessageOutcome.FAILED));
                         });
                     }
@@ -272,7 +298,7 @@ public class SuperDuperWorkerReactiveService {
                             return Mono.just(new ProcessResult(false, MessageOutcome.NONE));
                         }
                         observer.workerStopped(new WorkerObservation(
-                                MODE_REACTIVE, workerId, id, next, batchSize, elapsedMs(started)));
+                                MODE_REACTIVE, topic, workerId, id, next, batchSize, elapsedMs(started)));
                         return Mono.just(new ProcessResult(false, MessageOutcome.STOPPED));
                     });
                 });

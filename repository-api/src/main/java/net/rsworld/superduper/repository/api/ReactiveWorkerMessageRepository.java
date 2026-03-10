@@ -5,9 +5,17 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface ReactiveWorkerMessageRepository {
-    Mono<Long> claimBatch(String workerId, int batchSize, int maxRetries);
+    default Mono<Long> claimBatch(String workerId, int batchSize, int maxRetries) {
+        return claimBatch(workerId, batchSize, maxRetries, "default");
+    }
 
-    Flux<ClaimedMessage> fetchClaimedForWorker(String workerId);
+    Mono<Long> claimBatch(String workerId, int batchSize, int maxRetries, String topic);
+
+    default Flux<ClaimedMessage> fetchClaimedForWorker(String workerId) {
+        return fetchClaimedForWorker(workerId, "default");
+    }
+
+    Flux<ClaimedMessage> fetchClaimedForWorker(String workerId, String topic);
 
     /**
      * Finds messages in the given terminal failure status ordered by id.
@@ -16,7 +24,11 @@ public interface ReactiveWorkerMessageRepository {
      * @param limit the maximum number of rows to return
      * @return matching rows ordered by id
      */
-    Flux<ClaimedMessage> findByStatus(String status, int limit);
+    default Flux<ClaimedMessage> findByStatus(String status, int limit) {
+        return findByStatus(status, limit, "default");
+    }
+
+    Flux<ClaimedMessage> findByStatus(String status, int limit, String topic);
 
     Mono<Integer> releaseMessages(java.util.List<Long> ids, String containerId);
 
@@ -41,12 +53,20 @@ public interface ReactiveWorkerMessageRepository {
      * @param limit the maximum number of rows to update
      * @return the number of updated rows
      */
-    Mono<Integer> redriveByStatus(String status, int limit);
+    default Mono<Integer> redriveByStatus(String status, int limit) {
+        return redriveByStatus(status, limit, "default");
+    }
+
+    Mono<Integer> redriveByStatus(String status, int limit, String topic);
 
     /**
      * Counts queued messages grouped by status.
      *
      * @return a map of status to row count
      */
-    Mono<Map<String, Long>> countByStatus();
+    default Mono<Map<String, Long>> countByStatus() {
+        return countByStatus("default");
+    }
+
+    Mono<Map<String, Long>> countByStatus(String topic);
 }

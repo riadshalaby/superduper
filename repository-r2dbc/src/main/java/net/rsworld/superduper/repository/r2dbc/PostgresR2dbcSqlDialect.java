@@ -15,9 +15,9 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
 
     @Override
     public String upsertReadyMessageSql() {
-        return ("INSERT INTO %s (message_id, message_key, content, status, occurred_at, received_at, retry_count, "
-                        + "last_updated, correlation_id, message_type) "
-                        + "VALUES (:messageId, :messageKey, :content, 'READY', :occurredAt, NOW(), 0, NOW(), "
+        return ("INSERT INTO %s (topic, message_id, message_key, content, status, occurred_at, received_at, "
+                        + "retry_count, last_updated, correlation_id, message_type) "
+                        + "VALUES (:topic, :messageId, :messageKey, :content, 'READY', :occurredAt, NOW(), 0, NOW(), "
                         + ":correlationId, :messageType) "
                         + "ON CONFLICT (message_id) DO UPDATE SET last_updated = EXCLUDED.last_updated")
                 .formatted(messagesTable);
@@ -27,8 +27,10 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
     public String claimBatchSql() {
         return ("WITH candidate AS ("
                         + "SELECT m1.id FROM %s m1 "
-                        + "LEFT JOIN %s p ON p.message_key = m1.message_key AND p.status = 'PROCESSING' "
+                        + "LEFT JOIN %s p ON p.topic = m1.topic AND p.message_key = m1.message_key "
+                        + "AND p.status = 'PROCESSING' "
                         + "WHERE (m1.status = 'READY' OR (m1.status = 'FAILED' AND m1.retry_count < :maxRetries)) "
+                        + "AND m1.topic = :topic "
                         + "AND p.id IS NULL "
                         + "ORDER BY m1.id LIMIT :batch FOR UPDATE OF m1 SKIP LOCKED"
                         + ") "
@@ -39,15 +41,16 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
 
     @Override
     public String fetchClaimedForWorkerSql() {
-        return ("SELECT id, message_id, message_key, content, retry_count, container_id, correlation_id, message_type "
-                        + "FROM %s WHERE status='PROCESSING' AND container_id=:cid ORDER BY message_key, id")
+        return ("SELECT id, topic, message_id, message_key, content, retry_count, container_id, correlation_id, "
+                        + "message_type FROM %s WHERE status='PROCESSING' AND container_id=:cid AND topic=:topic "
+                        + "ORDER BY message_key, id")
                 .formatted(messagesTable);
     }
 
     @Override
     public String findByStatusSql() {
-        return ("SELECT id, message_id, message_key, content, retry_count, container_id, correlation_id, message_type "
-                        + "FROM %s WHERE status = :status ORDER BY id LIMIT :limit")
+        return ("SELECT id, topic, message_id, message_key, content, retry_count, container_id, correlation_id, "
+                        + "message_type FROM %s WHERE status = :status AND topic = :topic ORDER BY id LIMIT :limit")
                 .formatted(messagesTable);
     }
 
@@ -89,7 +92,8 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
     @Override
     public String redriveByStatusSql() {
         return ("UPDATE %s SET status='READY', retry_count=0, container_id=NULL, last_updated=NOW() "
-                        + "WHERE id IN (SELECT id FROM %s WHERE status = :status ORDER BY id LIMIT :limit)")
+                        + "WHERE id IN (SELECT id FROM %s WHERE status = :status AND topic = :topic ORDER BY id "
+                        + "LIMIT :limit)")
                 .formatted(messagesTable, messagesTable);
     }
 
@@ -102,19 +106,21 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
 
     @Override
     public String countByStatusSql() {
-        return ("SELECT status, COUNT(*) AS cnt FROM %s GROUP BY status").formatted(messagesTable);
+        return ("SELECT status, COUNT(*) AS cnt FROM %s WHERE topic = :topic GROUP BY status").formatted(messagesTable);
     }
 
     @Override
     public String reclaimStaleProcessingSql() {
         return ("UPDATE %s SET status='READY', container_id=NULL, last_updated=NOW() "
-                        + "WHERE status='PROCESSING' AND last_updated < (NOW() - (:t * INTERVAL '1 second'))")
+                        + "WHERE status='PROCESSING' AND topic = :topic "
+                        + "AND last_updated < (NOW() - (:t * INTERVAL '1 second'))")
                 .formatted(messagesTable);
     }
 
     @Override
     public String reclaimMissingHeartbeatsSql() {
         return ("UPDATE %s SET status='READY', container_id=NULL, last_updated=NOW() WHERE status='PROCESSING' "
+                        + "AND topic = :topic "
                         + "AND (container_id IS NULL OR container_id NOT IN ("
                         + "SELECT container_id FROM %s "
                         + "WHERE last_heartbeat >= (NOW() - (:hb * INTERVAL '1 second'))))")
@@ -123,14 +129,14 @@ public final class PostgresR2dbcSqlDialect implements R2dbcSqlDialect {
 
     @Override
     public String deleteProcessedOlderThanSql() {
-        return ("DELETE FROM %s WHERE status='PROCESSED' "
+        return ("DELETE FROM %s WHERE status='PROCESSED' AND topic = :topic "
                         + "AND last_updated < (NOW() - (:retentionDays * INTERVAL '1 day'))")
                 .formatted(messagesTable);
     }
 
     @Override
     public String deleteStoppedOlderThanSql() {
-        return ("DELETE FROM %s WHERE status='STOPPED' "
+        return ("DELETE FROM %s WHERE status='STOPPED' AND topic = :topic "
                         + "AND last_updated < (NOW() - (:retentionDays * INTERVAL '1 day'))")
                 .formatted(messagesTable);
     }

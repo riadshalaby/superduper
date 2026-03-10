@@ -31,19 +31,3 @@ databaseChangeLog:
         - sqlFile:
             path: db/changelog/superduper/003-worker-claim-indexes-mariadb.sql
             relativeToChangelogFile: false
-  - changeSet:
-      id: 005-rename-and-add-columns-postgres
-      author: codex
-      dbms: postgresql
-      changes:
-        - sqlFile:
-            path: db/changelog/superduper/004-rename-and-add-columns-postgres.sql
-            relativeToChangelogFile: false
-  - changeSet:
-      id: 006-rename-and-add-columns-mariadb
-      author: codex
-      dbms: mariadb
-      changes:
-        - sqlFile:
-            path: db/changelog/superduper/005-rename-and-add-columns-mariadb.sql
-            relativeToChangelogFile: false
