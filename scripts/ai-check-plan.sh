@@ -50,7 +50,20 @@ if [[ "$status_ok" != true ]]; then
 fi
 
 handoff_ok=false
-if rg -Uz --pcre2 -- "- Task ID:[[:space:]]*${task_id}(.|\n){0,500}- Role:[[:space:]]*planner(.|\n){0,500}- Next role:[[:space:]]*implement" "$HANDOFF_FILE" >/dev/null; then
+if awk -v task="$task_id" '
+BEGIN { found = 0 }
+{
+  has_task = ($0 ~ ("- Task ID:[[:space:]]*" task "([[:space:]]|$)"))
+  has_role = ($0 ~ "- Role:[[:space:]]*planner([[:space:]]|$)")
+  has_next = ($0 ~ "- Next role:[[:space:]]*implement([[:space:]]|$)")
+
+  if (has_task && has_role && has_next) {
+    found = 1
+    exit 0
+  }
+}
+END { exit found ? 0 : 1 }
+' RS='' "$HANDOFF_FILE" >/dev/null; then
   handoff_ok=true
 fi
 
