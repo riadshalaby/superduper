@@ -257,9 +257,12 @@ mvn -T 1C test
 Two runnable apps are included:
 
 - `examples/app-blocking` — classic, blocking JDBC + Spring Kafka.
+- `examples/app-multitopic-shared` — multi-topic example with a shared `messages` table (blocking).
+- `examples/app-multitopic-dedicated` — multi-topic example with per-topic tables (blocking).
 - `examples/app-reactive` — reactive processing with Spring Kafka + R2DBC.
 
 See [docs/EXAMPLES.md](docs/EXAMPLES.md) for local setup, multi-container runs, and reproducible SQL assertions.
+See [docs/EXAMPLES.md#multi-topic-examples](docs/EXAMPLES.md#multi-topic-examples) for the shared-vs-dedicated multitopic walkthrough.
 
 ---
 

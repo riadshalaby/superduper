@@ -20,6 +20,8 @@
     <module>starter-autoselect</module>
     <module>schema-liquibase</module>
     <module>examples/app-blocking</module>
+    <module>examples/app-multitopic-dedicated</module>
+    <module>examples/app-multitopic-shared</module>
     <module>examples/app-reactive</module>
     <module>examples/seeder</module>
   </modules>

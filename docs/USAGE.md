@@ -87,6 +87,23 @@ Operational behavior:
 - queue health, cleanup, orphan reclaim, and redrive route per topic and per table
 - metrics and logs include the topic dimension for worker and maintenance observations
 
+### Shared vs. Dedicated Table Comparison
+
+| Concern | Shared Table | Dedicated Table |
+|---|---|---|
+| Schema overhead | Single `messages` table, no extra DDL | One table per topic, Liquibase changesets needed |
+| Operational simplicity | One table to monitor, backup, and index | Per-topic tables to manage independently |
+| Query isolation | `WHERE topic = :topic` filter | Full table-level isolation |
+| Index contention | All topics share the same indexes | Each table has its own index set |
+| Scaling model | Homogeneous topics with similar SLAs | Heterogeneous topics with independent SLAs |
+| Maintenance routing | Same repository with a topic predicate | Separate repository instance per table |
+| Recommended when | Few topics, similar volume and latency | Varying SLAs, compliance isolation, or very high per-topic volume |
+
+Recommended use-cases:
+
+- Shared table works well for roughly up to ten homogeneous topics with uniform SLAs and simpler operations.
+- Dedicated tables fit compliance or audit isolation, independent scaling or retention, and workloads where per-topic index contention matters.
+
 ### Provide your business logic
 
 JDBC:
