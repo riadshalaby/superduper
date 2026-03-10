@@ -48,6 +48,45 @@ superduper:
       claim-lock-name: superduper-claim-batch
 ```
 
+### Multi-topic configuration
+
+Use exactly one of these modes:
+
+- legacy single-topic mode with `superduper.kafka.topic`
+- multi-topic mode with `superduper.topics`
+
+Example:
+
+```yaml
+superduper:
+  consumer:
+    type: spring
+  topics:
+    orders:
+      kafka-topic: orders.events
+      handler: ordersMessageHandler
+      batch-size: 200
+      max-retries: 5
+    invoices:
+      kafka-topic: invoices.events
+      handler: invoicesMessageHandler
+      table: invoices_messages
+```
+
+Rules:
+
+- `handler` must match the Spring bean name of a `MessageHandler` or `ReactiveMessageHandler`
+- `table` is optional; leave it empty to use the shared `messages` table
+- `batch-size` and `max-retries` fall back to `superduper.worker.*` when omitted
+- `superduper.kafka.topic` remains the backward-compatible single-topic path and resolves to logical topic name `default`
+
+Operational behavior:
+
+- consumers persist the Kafka topic into `messages.topic`
+- workers create one scheduled claim loop per configured topic
+- queue health, cleanup, orphan reclaim, and redrive route per topic and per table
+- metrics and logs include the topic dimension for worker and maintenance observations
+
 ### Provide your business logic
 
 JDBC:
@@ -75,6 +114,7 @@ The starter auto-configures:
 - JDBC worker, ShedLock, heartbeat, and orphan reclaimer when `superduper.consumer.type=spring`
 - Reactive worker, ShedLock, reactive heartbeat, and reactive orphan reclaimer when `superduper.consumer.type=reactor`
 - Kafka consumers that persist records into `messages`
+- In multi-topic mode, a per-topic worker coordinator plus per-topic repository routing for maintenance operations
 
 ### Observability configuration
 
@@ -444,10 +484,10 @@ Large-table considerations:
 
 Expected plan characteristics:
 
-- PostgreSQL claim plan should use `idx_messages_ready_claim_id_key`, `idx_messages_failed_claim_retry_id_key`, or `idx_messages_processing_key_id`
-- PostgreSQL fetch plan should use `idx_messages_processing_worker_key_id`
-- MariaDB claim plan should use `idx_messages_claim_status_id_key`, `idx_messages_claim_failed_status_retry_id_key`, or `idx_messages_processing_exists_key_status`
-- MariaDB fetch plan should use `idx_messages_processing_worker_status_container_key_id`
+- PostgreSQL claim plan should use `idx_messages_topic_status_key_id`
+- PostgreSQL fetch plan should use `idx_messages_processing_worker_key_id` or `idx_messages_processing_last_updated`
+- MariaDB claim plan should use `idx_messages_topic_status_key_id`
+- MariaDB fetch plan should use `idx_messages_processing_worker_key_id` or `idx_messages_processing_last_updated`
 - neither dialect should regress to a full table scan for the core `messages` access paths
 
 Run the explain-plan guardrails locally:

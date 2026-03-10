@@ -57,6 +57,7 @@ class AutoSelectConfigurationTest {
                 .withConfiguration(AutoConfigurations.of(AutoSelectConfiguration.class))
                 .withPropertyValues(
                         "superduper.consumer.type=spring",
+                        "superduper.kafka.topic=test-topic",
                         "superduper.worker.claim-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
                         "superduper.worker.heartbeat-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
                         "superduper.worker.orphan-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY)
@@ -65,6 +66,7 @@ class AutoSelectConfigurationTest {
                 .withBean(WorkerMessageRepository.class, () -> {
                     WorkerMessageRepository repository = mock(WorkerMessageRepository.class);
                     when(repository.countByStatus()).thenReturn(Map.of());
+                    when(repository.countByStatus(anyString())).thenReturn(Map.of());
                     return repository;
                 })
                 .withBean(WorkerMaintenanceRepository.class, () -> mock(WorkerMaintenanceRepository.class))
@@ -78,6 +80,7 @@ class AutoSelectConfigurationTest {
                 .withConfiguration(AutoConfigurations.of(AutoSelectConfiguration.class))
                 .withPropertyValues(
                         "superduper.consumer.type=reactor",
+                        "superduper.kafka.topic=test-topic",
                         "superduper.worker.claim-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
                         "superduper.worker.heartbeat-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
                         "superduper.worker.orphan-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY)
@@ -85,6 +88,7 @@ class AutoSelectConfigurationTest {
                 .withBean(ReactiveWorkerMessageRepository.class, () -> {
                     ReactiveWorkerMessageRepository repository = mock(ReactiveWorkerMessageRepository.class);
                     when(repository.countByStatus()).thenReturn(reactor.core.publisher.Mono.just(Map.of()));
+                    when(repository.countByStatus(anyString())).thenReturn(reactor.core.publisher.Mono.just(Map.of()));
                     return repository;
                 })
                 .withBean(

@@ -27,10 +27,16 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
 
     @Override
     public Mono<Long> claimBatch(String workerId, int batchSize, int maxRetries) {
+        return claimBatch(workerId, batchSize, maxRetries, "default");
+    }
+
+    @Override
+    public Mono<Long> claimBatch(String workerId, int batchSize, int maxRetries, String topic) {
         return tx.transactional(db.sql(dialect.claimBatchSql())
                 .bind("cid", workerId)
                 .bind("batch", batchSize)
                 .bind("maxRetries", maxRetries)
+                .bind("topic", topic)
                 .fetch()
                 .rowsUpdated()
                 .defaultIfEmpty(0L));
@@ -38,17 +44,29 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
 
     @Override
     public Flux<ClaimedMessage> fetchClaimedForWorker(String workerId) {
+        return fetchClaimedForWorker(workerId, "default");
+    }
+
+    @Override
+    public Flux<ClaimedMessage> fetchClaimedForWorker(String workerId, String topic) {
         return db.sql(dialect.fetchClaimedForWorkerSql())
                 .bind("cid", workerId)
+                .bind("topic", topic)
                 .map((row, metadata) -> mapClaimedMessage(row))
                 .all();
     }
 
     @Override
     public Flux<ClaimedMessage> findByStatus(String status, int limit) {
+        return findByStatus(status, limit, "default");
+    }
+
+    @Override
+    public Flux<ClaimedMessage> findByStatus(String status, int limit, String topic) {
         return db.sql(dialect.findByStatusSql())
                 .bind("status", status)
                 .bind("limit", limit)
+                .bind("topic", topic)
                 .map((row, metadata) -> mapClaimedMessage(row))
                 .all();
     }
@@ -65,9 +83,15 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
 
     @Override
     public Mono<Integer> redriveByStatus(String status, int limit) {
+        return redriveByStatus(status, limit, "default");
+    }
+
+    @Override
+    public Mono<Integer> redriveByStatus(String status, int limit, String topic) {
         return db.sql(dialect.redriveByStatusSql())
                 .bind("status", status)
                 .bind("limit", limit)
+                .bind("topic", topic)
                 .fetch()
                 .rowsUpdated()
                 .map(Long::intValue)
@@ -76,7 +100,13 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
 
     @Override
     public Mono<Map<String, Long>> countByStatus() {
+        return countByStatus("default");
+    }
+
+    @Override
+    public Mono<Map<String, Long>> countByStatus(String topic) {
         return db.sql(dialect.countByStatusSql())
+                .bind("topic", topic)
                 .map((row, metadata) -> Map.entry(row.get("status", String.class), row.get("cnt", Long.class)))
                 .all()
                 .collectList()
@@ -96,6 +126,7 @@ public class R2dbcWorkerMessageRepository implements ReactiveWorkerMessageReposi
         Number retry = row.get("retry_count", Number.class);
         return new ClaimedMessage(
                 id == null ? null : id.longValue(),
+                row.get("topic", String.class),
                 row.get("message_id", String.class),
                 row.get("message_key", String.class),
                 row.get("content", String.class),

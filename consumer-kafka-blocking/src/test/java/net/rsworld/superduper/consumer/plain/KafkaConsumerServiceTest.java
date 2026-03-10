@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -14,9 +15,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
+import net.rsworld.superduper.repository.api.TopicConfigView;
+import net.rsworld.superduper.repository.api.TopicRegistryView;
+import net.rsworld.superduper.repository.api.TopicRepositoryFactory;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -120,5 +126,141 @@ class KafkaConsumerServiceTest {
         assertThat(occurredAt.getValue()).isEqualTo(Instant.parse("2026-02-21T10:15:30Z"));
         assertThat(correlationId.getValue()).isEqualTo("corr-11");
         assertThat(messageType.getValue()).isEqualTo("invoice.created");
+    }
+
+    @Test
+    void onMessage_withTopicRegistry_routesToCorrectRepositoryWithTopicValue() {
+        MessageIngestRepository repoA = mock(MessageIngestRepository.class);
+        MessageIngestRepository repoB = mock(MessageIngestRepository.class);
+
+        TopicRepositoryFactory factory = mock(TopicRepositoryFactory.class);
+        when(factory.createIngestRepository("orders_messages")).thenReturn(repoB);
+
+        TopicConfigView topicA = new TopicConfigView() {
+            @Override
+            public String name() {
+                return "topic-a";
+            }
+
+            @Override
+            public String kafkaTopic() {
+                return "kafka-topic-a";
+            }
+
+            @Override
+            public String handlerBeanName() {
+                return "handlerA";
+            }
+
+            @Override
+            public int batchSize() {
+                return 10;
+            }
+
+            @Override
+            public int maxRetries() {
+                return 3;
+            }
+
+            @Override
+            public String table() {
+                return "";
+            }
+
+            @Override
+            public String claimLockName() {
+                return "superduper-claim-kafka-topic-a";
+            }
+        };
+
+        TopicConfigView topicB = new TopicConfigView() {
+            @Override
+            public String name() {
+                return "topic-b";
+            }
+
+            @Override
+            public String kafkaTopic() {
+                return "kafka-topic-b";
+            }
+
+            @Override
+            public String handlerBeanName() {
+                return "handlerB";
+            }
+
+            @Override
+            public int batchSize() {
+                return 10;
+            }
+
+            @Override
+            public int maxRetries() {
+                return 3;
+            }
+
+            @Override
+            public String table() {
+                return "orders_messages";
+            }
+
+            @Override
+            public String claimLockName() {
+                return "superduper-claim-kafka-topic-b";
+            }
+        };
+
+        List<TopicConfigView> topics = List.of(topicA, topicB);
+        TopicRegistryView topicRegistry = new TopicRegistryView() {
+            @Override
+            public List<? extends TopicConfigView> topics() {
+                return topics;
+            }
+
+            @Override
+            public List<String> kafkaTopics() {
+                return topics.stream().map(TopicConfigView::kafkaTopic).toList();
+            }
+
+            @Override
+            public TopicConfigView getByKafkaTopic(String kafkaTopic) {
+                return topics.stream()
+                        .filter(t -> t.kafkaTopic().equals(kafkaTopic))
+                        .findFirst()
+                        .orElseThrow();
+            }
+        };
+
+        KafkaConsumerService svc =
+                new KafkaConsumerService(repoA, topicRegistry, factory, NoopSuperduperObserver.INSTANCE, null);
+
+        Acknowledgment ackA = mock(Acknowledgment.class);
+        ConsumerRecord<String, String> recordA = new ConsumerRecord<>("kafka-topic-a", 0, 1L, "key-a", "value-a");
+        svc.onMessage(recordA, ackA);
+
+        Acknowledgment ackB = mock(Acknowledgment.class);
+        ConsumerRecord<String, String> recordB = new ConsumerRecord<>("kafka-topic-b", 0, 2L, "key-b", "value-b");
+        svc.onMessage(recordB, ackB);
+
+        verify(repoA)
+                .upsertReadyMessage(
+                        eq("kafka-topic-a"),
+                        anyString(),
+                        eq("key-a"),
+                        eq("value-a"),
+                        any(Instant.class),
+                        anyString(),
+                        isNull());
+        verify(repoB)
+                .upsertReadyMessage(
+                        eq("kafka-topic-b"),
+                        anyString(),
+                        eq("key-b"),
+                        eq("value-b"),
+                        any(Instant.class),
+                        anyString(),
+                        isNull());
+        verify(ackA).acknowledge();
+        verify(ackB).acknowledge();
     }
 }

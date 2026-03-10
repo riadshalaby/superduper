@@ -21,28 +21,54 @@ public class JdbcWorkerMaintenanceRepository implements WorkerMaintenanceReposit
 
     @Override
     public int reclaimStaleProcessing(int orphanTimeoutSec) {
+        return reclaimStaleProcessing(orphanTimeoutSec, "default");
+    }
+
+    @Override
+    public int reclaimStaleProcessing(int orphanTimeoutSec, String topic) {
         return jdbc.update(
-                dialect.reclaimStaleProcessingSql(), new MapSqlParameterSource().addValue("t", orphanTimeoutSec));
+                dialect.reclaimStaleProcessingSql(),
+                new MapSqlParameterSource().addValue("t", orphanTimeoutSec).addValue("topic", topic));
     }
 
     @Override
     public int reclaimMissingHeartbeats(int heartbeatWindowSec) {
+        return reclaimMissingHeartbeats(heartbeatWindowSec, "default");
+    }
+
+    @Override
+    public int reclaimMissingHeartbeats(int heartbeatWindowSec, String topic) {
         return jdbc.update(
-                dialect.reclaimMissingHeartbeatsSql(), new MapSqlParameterSource().addValue("hb", heartbeatWindowSec));
+                dialect.reclaimMissingHeartbeatsSql(),
+                new MapSqlParameterSource().addValue("hb", heartbeatWindowSec).addValue("topic", topic));
     }
 
     @Override
     public int deleteProcessedOlderThan(int retentionDays) {
+        return deleteProcessedOlderThan(retentionDays, "default");
+    }
+
+    @Override
+    public int deleteProcessedOlderThan(int retentionDays, String topic) {
         return jdbc.update(
                 dialect.deleteProcessedOlderThanSql(),
-                new MapSqlParameterSource().addValue("retentionDays", retentionDays));
+                new MapSqlParameterSource()
+                        .addValue("retentionDays", retentionDays)
+                        .addValue("topic", topic));
     }
 
     @Override
     public int deleteStoppedOlderThan(int retentionDays) {
+        return deleteStoppedOlderThan(retentionDays, "default");
+    }
+
+    @Override
+    public int deleteStoppedOlderThan(int retentionDays, String topic) {
         return jdbc.update(
                 dialect.deleteStoppedOlderThanSql(),
-                new MapSqlParameterSource().addValue("retentionDays", retentionDays));
+                new MapSqlParameterSource()
+                        .addValue("retentionDays", retentionDays)
+                        .addValue("topic", topic));
     }
 
     @Override

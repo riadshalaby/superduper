@@ -109,21 +109,24 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         String mode = observation.mode();
+        String topic = observation.topic();
         String workerId = observation.workerId();
         int batchSize = observation.batchSize();
         if (settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.TIMING)) {
             long durationMs = observation.durationMs();
             log.info(
-                    "worker.claimed mode={} workerId={} claimedCount={} batchSize={} durationMs={}",
+                    "worker.claimed mode={} topic={} workerId={} claimedCount={} batchSize={} durationMs={}",
                     mode,
+                    topic,
                     workerId,
                     claimedCount,
                     batchSize,
                     durationMs);
         } else {
             log.info(
-                    "worker.claimed mode={} workerId={} claimedCount={} batchSize={}",
+                    "worker.claimed mode={} topic={} workerId={} claimedCount={} batchSize={}",
                     mode,
+                    topic,
                     workerId,
                     claimedCount,
                     batchSize);
@@ -139,13 +142,15 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         String mode = observation.mode();
+        String topic = observation.topic();
         String workerId = observation.workerId();
         Long messageId = observation.messageId();
         Integer retryCount = observation.retryCount();
         long durationMs = observation.durationMs();
         log.debug(
-                "worker.processed mode={} workerId={} messageId={} retryCount={} durationMs={}",
+                "worker.processed mode={} topic={} workerId={} messageId={} retryCount={} durationMs={}",
                 mode,
+                topic,
                 workerId,
                 messageId,
                 retryCount,
@@ -161,8 +166,10 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         log.info(
-                "worker.batch.completed mode={} workerId={} batchSize={} processed={} failed={} stopped={} durationMs={}",
+                "worker.batch.completed mode={} topic={} workerId={} batchSize={} processed={} failed={} stopped={} "
+                        + "durationMs={}",
                 observation.mode(),
+                observation.topic(),
                 observation.workerId(),
                 observation.batchSize(),
                 processed,
@@ -180,13 +187,15 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         String mode = observation.mode();
+        String topic = observation.topic();
         String workerId = observation.workerId();
         Long messageId = observation.messageId();
         Integer retryCount = observation.retryCount();
         long durationMs = observation.durationMs();
         log.warn(
-                "worker.retry mode={} workerId={} messageId={} retryCount={} durationMs={}",
+                "worker.retry mode={} topic={} workerId={} messageId={} retryCount={} durationMs={}",
                 mode,
+                topic,
                 workerId,
                 messageId,
                 retryCount,
@@ -202,13 +211,15 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         String mode = observation.mode();
+        String topic = observation.topic();
         String workerId = observation.workerId();
         Long messageId = observation.messageId();
         Integer retryCount = observation.retryCount();
         long durationMs = observation.durationMs();
         log.error(
-                "worker.stopped mode={} workerId={} messageId={} retryCount={} durationMs={}",
+                "worker.stopped mode={} topic={} workerId={} messageId={} retryCount={} durationMs={}",
                 mode,
+                topic,
                 workerId,
                 messageId,
                 retryCount,
@@ -224,13 +235,15 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         String mode = observation.mode();
+        String topic = observation.topic();
         String workerId = observation.workerId();
         Long messageId = observation.messageId();
         Integer retryCount = observation.retryCount();
         long durationMs = observation.durationMs();
         log.error(
-                "worker.failed mode={} workerId={} messageId={} retryCount={} durationMs={}",
+                "worker.failed mode={} topic={} workerId={} messageId={} retryCount={} durationMs={}",
                 mode,
+                topic,
                 workerId,
                 messageId,
                 retryCount,
@@ -247,8 +260,9 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         log.info(
-                "worker.redriven mode={} workerId={} redrivenCount={} durationMs={}",
+                "worker.redriven mode={} topic={} workerId={} redrivenCount={} durationMs={}",
                 observation.mode(),
+                observation.topic(),
                 observation.workerId(),
                 redrivenCount,
                 observation.durationMs());
@@ -269,12 +283,14 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         String mode = observation.mode();
+        String topic = observation.topic();
         String workerId = observation.workerId();
         String operation = observation.operation();
         long durationMs = observation.durationMs();
         log.info(
-                "maintenance.ok mode={} workerId={} operation={} reclaimedCount={} durationMs={}",
+                "maintenance.ok mode={} topic={} workerId={} operation={} reclaimedCount={} durationMs={}",
                 mode,
+                topic,
                 workerId,
                 operation,
                 reclaimedCount,
@@ -291,8 +307,9 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         log.info(
-                "maintenance.cleanup mode={} operation={} deletedCount={} durationMs={}",
+                "maintenance.cleanup mode={} topic={} operation={} deletedCount={} durationMs={}",
                 observation.mode(),
+                observation.topic(),
                 observation.operation(),
                 deletedCount,
                 observation.durationMs());
@@ -308,12 +325,14 @@ public class LoggingSuperduperObserver implements SuperduperObserver {
             return;
         }
         String mode = observation.mode();
+        String topic = observation.topic();
         String workerId = observation.workerId();
         String operation = observation.operation();
         long durationMs = observation.durationMs();
         log.error(
-                "maintenance.failed mode={} workerId={} operation={} durationMs={}",
+                "maintenance.failed mode={} topic={} workerId={} operation={} durationMs={}",
                 mode,
+                topic,
                 workerId,
                 operation,
                 durationMs,

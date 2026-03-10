@@ -2,6 +2,7 @@ package net.rsworld.superduper.observability.metrics;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Map;
 import net.rsworld.superduper.observability.api.ConsumerObservation;
@@ -18,8 +19,9 @@ class MetricsSuperduperObserverTest {
         MetricsSuperduperObserver observer = new MetricsSuperduperObserver(registry, enabledSettings(true, true, true));
 
         ConsumerObservation consumer = new ConsumerObservation("reactive", "topic-a", 1, 11L, "key-a", 8, 6L);
-        WorkerObservation worker = new WorkerObservation("blocking", "worker-a", 91L, 2, 10, 7L);
-        MaintenanceObservation maintenance = new MaintenanceObservation("blocking", "worker-a", "heartbeat", 4L);
+        WorkerObservation worker = new WorkerObservation("blocking", "topic-a", "worker-a", 91L, 2, 10, 7L);
+        MaintenanceObservation maintenance =
+                new MaintenanceObservation("blocking", "topic-a", "worker-a", "heartbeat", 4L);
 
         observer.consumerReceived(consumer);
         observer.consumerSucceeded(consumer);
@@ -32,9 +34,11 @@ class MetricsSuperduperObserverTest {
         observer.workerRedriven(worker, 2);
         observer.workerFailed(worker, new IllegalArgumentException("worker"));
         observer.maintenanceSucceeded(maintenance, 4);
-        observer.maintenanceCleanup(new MaintenanceObservation("blocking", "worker-a", "cleanup-processed", 4L), 3);
+        observer.maintenanceCleanup(
+                new MaintenanceObservation("blocking", "topic-a", "worker-a", "cleanup-processed", 4L), 3);
         observer.maintenanceFailed(maintenance, new RuntimeException("maintenance"));
-        observer.queueBacklogObserved("blocking", Map.of("READY", 7L, "FAILED", 2L, "STOPPED", 1L, "PROCESSED", 3L));
+        observer.queueBacklogObserved(
+                "blocking", "topic-a", Map.of("READY", 7L, "FAILED", 2L, "STOPPED", 1L, "PROCESSED", 3L));
 
         assertThat(counterCount(
                         registry,
@@ -72,24 +76,52 @@ class MetricsSuperduperObserverTest {
                         "superduper.worker.claim.total",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "exception",
                         "none",
                         "claimed_count",
                         "5"))
                 .isEqualTo(1.0d);
-        assertThat(counterCount(registry, "superduper.worker.processed.total", "mode", "blocking", "exception", "none"))
+        assertThat(counterCount(
+                        registry,
+                        "superduper.worker.processed.total",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "exception",
+                        "none"))
                 .isEqualTo(1.0d);
-        assertThat(counterCount(registry, "superduper.worker.retried.total", "mode", "blocking", "exception", "none"))
+        assertThat(counterCount(
+                        registry,
+                        "superduper.worker.retried.total",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "exception",
+                        "none"))
                 .isEqualTo(1.0d);
-        assertThat(counterCount(registry, "superduper.worker.stopped.total", "mode", "blocking", "exception", "none"))
+        assertThat(counterCount(
+                        registry,
+                        "superduper.worker.stopped.total",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "exception",
+                        "none"))
                 .isEqualTo(1.0d);
-        assertThat(counterCount(registry, "superduper.worker.redriven.total", "mode", "blocking"))
+        assertThat(counterCount(registry, "superduper.worker.redriven.total", "mode", "blocking", "topic", "topic-a"))
                 .isEqualTo(2.0d);
         assertThat(counterCount(
                         registry,
                         "superduper.worker.failed.total",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "exception",
                         "IllegalArgumentException"))
                 .isEqualTo(1.0d);
@@ -99,6 +131,8 @@ class MetricsSuperduperObserverTest {
                         "superduper.maintenance.total",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "operation",
                         "heartbeat",
                         "exception",
@@ -111,6 +145,8 @@ class MetricsSuperduperObserverTest {
                         "superduper.maintenance.reclaimed.total",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "operation",
                         "heartbeat",
                         "exception",
@@ -121,6 +157,8 @@ class MetricsSuperduperObserverTest {
                         "superduper.maintenance.total",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "operation",
                         "heartbeat",
                         "exception",
@@ -133,6 +171,8 @@ class MetricsSuperduperObserverTest {
                         "superduper.maintenance.cleanup.total",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "operation",
                         "cleanup-processed"))
                 .isEqualTo(3.0d);
@@ -162,18 +202,30 @@ class MetricsSuperduperObserverTest {
                         "superduper.worker.claim.duration",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "exception",
                         "none",
                         "claimed_count",
                         "5"))
                 .isEqualTo(1L);
-        assertThat(timerCount(registry, "superduper.worker.process.duration", "mode", "blocking", "exception", "none"))
+        assertThat(timerCount(
+                        registry,
+                        "superduper.worker.process.duration",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "exception",
+                        "none"))
                 .isEqualTo(3L);
         assertThat(timerCount(
                         registry,
                         "superduper.worker.process.duration",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "exception",
                         "IllegalArgumentException"))
                 .isEqualTo(1L);
@@ -182,6 +234,8 @@ class MetricsSuperduperObserverTest {
                         "superduper.maintenance.duration",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "operation",
                         "heartbeat",
                         "exception",
@@ -192,19 +246,80 @@ class MetricsSuperduperObserverTest {
                         "superduper.maintenance.duration",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "operation",
                         "heartbeat",
                         "exception",
                         "RuntimeException"))
                 .isEqualTo(1L);
-        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "READY"))
+        assertThat(gaugeValue(
+                        registry,
+                        "superduper.queue.backlog",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "status",
+                        "READY"))
                 .isEqualTo(7.0d);
-        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "FAILED"))
+        assertThat(gaugeValue(
+                        registry,
+                        "superduper.queue.backlog",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "status",
+                        "FAILED"))
                 .isEqualTo(2.0d);
-        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "STOPPED"))
+        assertThat(gaugeValue(
+                        registry,
+                        "superduper.queue.backlog",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "status",
+                        "STOPPED"))
                 .isEqualTo(1.0d);
-        assertThat(gaugeValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "PROCESSED"))
+        assertThat(gaugeValue(
+                        registry,
+                        "superduper.queue.backlog",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "status",
+                        "PROCESSED"))
                 .isEqualTo(3.0d);
+        assertThat(meterTagValue(
+                        registry,
+                        "superduper.worker.claim.total",
+                        "mode",
+                        "blocking",
+                        "claimed_count",
+                        "5",
+                        "exception",
+                        "none"))
+                .isEqualTo("topic-a");
+        assertThat(meterTagValue(
+                        registry, "superduper.worker.process.duration", "mode", "blocking", "exception", "none"))
+                .isEqualTo("topic-a");
+        assertThat(meterTagValue(
+                        registry,
+                        "superduper.maintenance.total",
+                        "mode",
+                        "blocking",
+                        "operation",
+                        "heartbeat",
+                        "result",
+                        "success",
+                        "exception",
+                        "none"))
+                .isEqualTo("topic-a");
+        assertThat(meterTagValue(registry, "superduper.queue.backlog", "mode", "blocking", "status", "READY"))
+                .isEqualTo("topic-a");
     }
 
     @Test
@@ -227,8 +342,9 @@ class MetricsSuperduperObserverTest {
                 new MetricsSuperduperObserver(registry, enabledSettings(false, false, false));
 
         ConsumerObservation consumer = new ConsumerObservation("reactive", "topic-a", 1, 11L, "key-a", 8, 6L);
-        WorkerObservation worker = new WorkerObservation("blocking", "worker-a", 91L, 2, 10, 7L);
-        MaintenanceObservation maintenance = new MaintenanceObservation("blocking", "worker-a", "heartbeat", 4L);
+        WorkerObservation worker = new WorkerObservation("blocking", "topic-a", "worker-a", 91L, 2, 10, 7L);
+        MaintenanceObservation maintenance =
+                new MaintenanceObservation("blocking", "topic-a", "worker-a", "heartbeat", 4L);
 
         observer.consumerFailed(consumer, new IllegalStateException("consumer"));
         observer.workerClaimed(worker, 2);
@@ -236,13 +352,23 @@ class MetricsSuperduperObserverTest {
 
         assertThat(counterCount(registry, "superduper.consumer.failed.total", "mode", "reactive"))
                 .isEqualTo(1.0d);
-        assertThat(counterCount(registry, "superduper.worker.claim.total", "mode", "blocking", "claimed_count", "2"))
+        assertThat(counterCount(
+                        registry,
+                        "superduper.worker.claim.total",
+                        "mode",
+                        "blocking",
+                        "topic",
+                        "topic-a",
+                        "claimed_count",
+                        "2"))
                 .isEqualTo(1.0d);
         assertThat(counterCount(
                         registry,
                         "superduper.maintenance.total",
                         "mode",
                         "blocking",
+                        "topic",
+                        "topic-a",
                         "operation",
                         "heartbeat",
                         "result",
@@ -288,5 +414,11 @@ class MetricsSuperduperObserverTest {
 
     private static double gaugeValue(SimpleMeterRegistry registry, String name, String... tags) {
         return registry.find(name).tags(tags).gauge().value();
+    }
+
+    private static String meterTagValue(SimpleMeterRegistry registry, String name, String... tags) {
+        Meter meter = registry.find(name).tags(tags).meter();
+        assertThat(meter).isNotNull();
+        return meter.getId().getTag("topic");
     }
 }

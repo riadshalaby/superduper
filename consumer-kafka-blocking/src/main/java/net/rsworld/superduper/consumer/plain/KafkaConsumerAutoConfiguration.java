@@ -7,6 +7,8 @@ import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.DefaultConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
+import net.rsworld.superduper.repository.api.TopicRegistryView;
+import net.rsworld.superduper.repository.api.TopicRepositoryFactory;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,12 +49,27 @@ public class KafkaConsumerAutoConfiguration {
     }
 
     @Bean
+    String[] superduperKafkaTopics(
+            org.springframework.beans.factory.ObjectProvider<TopicRegistryView> topicRegistryProvider,
+            @Value("${superduper.kafka.topic:}") String legacyTopic) {
+        TopicRegistryView topicRegistry = topicRegistryProvider.getIfAvailable();
+        if (topicRegistry != null) {
+            return topicRegistry.kafkaTopics().toArray(String[]::new);
+        }
+        return new String[] {legacyTopic};
+    }
+
+    @Bean
     KafkaConsumerService kafkaConsumerService(
             MessageIngestRepository messageIngestRepository,
+            org.springframework.beans.factory.ObjectProvider<TopicRegistryView> topicRegistryProvider,
+            org.springframework.beans.factory.ObjectProvider<TopicRepositoryFactory> repositoryFactoryProvider,
             org.springframework.beans.factory.ObjectProvider<SuperduperObserver> observerProvider,
             org.springframework.beans.factory.ObjectProvider<ConsumerMetadataResolver> metadataResolverProvider) {
         return new KafkaConsumerService(
                 messageIngestRepository,
+                topicRegistryProvider.getIfAvailable(),
+                repositoryFactoryProvider.getIfAvailable(),
                 observerProvider.getIfAvailable(() -> NoopSuperduperObserver.INSTANCE),
                 metadataResolverProvider.getIfAvailable(DefaultConsumerMetadataResolver::new));
     }

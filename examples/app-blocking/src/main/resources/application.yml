@@ -29,6 +29,15 @@ superduper:
     bootstrap-servers: ${SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     group-id: example-blocking
     topic: superduper.example
+  # Multi-topic mode replaces superduper.kafka.topic with superduper.topics:
+  # topics:
+  #   orders:
+  #     kafka-topic: orders.events
+  #     handler: exampleBlockingMessageHandler
+  #   invoices:
+  #     kafka-topic: invoices.events
+  #     handler: exampleBlockingMessageHandler
+  #     table: invoices_messages
   worker:
     max-retries: 3
     claim-interval-ms: 2000

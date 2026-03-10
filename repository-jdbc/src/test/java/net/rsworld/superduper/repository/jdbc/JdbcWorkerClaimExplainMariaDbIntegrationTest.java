@@ -54,17 +54,19 @@ class JdbcWorkerClaimExplainMariaDbIntegrationTest {
                 new MapSqlParameterSource()
                         .addValue("cid", "w-claim")
                         .addValue("batch", 200)
-                        .addValue("maxRetries", 5));
-        List<ExplainRow> fetchPlan =
-                explain(dialect.fetchClaimedForWorkerSql(), new MapSqlParameterSource().addValue("cid", "w-fetch"));
+                        .addValue("maxRetries", 5)
+                        .addValue("topic", "default"));
+        List<ExplainRow> fetchPlan = explain(
+                dialect.fetchClaimedForWorkerSql(),
+                new MapSqlParameterSource().addValue("cid", "w-fetch").addValue("topic", "default"));
 
         assertThat(planKeys(claimPlan))
                 .containsAnyOf(
-                        "idx_messages_claim_status_id_key",
-                        "idx_messages_claim_failed_status_retry_id_key",
-                        "idx_messages_processing_exists_key_status");
+                        "idx_messages_topic_status_key_id", "idx_messages_processing_worker_status_container_key_id");
         assertThat(planRow(claimPlan, "m1").type()).isNotEqualTo("ALL");
-        assertThat(planKeys(fetchPlan)).contains("idx_messages_processing_worker_status_container_key_id");
+        assertThat(planKeys(fetchPlan))
+                .containsAnyOf(
+                        "idx_messages_processing_worker_status_container_key_id", "idx_messages_topic_status_key_id");
         assertThat(planRow(fetchPlan, "messages").type()).isNotEqualTo("ALL");
     }
 
@@ -106,13 +108,14 @@ class JdbcWorkerClaimExplainMariaDbIntegrationTest {
                 };
         jdbc.getJdbcTemplate().execute(insertSql);
         jdbc.getJdbcTemplate()
-                .execute("UPDATE messages SET status='PROCESSING', container_id='w-fetch' WHERE id % 97 = 0");
+                .execute("UPDATE messages SET status='PROCESSING', container_id='w-fetch' "
+                        + "WHERE id % 97 = 0 AND topic = 'default'");
     }
 
     private static String baseInsertSql(
             String keyExpression, String statusExpression, String retryExpression, String containerExpression) {
-        return "INSERT INTO messages(message_id,message_key,content,status,retry_count,container_id,last_updated) "
-                + "SELECT UUID(), "
+        return "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,container_id,last_updated) "
+                + "SELECT CASE WHEN MOD(t.n, 2) = 0 THEN 'default' ELSE 'topic-b' END, UUID(), "
                 + keyExpression
                 + ", 'v', "
                 + statusExpression

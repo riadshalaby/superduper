@@ -16,12 +16,9 @@ import net.rsworld.superduper.repository.api.ClaimedMessage;
 import net.rsworld.superduper.repository.api.WorkerMessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@Service
 @SuppressWarnings("java:S107")
 public class SuperDuperWorkerService {
     private static final String MODE_BLOCKING = "blocking";
@@ -33,6 +30,7 @@ public class SuperDuperWorkerService {
     private final MessageHandler handler;
     private final SuperduperObserver observer;
     private final String workerId;
+    private final String topic;
     private final int batch;
     private final int maxRetries;
     private final String claimLockName;
@@ -61,7 +59,8 @@ public class SuperDuperWorkerService {
                 claimLockName,
                 lockAtMostForMs,
                 lockAtLeastForMs,
-                ManagementFactory.getRuntimeMXBean().getName());
+                ManagementFactory.getRuntimeMXBean().getName(),
+                "default");
     }
 
     SuperDuperWorkerService(
@@ -76,6 +75,34 @@ public class SuperDuperWorkerService {
             long lockAtMostForMs,
             long lockAtLeastForMs,
             String workerId) {
+        this(
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                observer,
+                batch,
+                maxRetries,
+                claimLockName,
+                lockAtMostForMs,
+                lockAtLeastForMs,
+                workerId,
+                "default");
+    }
+
+    SuperDuperWorkerService(
+            WorkerMessageRepository messageRepository,
+            PlatformTransactionManager txm,
+            LockingTaskExecutor lockExec,
+            MessageHandler handler,
+            SuperduperObserver observer,
+            int batch,
+            int maxRetries,
+            String claimLockName,
+            long lockAtMostForMs,
+            long lockAtLeastForMs,
+            String workerId,
+            String topic) {
         this.messageRepository = messageRepository;
         this.tx = new TransactionTemplate(txm);
         this.lockExec = lockExec;
@@ -87,6 +114,7 @@ public class SuperDuperWorkerService {
         this.lockAtMostFor = Duration.ofMillis(lockAtMostForMs);
         this.lockAtLeastFor = Duration.ofMillis(lockAtLeastForMs);
         this.workerId = workerId;
+        this.topic = topic;
     }
 
     public SuperDuperWorkerService(
@@ -110,9 +138,6 @@ public class SuperDuperWorkerService {
                 2000);
     }
 
-    @Scheduled(
-            fixedDelayString = "${superduper.worker.claim-interval-ms:5000}",
-            initialDelayString = "${superduper.worker.claim-initial-delay-ms:3000}")
     public void schedule() {
         AtomicLong claimedCount = new AtomicLong(0L);
         long claimStarted = System.nanoTime();
@@ -121,18 +146,19 @@ public class SuperDuperWorkerService {
                     (Runnable) () -> claimedCount.set(claimBatch()),
                     new LockConfiguration(Instant.now(), claimLockName, lockAtMostFor, lockAtLeastFor));
             observer.workerClaimed(
-                    new WorkerObservation(MODE_BLOCKING, workerId, null, null, batch, elapsedMs(claimStarted)),
+                    new WorkerObservation(MODE_BLOCKING, topic, workerId, null, null, batch, elapsedMs(claimStarted)),
                     Math.toIntExact(claimedCount.get()));
         } catch (RuntimeException e) {
             observer.workerFailed(
-                    new WorkerObservation(MODE_BLOCKING, workerId, null, null, batch, elapsedMs(claimStarted)), e);
+                    new WorkerObservation(MODE_BLOCKING, topic, workerId, null, null, batch, elapsedMs(claimStarted)),
+                    e);
             return;
         }
         if (claimedCount.get() > 0) {
             BatchOutcome outcome = process();
             observer.workerBatchCompleted(
                     new WorkerObservation(
-                            MODE_BLOCKING, workerId, null, null, outcome.batchSize(), outcome.durationMs()),
+                            MODE_BLOCKING, topic, workerId, null, null, outcome.batchSize(), outcome.durationMs()),
                     outcome.processed(),
                     outcome.failed(),
                     outcome.stopped());
@@ -140,13 +166,13 @@ public class SuperDuperWorkerService {
     }
 
     long claimBatch() {
-        Long claimed = tx.execute(st -> messageRepository.claimBatch(workerId, batch, maxRetries));
+        Long claimed = tx.execute(st -> messageRepository.claimBatch(workerId, batch, maxRetries, topic));
         return claimed == null ? 0L : claimed;
     }
 
     BatchOutcome process() {
         long started = System.nanoTime();
-        var rows = messageRepository.fetchClaimedForWorker(workerId);
+        var rows = messageRepository.fetchClaimedForWorker(workerId, topic);
         BatchOutcome outcome = new BatchOutcome(rows.size());
         for (var keyGroup : groupRowsByMessageKey(rows).values()) {
             for (int index = 0; index < keyGroup.size(); index++) {
@@ -193,7 +219,7 @@ public class SuperDuperWorkerService {
             failureCause = e;
             observer.workerFailed(
                     new WorkerObservation(
-                            MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
+                            MODE_BLOCKING, topic, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
                     e);
         }
 
@@ -203,8 +229,8 @@ public class SuperDuperWorkerService {
             if (!updated) {
                 warnOwnershipLost(row.id(), "markProcessed");
             } else {
-                observer.workerProcessed(
-                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                observer.workerProcessed(new WorkerObservation(
+                        MODE_BLOCKING, topic, workerId, row.id(), retry, batch, elapsedMs(started)));
                 return new ProcessResult(true, MessageOutcome.PROCESSED);
             }
             return new ProcessResult(true, MessageOutcome.NONE);
@@ -213,7 +239,7 @@ public class SuperDuperWorkerService {
         if (failureCause == null) {
             observer.workerFailed(
                     new WorkerObservation(
-                            MODE_BLOCKING, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
+                            MODE_BLOCKING, topic, workerId, row.id(), row.retryCount(), batch, elapsedMs(started)),
                     new IllegalStateException("Message handler returned FAILURE"));
         }
         retry++;
@@ -222,8 +248,8 @@ public class SuperDuperWorkerService {
             if (!updated) {
                 warnOwnershipLost(row.id(), "markFailed");
             } else {
-                observer.workerRetried(
-                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                observer.workerRetried(new WorkerObservation(
+                        MODE_BLOCKING, topic, workerId, row.id(), retry, batch, elapsedMs(started)));
                 return new ProcessResult(false, MessageOutcome.FAILED);
             }
         } else {
@@ -231,8 +257,8 @@ public class SuperDuperWorkerService {
             if (!updated) {
                 warnOwnershipLost(row.id(), "markStopped");
             } else {
-                observer.workerStopped(
-                        new WorkerObservation(MODE_BLOCKING, workerId, row.id(), retry, batch, elapsedMs(started)));
+                observer.workerStopped(new WorkerObservation(
+                        MODE_BLOCKING, topic, workerId, row.id(), retry, batch, elapsedMs(started)));
                 return new ProcessResult(false, MessageOutcome.STOPPED);
             }
         }

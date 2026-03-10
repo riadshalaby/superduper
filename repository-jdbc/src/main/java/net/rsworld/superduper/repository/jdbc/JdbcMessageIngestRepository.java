@@ -29,10 +29,23 @@ public class JdbcMessageIngestRepository implements MessageIngestRepository {
             Instant occurredAt,
             String correlationId,
             String messageType) {
+        upsertReadyMessage("default", messageId, messageKey, content, occurredAt, correlationId, messageType);
+    }
+
+    @Override
+    public void upsertReadyMessage(
+            String topic,
+            String messageId,
+            String messageKey,
+            String content,
+            Instant occurredAt,
+            String correlationId,
+            String messageType) {
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         jdbc.update(
                 dialect.upsertReadyMessageSql(),
                 new MapSqlParameterSource()
+                        .addValue("topic", topic)
                         .addValue("messageId", messageId)
                         .addValue("messageKey", messageKey)
                         .addValue("content", content)

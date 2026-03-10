@@ -138,7 +138,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
                 || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.REDRIVE)) {
             return;
         }
-        counter("superduper.worker.redriven.total", Tags.of("mode", observation.mode()))
+        counter("superduper.worker.redriven.total", workerTags(observation, null))
                 .increment(redrivenCount);
     }
 
@@ -181,7 +181,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
             return;
         }
         Counter.builder("superduper.maintenance.cleanup.total")
-                .tags("mode", observation.mode(), "operation", observation.operation())
+                .tags("mode", observation.mode(), "topic", observation.topic(), "operation", observation.operation())
                 .register(meterRegistry)
                 .increment(deletedCount);
     }
@@ -200,13 +200,13 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
     }
 
     @Override
-    public void queueBacklogObserved(String mode, Map<String, Long> statusCounts) {
+    public void queueBacklogObserved(String mode, String topic, Map<String, Long> statusCounts) {
         if (!settings.metricsEnabled()
                 || !settings.allows(ObservabilityComponent.WORKER, ObservabilitySignal.LIFECYCLE)) {
             return;
         }
         for (String status : BACKLOG_STATUSES) {
-            QueueGaugeKey key = new QueueGaugeKey(mode, status);
+            QueueGaugeKey key = new QueueGaugeKey(mode, topic, status);
             AtomicLong gaugeValue = queueBacklogGauges.computeIfAbsent(key, this::registerBacklogGauge);
             gaugeValue.set(statusCounts.getOrDefault(status, 0L));
         }
@@ -226,7 +226,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
     private AtomicLong registerBacklogGauge(QueueGaugeKey key) {
         AtomicLong value = new AtomicLong();
         Gauge.builder("superduper.queue.backlog", value, AtomicLong::doubleValue)
-                .tags("mode", key.mode(), "status", key.status())
+                .tags("mode", key.mode(), "topic", key.topic(), "status", key.status())
                 .register(meterRegistry);
         return value;
     }
@@ -244,6 +244,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
     private Tags workerTags(WorkerObservation observation, Throwable error) {
         List<Tag> tags = new ArrayList<>();
         tags.add(Tag.of("mode", observation.mode()));
+        tags.add(Tag.of("topic", observation.topic()));
         addExceptionTag(tags, error);
         return Tags.of(tags);
     }
@@ -251,6 +252,7 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
     private Tags maintenanceTags(MaintenanceObservation observation, Throwable error) {
         List<Tag> tags = new ArrayList<>();
         tags.add(Tag.of("mode", observation.mode()));
+        tags.add(Tag.of("topic", observation.topic()));
         tags.add(Tag.of("operation", observation.operation()));
         addExceptionTag(tags, error);
         return Tags.of(tags);
@@ -263,5 +265,5 @@ public class MetricsSuperduperObserver implements SuperduperObserver {
         tags.add(Tag.of("exception", error == null ? "none" : error.getClass().getSimpleName()));
     }
 
-    private record QueueGaugeKey(String mode, String status) {}
+    private record QueueGaugeKey(String mode, String topic, String status) {}
 }

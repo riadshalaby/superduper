@@ -50,13 +50,17 @@ public interface SuperduperObserver {
         maintenanceSucceeded(observation);
     }
 
+    default void queueBacklogObserved(String mode, Map<String, Long> statusCounts) {
+        queueBacklogObserved(mode, "default", statusCounts);
+    }
+
     /**
      * Records queue backlog counts grouped by status.
      *
      * @param mode the worker mode
      * @param statusCounts queue counts grouped by status
      */
-    default void queueBacklogObserved(String mode, Map<String, Long> statusCounts) {}
+    default void queueBacklogObserved(String mode, String topic, Map<String, Long> statusCounts) {}
 
     /**
      * Records a cleanup maintenance result.

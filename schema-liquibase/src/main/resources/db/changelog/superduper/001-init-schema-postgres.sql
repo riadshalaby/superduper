@@ -1,18 +1,21 @@
 CREATE TABLE IF NOT EXISTS messages (
   id BIGSERIAL PRIMARY KEY,
-  uuid VARCHAR(36) UNIQUE NOT NULL,
-  key VARCHAR(255) NOT NULL,
+  topic VARCHAR(255) NOT NULL DEFAULT 'default',
+  message_id VARCHAR(36) UNIQUE NOT NULL,
+  message_key VARCHAR(255) NOT NULL,
   content TEXT,
   status VARCHAR(32) NOT NULL CHECK (status IN ('READY','PROCESSING','PROCESSED','FAILED','STOPPED')),
   retry_count INT DEFAULT 0,
   container_id VARCHAR(255),
+  correlation_id VARCHAR(36) NULL,
+  message_type VARCHAR(255) NULL,
   occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   processed_at TIMESTAMP NULL,
   last_updated TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_key_id ON messages(key, id);
+CREATE INDEX IF NOT EXISTS idx_messages_topic_status_key_id ON messages(topic, status, message_key, id);
 
 CREATE TABLE IF NOT EXISTS container_heartbeats (
   container_id VARCHAR(255) PRIMARY KEY,

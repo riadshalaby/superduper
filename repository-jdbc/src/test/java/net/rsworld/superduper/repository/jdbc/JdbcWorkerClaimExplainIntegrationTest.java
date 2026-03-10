@@ -54,15 +54,14 @@ class JdbcWorkerClaimExplainIntegrationTest {
                 new MapSqlParameterSource()
                         .addValue("cid", "w-claim")
                         .addValue("batch", 200)
-                        .addValue("maxRetries", 5));
-        String fetchPlan =
-                explain(dialect.fetchClaimedForWorkerSql(), new MapSqlParameterSource().addValue("cid", "w-fetch"));
+                        .addValue("maxRetries", 5)
+                        .addValue("topic", "default"));
+        String fetchPlan = explain(
+                dialect.fetchClaimedForWorkerSql(),
+                new MapSqlParameterSource().addValue("cid", "w-fetch").addValue("topic", "default"));
 
         assertThat(claimPlan)
-                .containsAnyOf(
-                        "idx_messages_ready_claim_id_key",
-                        "idx_messages_failed_claim_retry_id_key",
-                        "idx_messages_processing_key_id")
+                .containsAnyOf("idx_messages_topic_status_key_id", "idx_messages_processing_worker_key_id")
                 .doesNotContain("Seq Scan");
         assertThat(fetchPlan).contains("idx_messages_processing_worker_key_id").doesNotContain("Seq Scan");
     }
@@ -79,18 +78,20 @@ class JdbcWorkerClaimExplainIntegrationTest {
         String insertSql =
                 switch (scenario) {
                     case "uniform" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', 'READY', 0, "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, "
+                                + "LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', 'READY', 0, "
                                 + "NOW() - ((g % 1000) || ' seconds')::interval FROM generate_series(1, 10000) g";
                     case "hot-key" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, LPAD(g::text, 36, '0'), "
                                 + "CASE WHEN g <= 5000 THEN 'hot-key' ELSE 'k' || ((g - 5000) % 99) END, "
                                 + "'v', 'READY', 0, NOW() - ((g % 1000) || ' seconds')::interval "
                                 + "FROM generate_series(1, 10000) g";
                     case "mixed-status" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,container_id,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,container_id,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, "
+                                + "LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
                                 + "CASE WHEN g % 5 = 0 THEN 'FAILED' "
                                 + "WHEN g % 7 = 0 THEN 'PROCESSING' "
                                 + "WHEN g % 11 = 0 THEN 'STOPPED' "
@@ -101,8 +102,9 @@ class JdbcWorkerClaimExplainIntegrationTest {
                                 + "NOW() - ((g % 1000) || ' seconds')::interval "
                                 + "FROM generate_series(1, 10000) g";
                     case "high-retry-failed" ->
-                        "INSERT INTO messages(message_id,message_key,content,status,retry_count,last_updated) "
-                                + "SELECT LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
+                        "INSERT INTO messages(topic,message_id,message_key,content,status,retry_count,last_updated) "
+                                + "SELECT CASE WHEN g % 2 = 0 THEN 'default' ELSE 'topic-b' END, "
+                                + "LPAD(g::text, 36, '0'), 'k' || (g % 100), 'v', "
                                 + "CASE WHEN g % 5 = 0 THEN 'FAILED' ELSE 'READY' END, "
                                 + "CASE WHEN g % 5 = 0 THEN 4 + (g % 2) ELSE 0 END, "
                                 + "NOW() - ((g % 1000) || ' seconds')::interval "
@@ -111,7 +113,8 @@ class JdbcWorkerClaimExplainIntegrationTest {
                 };
         jdbc.getJdbcTemplate().execute(insertSql);
         jdbc.getJdbcTemplate()
-                .execute("UPDATE messages SET status='PROCESSING', container_id='w-fetch' WHERE id % 97 = 0");
+                .execute("UPDATE messages SET status='PROCESSING', container_id='w-fetch' "
+                        + "WHERE id % 97 = 0 AND topic = 'default'");
     }
 
     private static String explain(String sql, MapSqlParameterSource params) {
