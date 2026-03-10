@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(pwd:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(cut:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(rg:*)",
+      "Bash(mvn:*)",
+      "Bash(./mvnw:*)",
+      "Bash(grep:*)",
+      "Bash(jq:*)",
+      "Bash(git:*)",
+      "Bash(bash scripts/*:*)"
+    ]
+  }
+}

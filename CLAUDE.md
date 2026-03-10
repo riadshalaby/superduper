@@ -12,9 +12,9 @@
   - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
 - Stage newly created files explicitly:
   - `git add <new-file>`
-- When changes are complete, do not commit automatically:
-  - Print a short, meaningful Conventional Commit message proposal.
-  - Create the commit only after explicit user confirmation.
+- Commit behavior by role:
+  - `plan` and `review` roles never commit.
+  - `implement` role must stage all changes and create a Conventional Commit after validations pass.
 - Prefer targeted validation while iterating; run broader validation before finishing:
   - Fast compile: `mvn -q -DskipTests test-compile`
   - Full tests: `mvn -T 1C -q test`
@@ -57,18 +57,28 @@ Build and maintain the library described in `README.md`:
 - Read worker services:
   - `worker-blocking/src/main/java/net/rsworld/superduper/worker/blocking/SuperDuperWorkerService.java`
   - `worker-reactive/src/main/java/net/rsworld/superduper/worker/reactive/SuperDuperWorkerReactiveService.java`
-- Run: `mvn -T 1C -q test`
 
 ## AI Workflow Rules
 - Plan Mode:
+  - waits for explicit user start signal
   - writes `.ai/PLAN.md`
+  - updates `.ai/TASKS.md` status to `ready_for_implement`
+  - appends a handoff entry to `.ai/HANDOFF.md`
   - never edits code
 - Review Mode:
+  - waits for explicit user start signal
   - writes `.ai/REVIEW.md`
+  - updates `.ai/TASKS.md` status to `done` or `changes_requested`
+  - appends a handoff entry to `.ai/HANDOFF.md`
   - never edits code
 - Implement Mode:
+  - waits for explicit user start signal
   - implements `.ai/PLAN.md`
   - updates tests
+  - stages files with `git add -A`
+  - commits with a Conventional Commit message
+  - updates `.ai/TASKS.md` status to `ready_for_review`
+  - appends a handoff entry to `.ai/HANDOFF.md` including commit hash
   - must not invent requirements
 
 ## AI Operating Mode
@@ -80,69 +90,46 @@ Build and maintain the library described in `README.md`:
     - `scripts/ai-plan.sh [agent] [agent-options...]` (default agent: `claude`)
     - `scripts/ai-implement.sh [agent] [agent-options...]` (default agent: `codex`)
     - `scripts/ai-review.sh [agent] [agent-options...]` (default agent: `claude`)
+- Optional manual gate checks:
+  - `scripts/ai-check-plan.sh <TASK_ID>` before starting implement mode
+  - `scripts/ai-check-review.sh <TASK_ID>` before starting review mode
 - No `.ai/MODE` file is used.
 
+## Mixed Team Manual Workflow
+- No role autostarts another role.
+- Every role waits in `WAIT_FOR_USER_START` state until you explicitly tell it to begin.
+- Agent choice is manual per run (`claude` or `codex`) and can vary by role and task.
+- Handoff log policy:
+  - runtime log: `.ai/HANDOFF.md` (gitignored)
+  - tracked template: `.ai/HANDOFF.template.md`
+- Handoffs are file-based:
+  - planner -> implementer uses `.ai/PLAN.md` + `.ai/TASKS.md` + `.ai/HANDOFF.md`
+  - implementer -> reviewer uses commit + `.ai/TASKS.md` + `.ai/HANDOFF.md`
+- Recommended status flow in `.ai/TASKS.md`:
+  - `todo` -> `in_planning` -> `ready_for_implement` -> `in_implementation` -> `ready_for_review` -> `in_review` -> `done`
+
 ## Release Rules
-- Never release directly from a feature branch.
-- A feature is releasable only after it is merged into `main` via PR and required checks/tests pass.
-- Set the release version before opening the release PR:
-  - `mvn versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`
-- Use Conventional Commit message for the version bump:
-  - `chore: release vX.Y.Z`
-- Create tag `vX.Y.Z` on the corresponding merge commit in `main` (no unrelated extra commit between merge and tag).
-- After the tagged release, bump the branch for the next cycle:
-  - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
-- Use Conventional Commit message for the post-release bump:
-  - `chore: start vX.Y.(Z+1)-SNAPSHOT`
-- After the release is done:
-  - reset `.ai/PLAN.md` for the next cycle,
-  - reset `.ai/REVIEW.md` for the next cycle,
-  - rework `ROADMAP.md` to prepare scope and priorities for the next version.
+- Release execution role: `implement`.
+- Release actions require explicit user command in-session.
+- Two-phase release workflow:
+  1. Prepare release on feature branch:
+     - `scripts/ai-release.sh prepare X.Y.Z`
+     - Performs version bump to `X.Y.Z`, runs required validations, commits `chore(release): vX.Y.Z`, and pushes the branch.
+     - Opens/updates a PR to `main` manually (or with `--open-pr` if `gh` is available).
+  2. Finalize release after user confirms PR merge:
+     - `scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]`
+     - Switches to `main`, verifies merged release version, creates/pushes tag `vX.Y.Z`, prompts for `NEXT_VERSION` when omitted, creates branch `feature/vNEXT_VERSION`, bumps to next version, resets cycle files from templates, updates `ROADMAP.md`, and commits `chore: start vNEXT_VERSION`.
+- PR policy:
+  - A PR to `main` is mandatory for release.
+  - The user merges the PR on GitHub.
+  - `finalize` must not run before user merge confirmation.
 
-## Strict PR Flow (Agent-Executable)
-- The agent may execute the full release sequence only after explicit user approval in that session.
-- Required order:
-  1. On the feature branch, run `mvn versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`.
-  2. Run validation (`mvn -q -DskipTests test-compile` and `mvn -T 1C -q test` unless the session explicitly narrows it).
-  3. Commit approved changes on the feature branch with `chore: release vX.Y.Z`.
-  4. Push the feature branch to remote.
-  5. Open or update a PR targeting `main`.
-  6. Use PR title `chore: release vX.Y.Z`.
-  7. Use this PR body template:
-     ```text
-     ## Summary
-     - release vX.Y.Z
-
-     ## Validation
-     - [ ] mvn -q -DskipTests test-compile
-     - [ ] mvn -T 1C -q test
-
-     ## Release Checklist
-     - [ ] version bumped with mvn versions:set
-     - [ ] docs and roadmap updated
-     - [ ] release tag will be created from the merge commit on main
-     ```
-  8. Ensure required checks pass.
-  9. Merge PR into `main` (merge commit preferred unless repository policy enforces another method).
-  10. Switch to `main` and fast-forward/pull latest remote.
-  11. Verify the merge commit on `main` contains version `X.Y.Z`.
-  12. Create tag `vX.Y.Z` on that merge commit in `main`.
-  13. Push the tag to remote.
-  14. create a new branch for the next release
-  14. Perform post-release housekeeping on the branch for the next release cycle:
-      - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
-      - commit `chore: start vX.Y.(Z+1)-SNAPSHOT`
-      - reset `.ai/PLAN.md`
-      - reset `.ai/REVIEW.md`
-      - update `ROADMAP.md`
-- Tagging constraints:
-  - Tag must point to the merge commit that introduced the released feature.
-  - Do not add unrelated commits between merge and release tag.
-  - Never tag from a feature branch.
-- Safety constraints:
-  - Never force-push `main`.
-  - Never bypass PR checks.
-  - Never amend published release commits or tags unless explicitly requested.
+## Release Safety
+- Never force-push `main`.
+- Never bypass PR checks.
+- Never tag from a feature branch.
+- Never amend published release commits or tags unless explicitly requested.
+- Do not run release operations without explicit user approval.
 
 ## Git Rules
 - Work in the current branch.

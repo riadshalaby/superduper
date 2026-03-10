@@ -56,3 +56,6 @@ out/
 Thumbs.db
 *.swp
 *.swo
+
+# AI workflow runtime artifacts
+.ai/HANDOFF.md
