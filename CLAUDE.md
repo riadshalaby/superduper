@@ -113,10 +113,11 @@ Build and maintain the library described in `README.md`:
 - Release actions require explicit user command in-session.
 - Two-phase release workflow:
   1. Prepare release on feature branch:
-     - `scripts/ai-release.sh prepare X.Y.Z`
+     - `scripts/ai-release.sh prepare X.Y.Z --open-pr`
      - Performs version bump to `X.Y.Z`, runs required validations, commits `chore(release): vX.Y.Z`, and pushes the branch.
-     - Opens/updates a PR to `main` manually (or with `--open-pr` if `gh` is available).
+     - Opens/updates a PR to `main`.
   2. Finalize release after user confirms PR merge:
+     - Ask the user what the next version will be.
      - `scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]`
      - Switches to `main`, verifies merged release version, creates/pushes tag `vX.Y.Z`, prompts for `NEXT_VERSION` when omitted, creates branch `feature/vNEXT_VERSION`, bumps to next version, resets cycle files from templates, updates `ROADMAP.md`, and commits `chore: start vNEXT_VERSION`.
 - PR policy:
