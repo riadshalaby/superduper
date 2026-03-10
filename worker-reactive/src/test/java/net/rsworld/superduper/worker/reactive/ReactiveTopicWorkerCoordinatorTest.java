@@ -2,14 +2,21 @@ package net.rsworld.superduper.worker.reactive;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
@@ -17,12 +24,19 @@ import net.rsworld.superduper.repository.api.TopicConfigView;
 import net.rsworld.superduper.repository.api.TopicRegistryView;
 import net.rsworld.superduper.repository.api.TopicRepositoryFactory;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.scheduling.TaskScheduler;
+import reactor.core.publisher.Mono;
 
 class ReactiveTopicWorkerCoordinatorTest {
 
     private static TopicConfigView topicConfig(
             String name, String kafkaTopic, String handlerBeanName, String claimLockName) {
+        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, "");
+    }
+
+    private static TopicConfigView topicConfig(
+            String name, String kafkaTopic, String handlerBeanName, String claimLockName, String table) {
         return new TopicConfigView() {
             @Override
             public String name() {
@@ -51,7 +65,7 @@ class ReactiveTopicWorkerCoordinatorTest {
 
             @Override
             public String table() {
-                return "";
+                return table;
             }
 
             @Override
@@ -132,5 +146,56 @@ class ReactiveTopicWorkerCoordinatorTest {
 
         verify(taskScheduler, times(2))
                 .scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class));
+    }
+
+    @Test
+    void coordinator_usesDedicatedRepositoryForConfiguredTable() {
+        TopicConfigView dedicatedTopic =
+                topicConfig("orders", "orders-topic", "handlerA", "superduper-claim-orders", "orders_messages");
+        TopicRegistryView registry = registryOf(dedicatedTopic);
+
+        ReactiveWorkerMessageRepository sharedRepository = mock(ReactiveWorkerMessageRepository.class);
+        ReactiveWorkerMessageRepository dedicatedRepository = mock(ReactiveWorkerMessageRepository.class);
+        TopicRepositoryFactory repositoryFactory = mock(TopicRepositoryFactory.class);
+        when(repositoryFactory.createReactiveWorkerRepository("orders_messages"))
+                .thenReturn(dedicatedRepository);
+        when(dedicatedRepository.claimBatch(anyString(), anyInt(), anyInt(), anyString()))
+                .thenReturn(Mono.just(0L));
+
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+        org.mockito.Mockito.doAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(0);
+                    task.run();
+                    return null;
+                })
+                .when(lockExec)
+                .executeWithLock(any(Runnable.class), any());
+
+        ScheduledFuture<?> future = mock(ScheduledFuture.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+        doReturn(future)
+                .when(taskScheduler)
+                .scheduleWithFixedDelay(runnableCaptor.capture(), any(Instant.class), any(Duration.class));
+
+        ReactiveTopicWorkerCoordinator coordinator = new ReactiveTopicWorkerCoordinator(
+                registry,
+                sharedRepository,
+                lockExec,
+                Map.of("handlerA", mock(ReactiveMessageHandler.class)),
+                NoopSuperduperObserver.INSTANCE,
+                repositoryFactory,
+                taskScheduler,
+                1000,
+                100,
+                15000,
+                2000);
+
+        coordinator.start();
+        runnableCaptor.getValue().run();
+
+        verify(repositoryFactory).createReactiveWorkerRepository("orders_messages");
+        verify(dedicatedRepository).claimBatch(anyString(), anyInt(), anyInt(), eq("orders-topic"));
+        verify(sharedRepository, never()).claimBatch(anyString(), anyInt(), anyInt(), anyString());
     }
 }

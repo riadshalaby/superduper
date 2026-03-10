@@ -6,8 +6,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
@@ -33,6 +37,11 @@ class TopicWorkerCoordinatorTest {
 
     private static TopicConfigView topicConfig(
             String name, String kafkaTopic, String handlerBeanName, String claimLockName) {
+        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, "");
+    }
+
+    private static TopicConfigView topicConfig(
+            String name, String kafkaTopic, String handlerBeanName, String claimLockName, String table) {
         return new TopicConfigView() {
             @Override
             public String name() {
@@ -61,7 +70,7 @@ class TopicWorkerCoordinatorTest {
 
             @Override
             public String table() {
-                return "";
+                return table;
             }
 
             @Override
@@ -212,5 +221,56 @@ class TopicWorkerCoordinatorTest {
 
         verify(taskScheduler, times(2))
                 .scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class));
+    }
+
+    @Test
+    void coordinator_usesDedicatedRepositoryForConfiguredTable() {
+        TopicConfigView dedicatedTopic =
+                topicConfig("orders", "orders-topic", "handlerA", "superduper-claim-orders", "orders_messages");
+        TopicRegistryView registry = registryOf(dedicatedTopic);
+
+        WorkerMessageRepository sharedRepository = mock(WorkerMessageRepository.class);
+        WorkerMessageRepository dedicatedRepository = mock(WorkerMessageRepository.class);
+        TopicRepositoryFactory repositoryFactory = mock(TopicRepositoryFactory.class);
+        when(repositoryFactory.createWorkerRepository("orders_messages")).thenReturn(dedicatedRepository);
+        when(dedicatedRepository.claimBatch(anyString(), anyInt(), anyInt(), anyString()))
+                .thenReturn(0L);
+
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+        doAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(0);
+                    task.run();
+                    return null;
+                })
+                .when(lockExec)
+                .executeWithLock(any(Runnable.class), any());
+
+        ScheduledFuture<?> future = mock(ScheduledFuture.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+        doReturn(future)
+                .when(taskScheduler)
+                .scheduleWithFixedDelay(runnableCaptor.capture(), any(Instant.class), any(Duration.class));
+
+        TopicWorkerCoordinator coordinator = new TopicWorkerCoordinator(
+                registry,
+                sharedRepository,
+                mock(PlatformTransactionManager.class),
+                lockExec,
+                Map.of("handlerA", mock(MessageHandler.class)),
+                NoopSuperduperObserver.INSTANCE,
+                repositoryFactory,
+                taskScheduler,
+                1000,
+                100,
+                15000,
+                2000);
+
+        coordinator.start();
+        runnableCaptor.getValue().run();
+
+        verify(repositoryFactory).createWorkerRepository("orders_messages");
+        verify(dedicatedRepository).claimBatch(anyString(), anyInt(), anyInt(), eq("orders-topic"));
+        verify(sharedRepository, never()).claimBatch(anyString(), anyInt(), anyInt(), anyString());
     }
 }

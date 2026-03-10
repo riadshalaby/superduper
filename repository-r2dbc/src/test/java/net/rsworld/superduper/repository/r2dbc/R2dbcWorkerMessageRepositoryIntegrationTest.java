@@ -16,6 +16,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class R2dbcWorkerMessageRepositoryIntegrationTest {
 
     static PostgreSQLContainer postgres;
+    static PostgresqlConnectionFactory connectionFactory;
     static DatabaseClient db;
     static R2dbcWorkerMessageRepository repo;
 
@@ -25,16 +26,16 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
         postgres.start();
         LiquibaseTestSupport.migrate(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
 
-        PostgresqlConnectionFactory cf = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
+        connectionFactory = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
                 .host(postgres.getHost())
                 .port(postgres.getMappedPort(5432))
                 .database(postgres.getDatabaseName())
                 .username(postgres.getUsername())
                 .password(postgres.getPassword())
                 .build());
-        db = DatabaseClient.create(cf);
+        db = DatabaseClient.create(connectionFactory);
         repo = new R2dbcWorkerMessageRepository(
-                db, TransactionalOperator.create(new R2dbcTransactionManager(cf)), SqlDialect.POSTGRES);
+                db, TransactionalOperator.create(new R2dbcTransactionManager(connectionFactory)), SqlDialect.POSTGRES);
     }
 
     @AfterAll
@@ -137,6 +138,48 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
                 .containsExactly("topic-b:b1", "topic-b:b2");
     }
 
+    @Test
+    void dedicatedTableRows_areInvisibleToSharedTableQueries() {
+        resetData();
+        recreateTopicTable();
+
+        R2dbcWorkerMessageRepository dedicatedRepo = new R2dbcWorkerMessageRepository(
+                db,
+                TransactionalOperator.create(new R2dbcTransactionManager(connectionFactory)),
+                new PostgresR2dbcSqlDialect("orders_messages", "container_heartbeats"));
+
+        insert("shared-1", "shared-key", "shared-value", "READY", "orders-topic");
+        insertIntoTable("orders_messages", "dedicated-1", "dedicated-key", "dedicated-value", "READY", "orders-topic");
+
+        assertThat(repo.findByStatus("READY", 10, "orders-topic").collectList().block())
+                .extracting(row -> row.messageId() + ":" + row.topic())
+                .containsExactly("shared-1:orders-topic");
+        assertThat(dedicatedRepo
+                        .findByStatus("READY", 10, "orders-topic")
+                        .collectList()
+                        .block())
+                .extracting(row -> row.messageId() + ":" + row.topic())
+                .containsExactly("dedicated-1:orders-topic");
+
+        assertThat(repo.claimBatch("shared-worker", 10, 5, "orders-topic").block())
+                .isEqualTo(1);
+        assertThat(dedicatedRepo
+                        .claimBatch("dedicated-worker", 10, 5, "orders-topic")
+                        .block())
+                .isEqualTo(1);
+        assertThat(repo.fetchClaimedForWorker("shared-worker", "orders-topic")
+                        .collectList()
+                        .block())
+                .extracting(row -> row.messageId())
+                .containsExactly("shared-1");
+        assertThat(dedicatedRepo
+                        .fetchClaimedForWorker("dedicated-worker", "orders-topic")
+                        .collectList()
+                        .block())
+                .extracting(row -> row.messageId())
+                .containsExactly("dedicated-1");
+    }
+
     private static void resetData() {
         db.sql("TRUNCATE TABLE messages RESTART IDENTITY").fetch().rowsUpdated().block();
     }
@@ -154,13 +197,56 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
     }
 
     private static void insert(String messageId, String messageKey, String content, String status, String topic) {
+        insertIntoTable("messages", messageId, messageKey, content, status, topic);
+    }
+
+    private static void insertIntoTable(
+            String tableName, String messageId, String messageKey, String content, String status, String topic) {
         db.sql(
-                        "INSERT INTO messages(message_id,message_key,content,status,topic) VALUES (:messageId,:messageKey,:content,:status,:topic)")
+                        "INSERT INTO " + tableName
+                                + "(message_id,message_key,content,status,topic) VALUES (:messageId,:messageKey,:content,:status,:topic)")
                 .bind("messageId", messageId)
                 .bind("messageKey", messageKey)
                 .bind("content", content)
                 .bind("status", status)
                 .bind("topic", topic)
+                .fetch()
+                .rowsUpdated()
+                .block();
+    }
+
+    private static void recreateTopicTable() {
+        db.sql("DROP TABLE IF EXISTS orders_messages").fetch().rowsUpdated().block();
+        db.sql("CREATE TABLE orders_messages ("
+                        + "id BIGSERIAL PRIMARY KEY,"
+                        + "topic VARCHAR(255) NOT NULL DEFAULT 'default',"
+                        + "message_id VARCHAR(36) UNIQUE NOT NULL,"
+                        + "message_key VARCHAR(255) NOT NULL,"
+                        + "content TEXT,"
+                        + "status VARCHAR(32) NOT NULL CHECK (status IN ('READY','PROCESSING','PROCESSED','FAILED','STOPPED')),"
+                        + "retry_count INT DEFAULT 0,"
+                        + "container_id VARCHAR(255),"
+                        + "correlation_id VARCHAR(36) NULL,"
+                        + "message_type VARCHAR(255) NULL,"
+                        + "occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                        + "received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                        + "processed_at TIMESTAMP NULL,"
+                        + "last_updated TIMESTAMP NOT NULL DEFAULT NOW())")
+                .fetch()
+                .rowsUpdated()
+                .block();
+        db.sql(
+                        "CREATE INDEX idx_orders_messages_topic_status_key_id ON orders_messages (topic, status, message_key, id)")
+                .fetch()
+                .rowsUpdated()
+                .block();
+        db.sql("CREATE INDEX idx_orders_messages_processing_worker_key_id "
+                        + "ON orders_messages (topic, container_id, message_key, id) WHERE status = 'PROCESSING'")
+                .fetch()
+                .rowsUpdated()
+                .block();
+        db.sql("CREATE INDEX idx_orders_messages_processing_last_updated "
+                        + "ON orders_messages (topic, last_updated) WHERE status = 'PROCESSING'")
                 .fetch()
                 .rowsUpdated()
                 .block();
