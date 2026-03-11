@@ -258,6 +258,128 @@ Expected output example:
 (0 rows)
 ```
 
+## Multi-Topic Examples
+
+These examples use the blocking stack and start the same local infrastructure with two Kafka topics:
+
+- `orders.events`
+- `invoices.events`
+
+### Shared-Table Mode (`app-multitopic-shared`)
+
+Run it:
+
+```bash
+docker compose up -d
+mvn -pl examples/app-multitopic-shared -am spring-boot:run \
+  -Dspring-boot.run.jvmArguments="-Dsuperduper.example.seed.enabled=true"
+```
+
+Config highlights:
+
+- both topics use the shared `messages` table
+- no `table` field is configured under `superduper.topics`
+- `/ops/queue?topic=orders.events` and `/ops/queue?topic=invoices.events` expose topic-scoped backlog snapshots
+
+Expected shared-table SQL assertions:
+
+| Query | Expected |
+|---|---|
+| `SELECT COUNT(*) FROM messages WHERE topic IN ('orders.events', 'invoices.events');` | `1000` |
+| `SELECT topic, COUNT(*) FROM messages WHERE topic IN ('orders.events', 'invoices.events') GROUP BY topic ORDER BY topic;` | `invoices.events: 500`, `orders.events: 500` |
+| `SELECT COUNT(*) FROM messages WHERE topic IN ('orders.events', 'invoices.events') AND status = 'PROCESSED';` | `975` |
+| `SELECT COUNT(*) FROM messages WHERE topic IN ('orders.events', 'invoices.events') AND status = 'STOPPED';` | `25` |
+
+### Dedicated-Table Mode (`app-multitopic-dedicated`)
+
+Run it:
+
+```bash
+docker compose up -d
+mvn -pl examples/app-multitopic-dedicated -am spring-boot:run \
+  -Dspring-boot.run.jvmArguments="-Dsuperduper.example.seed.enabled=true"
+```
+
+Config highlights:
+
+- `orders.events` writes to `orders_messages`
+- `invoices.events` writes to `invoices_messages`
+- Liquibase loads `db.changelog-master.yaml` first, then the dedicated-table DDL in `db/changelog/multitopic-dedicated/db.changelog-dedicated.yaml`
+- `/ops/queue?topic=orders.events` and `/ops/queue?topic=invoices.events` query the correct per-topic repository/table
+
+Expected dedicated-table SQL assertions:
+
+| Query | Expected |
+|---|---|
+| `SELECT COUNT(*) FROM orders_messages WHERE topic = 'orders.events';` | `500` |
+| `SELECT COUNT(*) FROM invoices_messages WHERE topic = 'invoices.events';` | `500` |
+| `SELECT COUNT(*) FROM messages WHERE topic IN ('orders.events', 'invoices.events');` | `0` |
+| `SELECT (SELECT COUNT(*) FROM orders_messages WHERE status = 'PROCESSED') + (SELECT COUNT(*) FROM invoices_messages WHERE status = 'PROCESSED');` | `975` |
+| `SELECT (SELECT COUNT(*) FROM orders_messages WHERE status = 'STOPPED') + (SELECT COUNT(*) FROM invoices_messages WHERE status = 'STOPPED');` | `25` |
+
+### Verification
+
+Run the helper script after the seeder completion log appears:
+
+```bash
+./examples/verify-multitopic.sh --mode shared
+./examples/verify-multitopic.sh --mode dedicated
+```
+
+The script connects to the local Postgres instance (`localhost:5432`, `superduper` / `superduper` by default), runs the documented assertions, and prints PASS or FAIL for each one. Override connection details with `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, or `PGDATABASE` when needed.
+
+### SQL Assertions
+
+Shared-table per-key ordering check:
+
+```sql
+WITH ordered AS (
+  SELECT
+    topic,
+    message_key,
+    id,
+    LAG(id) OVER (PARTITION BY topic, message_key ORDER BY id) AS prev_id
+  FROM messages
+  WHERE topic IN ('orders.events', 'invoices.events')
+)
+SELECT topic, message_key, id, prev_id
+FROM ordered
+WHERE prev_id IS NOT NULL
+  AND id <= prev_id;
+```
+
+Dedicated-table per-key ordering checks:
+
+```sql
+WITH ordered AS (
+  SELECT
+    message_key,
+    id,
+    LAG(id) OVER (PARTITION BY message_key ORDER BY id) AS prev_id
+  FROM orders_messages
+  WHERE topic = 'orders.events'
+)
+SELECT message_key, id, prev_id
+FROM ordered
+WHERE prev_id IS NOT NULL
+  AND id <= prev_id;
+```
+
+```sql
+WITH ordered AS (
+  SELECT
+    message_key,
+    id,
+    LAG(id) OVER (PARTITION BY message_key ORDER BY id) AS prev_id
+  FROM invoices_messages
+  WHERE topic = 'invoices.events'
+)
+SELECT message_key, id, prev_id
+FROM ordered
+WHERE prev_id IS NOT NULL
+  AND id <= prev_id;
+```
+
 For a positive spot-check of the ordered sequence:
 
 ```sql

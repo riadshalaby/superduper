@@ -1,406 +1,456 @@
-# Plan — v0.5.0
+# Plan — 0.5.1-SNAPSHOT
 
-Status: **ready**
+Status: **ready_for_implement**
 
-Goal: Enable multi-topic consumption within a single application — each topic with its own message handler, independent worker tuning, and configurable table strategy — while sharing a single database connection pool.
+Goal: create two multi-topic example applications and supporting documentation as
+defined in `ROADMAP.md`.
 
-Architecture decision: **Coordinator Pattern** — a single `TopicWorkerCoordinator` Spring bean manages per-topic worker instances as plain Java objects; maintenance services receive a topic registry and iterate over configured topics.
+## Design Decision Record
 
----
-
-## Phase 1 — Schema and Repository: Topic Awareness
-
-### 1.1 Schema changes (no migration — library not in production)
-
-- `schema-liquibase/src/main/resources/db/changelog/superduper/001-init-schema-postgres.sql`
-  - Add column `topic VARCHAR(255) NOT NULL DEFAULT 'default'` to `messages` table.
-  - Drop index `idx_messages_message_key_id(key, id)`.
-  - Add composite index `idx_messages_topic_status_key_id(topic, status, message_key, id)`.
-- `schema-liquibase/src/main/resources/db/changelog/superduper/001-init-schema-mariadb.sql`
-  - Same column and index changes, MariaDB syntax.
-- Keep the `DEFAULT 'default'` in the schema so the column is never null even if the upsert somehow omits it; the application always supplies an explicit value.
-
-### 1.2 ClaimedMessage — add topic field
-
-- `repository-api/src/main/java/net/rsworld/superduper/repository/api/ClaimedMessage.java`
-  - Add `String topic` as the second field: `ClaimedMessage(Long id, String topic, ...)`.
-  - Update all call sites that construct or destructure the record.
-
-### 1.3 Repository API — add topic parameter
-
-- `repository-api/.../MessageIngestRepository.java`
-  - `upsertReadyMessage(String topic, String messageId, String messageKey, String content, Instant occurredAt, String correlationId, String messageType)`
-  - Topic becomes the first parameter for readability.
-- `repository-api/.../ReactiveMessageIngestRepository.java`
-  - Same signature change (returns `Mono<Void>`).
-- `repository-api/.../WorkerMessageRepository.java`
-  - `claimBatch(String workerId, int batchSize, int maxRetries, String topic)` — add topic param.
-  - `fetchClaimedForWorker(String workerId, String topic)` — add topic param.
-  - `findByStatus(String status, int limit, String topic)` — add topic param.
-  - `releaseMessages(List<Long> ids, String containerId)` — no change (operates by id).
-  - `markProcessed`, `markFailed`, `markStopped` — no change (operates by id + containerId).
-  - `redriveById(long id)` — no change (operates by id).
-  - `redriveByStatus(String status, int limit, String topic)` — add topic param.
-  - `countByStatus(String topic)` — add topic param.
-- `repository-api/.../ReactiveWorkerMessageRepository.java`
-  - Mirror the same changes.
-- `repository-api/.../WorkerMaintenanceRepository.java`
-  - `reclaimStaleProcessing(int orphanTimeoutSec, String topic)` — add topic.
-  - `reclaimMissingHeartbeats(int heartbeatWindowSec, String topic)` — add topic.
-  - `deleteProcessedOlderThan(int retentionDays, String topic)` — add topic.
-  - `deleteStoppedOlderThan(int retentionDays, String topic)` — add topic.
-  - `heartbeat(String workerId)` — no change (shared).
-  - `deleteStaleHeartbeats(int retentionDays)` — no change (shared).
-- `repository-api/.../ReactiveWorkerMaintenanceRepository.java`
-  - Mirror the same changes.
-
-### 1.4 SQL dialect updates
-
-Apply to all four dialect classes:
-- `repository-jdbc/.../PostgresJdbcSqlDialect.java`
-- `repository-jdbc/.../MariaDbJdbcSqlDialect.java`
-- `repository-r2dbc/.../PostgresR2dbcSqlDialect.java`
-- `repository-r2dbc/.../MariaDbR2dbcSqlDialect.java`
-
-Changes per dialect:
-- **upsertReadyMessageSql()** — add `topic` to INSERT column list and VALUES bind; ON CONFLICT/ON DUPLICATE KEY does not update `topic` (set once).
-- **claimBatchSql()** — add `AND m1.topic = :topic` to the candidate WHERE clause.
-- **fetchClaimedForWorkerSql()** — add `AND topic = :topic` to WHERE.
-- **findByStatusSql()** — add `AND topic = :topic` to WHERE.
-- **redriveByStatusSql()** — add `AND topic = :topic` to WHERE.
-- **countByStatusSql()** — add `WHERE topic = :topic` (currently unfiltered GROUP BY).
-- **reclaimStaleProcessingSql()** — add `AND topic = :topic`.
-- **reclaimMissingHeartbeatsSql()** — add `AND m.topic = :topic`.
-- **deleteProcessedOlderThanSql()** — add `AND topic = :topic`.
-- **deleteStoppedOlderThanSql()** — add `AND topic = :topic`.
-- **Row mapping** in fetch/find queries — map the `topic` column into the `ClaimedMessage` record.
-
-### 1.5 Repository implementation updates
-
-- `repository-jdbc/.../JdbcMessageIngestRepository.java` — pass topic to SQL bind params.
-- `repository-jdbc/.../JdbcWorkerMessageRepository.java` — pass topic to SQL bind params in claim, fetch, find, redrive, count.
-- `repository-jdbc/.../JdbcWorkerMaintenanceRepository.java` — pass topic to reclaim and delete SQL bind params.
-- R2DBC equivalents — same changes.
-
-### 1.6 Claim index migration scripts
-
-- `002-worker-claim-indexes-postgres.sql` — update to reflect the new composite index `(topic, status, message_key, id)`. Drop the old index if it exists separately.
-- `003-worker-claim-indexes-mariadb.sql` — same.
-
-### 1.7 Integration tests
-
-- Extend `JdbcWorkerMessageRepositoryIntegrationTest` and MariaDB variant:
-  - Insert rows for two topics with the same key `K`; claim for topic A must not block key `K` in topic B.
-  - Verify `ClaimedMessage.topic()` is correctly populated.
-- Extend `JdbcRedriveIntegrationTest` — redrive scoped to topic.
-- Extend `JdbcCleanupIntegrationTest` — cleanup scoped to topic.
-- Mirror all additions for R2DBC integration tests.
+- **Structure:** two new standalone example modules (option B).
+  - `examples/app-multitopic-shared` — shared `messages` table, two Kafka topics.
+  - `examples/app-multitopic-dedicated` — one table per Kafka topic.
+- **Stack coverage:** blocking only (option 2a). Reactive users extrapolate from the pattern.
+- **Topics:** `orders.events` and `invoices.events` (two Kafka topics, two handlers).
+- **Liquibase:** shared module reuses core `db.changelog-master.yaml`. Dedicated module
+  uses an extended changelog that includes the core master and adds per-topic table DDL
+  inside its own resources.
+- **Docker infrastructure:** reuse existing `docker-compose.yml` (Kafka auto-creates topics).
+- Existing `app-blocking` and `app-reactive` examples are **not modified**.
 
 ---
 
-## Phase 2 — Per-Topic Configuration Model
+## T-001 — Shared-Table Multi-Topic Example (ROADMAP Priority 1)
 
-### 2.1 TopicProperties
+### Scope
 
-- New class: `starter-autoselect/src/main/java/net/rsworld/superduper/starter/TopicProperties.java`
-- `@ConfigurationProperties(prefix = "superduper")` (binds the `topics` map at this level).
-- Fields:
-  ```java
-  Map<String, TopicConfig> topics = Collections.emptyMap();
-  ```
-- Inner record/class `TopicConfig`:
-  ```java
-  String kafkaTopic;       // actual Kafka topic name
-  String handler;          // bean name of MessageHandler / ReactiveMessageHandler
-  int batchSize = -1;      // -1 means "use global default"
-  int maxRetries = -1;     // -1 means "use global default"
-  String table = "";       // empty means shared table
-  ```
-- Annotate with `@EnableConfigurationProperties` in `AutoSelectConfiguration`.
+Create the `examples/app-multitopic-shared` Maven module. Two Kafka topics
+(`orders.events`, `invoices.events`) share one `messages` table.
 
-### 2.2 TopicRegistry
+### Files to Create
 
-- New class: `starter-autoselect/src/main/java/net/rsworld/superduper/starter/TopicRegistry.java`
-- Built by auto-configuration from `TopicProperties` + `WorkerProperties` (global defaults).
-- Holds a `List<ResolvedTopicConfig>` where each entry merges per-topic overrides with global defaults.
-- `ResolvedTopicConfig` record:
-  ```java
-  record ResolvedTopicConfig(
-      String name,             // logical name (map key)
-      String kafkaTopic,       // Kafka topic
-      String handlerBeanName,  // handler bean name
-      int batchSize,           // resolved (topic override or global)
-      int maxRetries,          // resolved
-      String table,            // "" for shared, otherwise custom table name
-      String claimLockName     // "superduper-claim-<name>"
-  ) {}
-  ```
-- Convenience: `List<String> kafkaTopics()` — returns all Kafka topic names (for consumer subscription).
+#### 1. `examples/app-multitopic-shared/pom.xml`
 
-### 2.3 Backward compatibility
+Maven module. Parent: `superduper-parent`. Artifact id: `example-app-multitopic-shared`.
 
-- When `superduper.topics` is empty:
-  - Build a single-entry `TopicRegistry` using `superduper.kafka.topic` (existing property), the single `MessageHandler` bean, and global defaults from `WorkerProperties`.
-  - The logical name is `"default"`, the topic column value is `"default"`.
-- Existing users require zero config changes.
+Dependencies (mirror `examples/app-blocking/pom.xml`):
+- `spring-boot-starter`
+- `spring-boot-starter-web`
+- `spring-boot-starter-jdbc`
+- `spring-boot-starter-actuator`
+- `micrometer-registry-prometheus`
+- `spring-kafka`
+- `postgresql`
+- `spring-boot-starter-liquibase`
+- `superduper-schema-liquibase`
+- `superduper-starter-autoselect`
+- `superduper-consumer-kafka-blocking`
 
----
+Build plugin: `spring-boot-maven-plugin` with `repackage` goal.
+Property: `<sonar.skip>true</sonar.skip>`.
 
-## Phase 3 — Consumer: Multi-Topic Ingest
+#### 2. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/SharedMultitopicApplication.java`
 
-### 3.1 Blocking consumer
+Standard `@SpringBootApplication` main class.
 
-- `consumer-kafka-blocking/.../KafkaConsumerService.java`
-  - `@KafkaListener` topics expression: derive from `TopicRegistry.kafkaTopics()` at auto-config time (inject as a bean property or use SpEL referencing the registry bean).
-  - In `onMessage(ConsumerRecord)`: extract `record.topic()` and look up the `ResolvedTopicConfig` from `TopicRegistry`.
-  - Pass the resolved topic name (or Kafka topic, depending on config — use the logical topic name for the `topic` column) to `messageIngestRepository.upsertReadyMessage(topic, ...)`.
-  - If a topic uses a dedicated table, resolve the correct `MessageIngestRepository` instance for that table (see Phase 5).
+#### 3. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/OrdersMessageHandler.java`
 
-### 3.2 Reactive consumer
+`@Component("ordersMessageHandler")` implementing `MessageHandler`.
 
-- `consumer-kafka-reactive/.../KafkaReactiveR2dbcConsumerService.java`
-  - Same changes, reactive variant.
+Behavior:
+- Log prefix `[Orders]`.
+- Same failure patterns as the existing blocking handler:
+  `always-fail` -> `FAILURE`, `retry-once` first attempt -> `FAILURE`, else `SUCCESS`.
+- Register progress with `SeedProgress`.
 
-### 3.3 Topic column value convention
+#### 4. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/InvoicesMessageHandler.java`
 
-- The `topic` column stores the **Kafka topic name** (`record.topic()`), not the logical config name. This is the most natural and debuggable value. The `TopicRegistry` lookup maps Kafka topic → config.
+`@Component("invoicesMessageHandler")` implementing `MessageHandler`.
 
-### 3.4 Tests
+Same pattern as `OrdersMessageHandler` but with log prefix `[Invoices]`.
 
-- Extend consumer integration tests to verify that records from different Kafka topics are persisted with the correct `topic` column value.
+#### 5. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/SeedProgress.java`
 
----
+Copy from `examples/app-blocking` (same latch-based tracking utility). Shared by both handlers.
 
-## Phase 4 — Worker: Per-Topic Claim and Handler Dispatch (Coordinator Pattern)
+#### 6. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/MultitopicSeeder.java`
 
-### 4.1 TopicWorkerInstance (POJO)
+`@Component` activated by `superduper.example.seed.enabled=true`.
 
-- New class: `worker-blocking/src/main/java/net/rsworld/superduper/worker/blocking/TopicWorkerInstance.java`
-- Constructor:
-  ```java
-  TopicWorkerInstance(
-      ResolvedTopicConfig topicConfig,
-      WorkerMessageRepository messageRepository,
-      PlatformTransactionManager txm,
-      LockingTaskExecutor lockExec,
-      MessageHandler handler,
-      SuperduperObserver observer,
-      String workerId)
-  ```
-- Methods:
-  - `void claimAndProcess()` — same logic as current `SuperDuperWorkerService.schedule()` but scoped to `topicConfig.kafkaTopic()`:
-    - ShedLock name: `topicConfig.claimLockName()` (e.g., `"superduper-claim-orders"`).
-    - `claimBatch(workerId, topicConfig.batchSize(), topicConfig.maxRetries(), topicConfig.kafkaTopic())`.
-    - `fetchClaimedForWorker(workerId, topicConfig.kafkaTopic())`.
-    - Handler: resolved from `topicConfig.handlerBeanName()`.
-  - Processing logic (per-key ordering, mark processed/failed/stopped) stays identical.
+Behavior:
+- On `ApplicationReadyEvent`, publish `count` messages to **each** of the two Kafka topics.
+- Use `keyCount` distinct keys per topic (e.g., `order-0..order-19`, `invoice-0..invoice-19`).
+- Same failure content patterns (`retry-once`, `always-fail`) as the existing seeder.
+- Wait for `SeedProgress` latch (expected total = 2 * count).
+- Read topic names from `superduper.topics` config keys and bootstrap servers from config.
 
-### 4.2 TopicWorkerCoordinator (Spring bean)
+Config properties consumed:
+- `superduper.kafka.bootstrap-servers`
+- `superduper.example.seed.enabled` (default `false`)
+- `superduper.example.seed.count` (default `500`, per topic)
+- `superduper.example.seed.keys` (default `20`, per topic)
+- `superduper.example.seed.await-timeout-seconds` (default `180`)
+- `superduper.example.seed.readiness-timeout-seconds` (default `30`)
 
-- New class: `worker-blocking/src/main/java/net/rsworld/superduper/worker/blocking/TopicWorkerCoordinator.java`
-- Single Spring bean created by auto-configuration.
-- Constructor receives:
-  - `TopicRegistry topicRegistry`
-  - `WorkerMessageRepository messageRepository` (shared-table instance)
-  - `PlatformTransactionManager txm`
-  - `LockingTaskExecutor lockExec`
-  - `Map<String, MessageHandler> handlers` (all handler beans by name)
-  - `SuperduperObserver observer`
-  - `WorkerProperties workerProperties`
-- On construction:
-  - For each `ResolvedTopicConfig` in the registry, create a `TopicWorkerInstance`.
-  - Resolve the handler bean from the `handlers` map using `topicConfig.handlerBeanName()`.
-  - If topic uses a dedicated table, create a dedicated `WorkerMessageRepository` (see Phase 5).
-- Implements `SmartLifecycle` or uses `@PostConstruct` / `@PreDestroy`:
-  - On start: register a `ScheduledFuture` per topic with `TaskScheduler`, using the global `claim-interval-ms`.
-  - On stop: cancel all scheduled tasks.
-- The `TaskScheduler` bean is created in auto-configuration (or use an existing one).
+#### 7. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/MultitopicOperatorEndpoints.java`
 
-### 4.3 Reactive variant
+Copy of `ExampleBlockingOperatorEndpoints` adapted for the new package.
+Same `/ops/queue`, `/ops/messages`, `/ops/redrive/{id}`, `/ops/redrive` endpoints.
 
-- New class: `worker-reactive/.../ReactiveTopicWorkerInstance.java` — same pattern, reactive.
-- New class: `worker-reactive/.../ReactiveTopicWorkerCoordinator.java` — same pattern, reactive.
+#### 8. `examples/app-multitopic-shared/src/main/resources/application.yml`
 
-### 4.4 Deprecate / refactor existing worker services
+```yaml
+spring:
+  application:
+    name: superduper-example-multitopic-shared
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcInitializationAutoConfiguration
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcTransactionManagerAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcRepositoriesAutoConfiguration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/superduper}
+    username: ${SPRING_DATASOURCE_USERNAME:superduper}
+    password: ${SPRING_DATASOURCE_PASSWORD:superduper}
+  liquibase:
+    change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
 
-- `SuperDuperWorkerService` — keep as-is for now; the coordinator internally creates `TopicWorkerInstance` objects that reuse the same processing logic. Extract shared processing logic into a package-private helper if needed to avoid duplication.
-- Alternatively, refactor `SuperDuperWorkerService` so its core logic is in a method that `TopicWorkerInstance` delegates to. The `@Scheduled` method in the old service class is only used in backward-compatible single-topic mode (but since backward compat is handled by the coordinator with a single-entry registry, the old `@Scheduled` class can be removed).
-- **Decision: remove the old `SuperDuperWorkerService` `@Scheduled` bean.** The coordinator handles both single-topic (backward compat) and multi-topic modes. This avoids duplicate scheduling.
+superduper:
+  db:
+    dialect: ${SUPERDUPER_DB_DIALECT:postgres}
+  consumer:
+    type: spring
+  observability:
+    enabled: true
+    outputs:
+      metrics:
+        enabled: true
+  kafka:
+    bootstrap-servers: ${SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    group-id: example-multitopic-shared
+  topics:
+    orders:
+      kafka-topic: orders.events
+      handler: ordersMessageHandler
+      batch-size: 200
+      max-retries: 5
+    invoices:
+      kafka-topic: invoices.events
+      handler: invoicesMessageHandler
+  worker:
+    max-retries: 3
+    claim-interval-ms: 2000
+    batch-size: 500
+    queue-health:
+      enabled: true
+      interval-ms: 30000
+    retention:
+      enabled: true
+      processed-retention-days: 14
+      stopped-retention-days: 30
+      heartbeat-retention-days: 1
+      interval-ms: 86400000
+  example:
+    seed:
+      enabled: false
+      count: 500
+      keys: 20
+      await-timeout-seconds: 180
+      readiness-timeout-seconds: 30
 
-### 4.5 HeartbeatService
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
-- Stays shared — one heartbeat per container, unchanged.
-- No topic awareness needed.
+logging:
+  level:
+    root: INFO
+```
 
-### 4.6 Maintenance services become topic-aware
+No `table` field on either topic entry — both use the default shared `messages` table.
 
-- **OrphanReclaimer** (`worker-blocking/.../OrphanReclaimer.java`):
-  - Inject `TopicRegistry`.
-  - In `reclaim()`, iterate over all topics and call `reclaimStaleProcessing(timeout, topic)` + `reclaimMissingHeartbeats(window, topic)` for each.
-  - Sum reclaimed counts across topics for observation.
-- **CleanupService** (`worker-blocking/.../CleanupService.java`):
-  - Inject `TopicRegistry`.
-  - Iterate over topics; call `deleteProcessedOlderThan(days, topic)` and `deleteStoppedOlderThan(days, topic)` per topic.
-  - `deleteStaleHeartbeats` remains topic-agnostic (heartbeats are shared).
-- **RedriveService** (`worker-blocking/.../RedriveService.java`):
-  - Add topic parameter to `redriveBatch(String status, int limit, String topic)` and `inspect(String status, int limit, String topic)`.
-  - `redriveOne(long id)` stays topic-agnostic (operates by id).
-- **QueueHealthService** (`worker-blocking/.../QueueHealthService.java`):
-  - Inject `TopicRegistry`.
-  - In `poll()`, call `countByStatus(topic)` per topic.
-  - Emit separate `queueBacklogObserved` per topic (with topic tag).
-- Apply same changes to all reactive maintenance service variants.
+### Files to Modify
 
-### 4.7 Tests
+| File | Change |
+|---|---|
+| `pom.xml` (root) | Add `<module>examples/app-multitopic-shared</module>` |
 
-- Unit test `TopicWorkerCoordinator`:
-  - Two topics with different handlers — verify each handler is invoked for its topic's messages only.
-  - Verify per-topic ShedLock names.
-- Unit test `TopicWorkerInstance`:
-  - Same per-key ordering guarantees, scoped to a topic.
-- Integration tests:
-  - End-to-end: produce to two topics → consume → two workers claim independently → correct handlers invoked.
-- Update existing `SuperDuperWorkerServiceTest` and integration tests to pass topic parameter.
+### Validation
 
----
+- `mvn -q -DskipTests test-compile` passes with the new module.
+- `mvn -T 1C -q test` passes (no regressions).
+- Running with seed enabled produces messages in the shared `messages` table with
+  distinct `topic` values (`orders.events`, `invoices.events`).
 
-## Phase 5 — Separate Table Strategy (Opt-In)
+### Acceptance Criteria
 
-### 5.1 Per-topic repository instances
-
-- When `ResolvedTopicConfig.table()` is non-empty (e.g., `"orders_messages"`):
-  - The coordinator creates a dedicated SQL dialect instance: `new PostgresJdbcSqlDialect("orders_messages", "container_heartbeats")` (dialects already accept table names via constructor).
-  - Wraps it in a dedicated `JdbcWorkerMessageRepository` and `JdbcMessageIngestRepository`.
-  - The `TopicWorkerInstance` and consumer use the dedicated repository for that topic.
-- Shared tables (`shedlock`, `container_heartbeats`) remain single-instance.
-
-### 5.2 Repository factory
-
-- New class: `starter-autoselect/.../RepositoryFactory.java`
-  - `WorkerMessageRepository createWorkerRepository(String tableName)` — constructs dialect + repository for the given table.
-  - `MessageIngestRepository createIngestRepository(String tableName)` — same.
-  - Reactive variants.
-- The factory is injected into the coordinator and consumer to resolve per-topic repositories.
-
-### 5.3 Liquibase template
-
-- New file: `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-postgres.sql`
-  - Parameterized CREATE TABLE using Liquibase property `${table.name}`.
-  - Same columns, constraints, and indexes as the main `messages` table.
-- New file: `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-mariadb.sql`
-  - Same, MariaDB syntax.
-- Document in `docs/USAGE.md` how to include the template with a custom table name.
-
-### 5.4 Tests
-
-- Integration test: configure one topic with a dedicated table, another with the shared table. Verify isolation — rows in the dedicated table are invisible to shared-table queries.
+1. `examples/app-multitopic-shared` compiles as part of the reactor build.
+2. The app starts successfully.
+3. Two independent Kafka topics are consumed and persisted to the shared `messages` table.
+4. Worker runs per-topic claim loops (verified by log output showing topic dimension).
+5. Seeder publishes to both topics and waits for handler completion.
+6. `SELECT topic, COUNT(*) FROM messages GROUP BY topic;` shows rows for both topics.
+7. Per-key ordering holds for each topic independently.
 
 ---
 
-## Phase 6 — Observability: Topic Dimension
+## T-002 — Dedicated-Table Multi-Topic Example (ROADMAP Priority 2)
 
-### 6.1 Observation records
+### Scope
 
-- `observability-api/.../WorkerObservation.java`
-  - Add `String topic` field (after `mode`).
-- `observability-api/.../MaintenanceObservation.java`
-  - Add `String topic` field. Use `"all"` or `"*"` for operations that span all topics (e.g., heartbeat).
-- `ConsumerObservation` — already has a `topic` field. No change needed.
+Create the `examples/app-multitopic-dedicated` Maven module. Each Kafka topic writes
+to its own message table (`orders_messages`, `invoices_messages`), with Liquibase
+wiring to create those tables.
 
-### 6.2 LoggingSuperduperObserver
+### Files to Create
 
-- `observability-logging/.../LoggingSuperduperObserver.java`
-  - Include `topic={}` in all worker and maintenance structured log lines.
+#### 1. `examples/app-multitopic-dedicated/pom.xml`
 
-### 6.3 MetricsSuperduperObserver
+Same dependency set as T-001's module. Artifact id: `example-app-multitopic-dedicated`.
 
-- `observability-metrics/.../MetricsSuperduperObserver.java`
-  - Add `topic` tag to all worker meters (`superduper.worker.claim.total`, `superduper.worker.processed.total`, etc.).
-  - Add `topic` tag to maintenance meters.
-  - The `topic` tag on consumer meters already exists (based on `ConsumerObservation.topic()`); verify it works.
-  - Queue backlog gauges: emit per-topic gauges with a `topic` tag.
+#### 2. `examples/app-multitopic-dedicated/src/main/java/net/rsworld/superduper/example/multitopic/dedicated/DedicatedMultitopicApplication.java`
 
-### 6.4 Tests
+Standard `@SpringBootApplication` main class.
 
-- Update `MetricsSuperduperObserverTest` to verify topic tags are present on worker and maintenance meters.
-- Update logging observer tests to verify topic field in structured output.
+#### 3. Handler + support classes
+
+Same set of classes as T-001, adapted for the `dedicated` package:
+- `OrdersMessageHandler.java`
+- `InvoicesMessageHandler.java`
+- `SeedProgress.java`
+- `MultitopicSeeder.java`
+- `MultitopicOperatorEndpoints.java`
+
+These can be near-identical copies. The handler and seeder logic is the same;
+only the package name and application name differ.
+
+#### 4. `examples/app-multitopic-dedicated/src/main/resources/application.yml`
+
+Same base config as T-001 except:
+- `spring.application.name: superduper-example-multitopic-dedicated`
+- `spring.liquibase.change-log` points to the dedicated changelog.
+- `superduper.kafka.group-id: example-multitopic-dedicated`
+- Each topic entry includes an explicit `table`:
+
+```yaml
+superduper:
+  topics:
+    orders:
+      kafka-topic: orders.events
+      handler: ordersMessageHandler
+      batch-size: 200
+      max-retries: 5
+      table: orders_messages
+    invoices:
+      kafka-topic: invoices.events
+      handler: invoicesMessageHandler
+      table: invoices_messages
+```
+
+Liquibase override:
+
+```yaml
+spring:
+  liquibase:
+    change-log: classpath:db/changelog/multitopic-dedicated/db.changelog-dedicated.yaml
+```
+
+#### 5. `examples/app-multitopic-dedicated/src/main/resources/db/changelog/multitopic-dedicated/db.changelog-dedicated.yaml`
+
+Extended changelog:
+
+```yaml
+databaseChangeLog:
+  - include:
+      file: db/changelog/superduper/db.changelog-master.yaml
+  - changeSet:
+      id: multitopic-001-orders-messages-postgres
+      author: superduper-example
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/multitopic-dedicated/orders-messages-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: multitopic-002-invoices-messages-postgres
+      author: superduper-example
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/multitopic-dedicated/invoices-messages-postgres.sql
+            relativeToChangelogFile: false
+```
+
+Includes the core master first (creates `shedlock`, `container_heartbeats`, and default
+`messages` — the default table is harmless), then adds per-topic tables.
+
+#### 6. `examples/app-multitopic-dedicated/src/main/resources/db/changelog/multitopic-dedicated/orders-messages-postgres.sql`
+
+Concrete instantiation of `topic-messages-template-postgres.sql` with table name
+`orders_messages` (literal replacement of `${table.name}`).
+
+#### 7. `examples/app-multitopic-dedicated/src/main/resources/db/changelog/multitopic-dedicated/invoices-messages-postgres.sql`
+
+Same template, table name `invoices_messages`.
+
+### Files to Modify
+
+| File | Change |
+|---|---|
+| `pom.xml` (root) | Add `<module>examples/app-multitopic-dedicated</module>` |
+
+### Validation
+
+- `mvn -q -DskipTests test-compile` passes.
+- `mvn -T 1C -q test` passes.
+- Running with seed enabled creates `orders_messages` and `invoices_messages` tables
+  and persists topic traffic to the correct dedicated tables.
+
+### Acceptance Criteria
+
+1. `examples/app-multitopic-dedicated` compiles as part of the reactor build.
+2. The app starts successfully.
+3. Liquibase creates `orders_messages` and `invoices_messages` at startup.
+4. Orders traffic lands exclusively in `orders_messages`.
+5. Invoices traffic lands exclusively in `invoices_messages`.
+6. The default `messages` table remains empty (or is ignored).
+7. Worker claim, maintenance, and queue-health operations route to the correct
+   per-topic table (verified by logs showing topic + table dimension).
+8. `SELECT COUNT(*) FROM orders_messages;` and `SELECT COUNT(*) FROM invoices_messages;`
+   show the expected row counts.
+9. Per-key ordering holds within each dedicated table.
 
 ---
 
-## Phase 7 — Auto-Configuration Wiring
+## T-003 — Documentation and Comparison (ROADMAP Priority 3)
 
-### 7.1 AutoSelectConfiguration changes
+### Scope
 
-- `starter-autoselect/.../AutoSelectConfiguration.java`
-  - Add `@EnableConfigurationProperties({..., TopicProperties.class})`.
-  - New `@Bean TopicRegistry topicRegistry(TopicProperties, WorkerProperties, @Value("${superduper.kafka.topic:}") String legacyTopic)` — builds the registry with backward-compat fallback.
-  - New `@Bean TaskScheduler superduperTaskScheduler()` — shared scheduler for coordinator.
-  - Replace `@Bean SuperDuperWorkerService` with `@Bean TopicWorkerCoordinator` (blocking path).
-  - Replace `@Bean SuperDuperWorkerReactiveService` with `@Bean ReactiveTopicWorkerCoordinator` (reactive path).
-  - Inject `Map<String, MessageHandler>` (or `Map<String, ReactiveMessageHandler>`) into coordinator bean creation.
-  - `@Bean RepositoryFactory` — for per-topic dedicated table support.
-  - Update `OrphanReclaimer`, `CleanupService`, `QueueHealthService` bean definitions to inject `TopicRegistry`.
-  - Update `RedriveService` bean definition — topic parameter is caller-supplied, no registry injection needed (caller specifies which topic to redrive).
+Update project documentation to cover both multi-topic examples, add a
+shared-vs-dedicated comparison table, and add a verification script.
 
-### 7.2 Consumer auto-configuration
+### Files to Create
 
-- Inject `TopicRegistry` into consumer beans.
-- Derive Kafka topic list from `topicRegistry.kafkaTopics()`.
-- Inject `RepositoryFactory` for dedicated-table topic routing.
+#### 1. `examples/verify-multitopic.sh`
 
-### 7.3 Backward compatibility verification
+Bash script that:
+1. Accepts `--mode shared|dedicated` argument.
+2. Connects to Postgres (`localhost:5432`, `superduper`/`superduper`).
+3. Runs SQL assertions for the chosen mode:
+   - **shared:** counts per topic in `messages`, per-key ordering check.
+   - **dedicated:** counts in `orders_messages` and `invoices_messages`, per-key ordering.
+4. Prints PASS/FAIL for each assertion.
 
-- When `superduper.topics` map is empty and `superduper.kafka.topic` is set:
-  - `TopicRegistry` contains one entry: logical name `"default"`, Kafka topic from legacy property, single `MessageHandler` bean, global defaults.
-  - All behavior is identical to v0.4.x.
-- When neither is set: fail fast with a clear error message.
+### Files to Modify
 
----
+#### 1. `docs/EXAMPLES.md`
 
-## Phase 8 — Documentation and Examples
+Add a new section **"Multi-Topic Examples"** (after the existing content) with subsections:
 
-### 8.1 docs/USAGE.md
+- **Shared-Table Mode (`app-multitopic-shared`):**
+  - Run steps: `docker compose up -d`, then `mvn -pl examples/app-multitopic-shared -am spring-boot:run -Dspring-boot.run.jvmArguments="-Dsuperduper.example.seed.enabled=true"`
+  - Config highlights (no `table` field).
+  - Expected SQL assertions (per-topic counts in shared `messages`).
+- **Dedicated-Table Mode (`app-multitopic-dedicated`):**
+  - Run steps: same infrastructure, different module path.
+  - Config highlights (`table: orders_messages` / `table: invoices_messages`).
+  - Liquibase wiring explanation.
+  - Expected SQL assertions (per-table counts).
+- **Verification:** how to run `verify-multitopic.sh` for each mode.
+- **SQL Assertions:** expected counts and per-key ordering queries for both modes.
 
-- Add multi-topic configuration reference with YAML examples.
-- Document separate-table opt-in pattern with Liquibase include instructions.
-- Document handler bean naming convention.
+Expected SQL assertions per mode (assuming `count=500` per topic, `max-retries=3`):
 
-### 8.2 docs/ARCHITECTURE.md
+Shared mode:
 
-- Update data flow diagram to show per-topic routing.
-- Add coordinator pattern description.
-- Update module map with new classes.
+| Query | Expected |
+|---|---|
+| `SELECT COUNT(*) FROM messages;` | `1000` |
+| `SELECT topic, COUNT(*) FROM messages GROUP BY topic;` | `orders.events: 500`, `invoices.events: 500` |
+| `SELECT COUNT(*) FROM messages WHERE status = 'PROCESSED';` | `975` |
+| `SELECT COUNT(*) FROM messages WHERE status = 'STOPPED';` | `25` |
 
-### 8.3 README.md
+Dedicated mode:
 
-- Update data model section: add `topic` column to the messages table description.
-- Add a brief multi-topic overview in features.
+| Query | Expected |
+|---|---|
+| `SELECT COUNT(*) FROM orders_messages;` | `500` |
+| `SELECT COUNT(*) FROM invoices_messages;` | `500` |
+| Per-table status distributions match the same ratios | |
 
-### 8.4 Examples
+#### 2. `docs/USAGE.md`
 
-- Update `examples/app-blocking` to demonstrate two-topic configuration with two handlers.
-- Or add a new `examples/app-multi-topic` if the single-topic example should remain simple.
+Add a **"Shared vs. Dedicated Table Comparison"** subsection after the existing
+multi-topic configuration section (after line 88):
+
+| Concern | Shared Table | Dedicated Table |
+|---|---|---|
+| Schema overhead | Single `messages` table, no extra DDL | One table per topic, Liquibase changesets needed |
+| Operational simplicity | One table to monitor, backup, index | Per-topic tables to manage independently |
+| Query isolation | `WHERE topic = :topic` filter | Full table-level isolation |
+| Index contention | All topics share the same indexes | Each table has its own index set |
+| Scaling model | Homogeneous topics, similar SLAs | Heterogeneous topics, independent retention/compliance |
+| Maintenance routing | Same repository, topic predicate | Separate repository instance per table |
+| Recommended when | Few topics, similar volume and latency | Many topics, varying SLAs, regulatory isolation |
+
+Add a **"Recommended Use-Cases"** paragraph:
+- Shared table: up to ~10 homogeneous topics, uniform SLAs, simpler ops.
+- Dedicated tables: compliance/audit isolation, independent scaling or retention,
+  very high per-topic volume where index contention matters.
+
+#### 3. `README.md`
+
+Add bullets under the **Examples** section:
+- `examples/app-multitopic-shared` — multi-topic example with a shared `messages` table (blocking).
+- `examples/app-multitopic-dedicated` — multi-topic example with per-topic tables (blocking).
+
+Link to `docs/EXAMPLES.md#multi-topic-examples`.
+
+### Validation
+
+- Documentation renders correctly (no broken links).
+- `verify-multitopic.sh` runs against a seeded database and reports PASS for all assertions.
+
+### Acceptance Criteria
+
+1. `docs/EXAMPLES.md` has run steps for both examples with SQL assertions.
+2. `docs/USAGE.md` has a comparison table: shared vs. dedicated.
+3. `README.md` links to both multi-topic examples.
+4. `verify-multitopic.sh` passes for both `--mode shared` and `--mode dedicated` after seeding.
+5. Both examples run locally with `docker compose up -d` + the app.
+6. Both process at least two Kafka topics.
+7. Behavior matches documented table strategy.
 
 ---
 
 ## Implementation Order
 
-| Step | Phase | Depends On | Estimated Scope |
-|------|-------|-----------|----------------|
-| 1 | Phase 1 (Schema + Repository) | — | Foundation; all other phases depend on this |
-| 2 | Phase 2 (Config Model) | — | Can start in parallel with Phase 1 |
-| 3 | Phase 6 (Observability) | Phase 1 | Small; observation records updated early so workers can emit topic |
-| 4 | Phase 3 (Consumer) | Phase 1, 2 | Consumer passes topic through |
-| 5 | Phase 4 (Worker Coordinator) | Phase 1, 2, 3, 6 | Core orchestration change |
-| 6 | Phase 5 (Separate Table) | Phase 4 | Opt-in extension |
-| 7 | Phase 7 (Auto-Config) | Phase 2, 4, 5 | Wiring; done incrementally alongside Phases 4–5 |
-| 8 | Phase 8 (Docs + Examples) | All above | Final |
+T-001 -> T-002 -> T-003 (sequential; each builds on the prior).
 
----
+## Notes for Implementer
 
-## Risk Notes
+- Mirror the code style and patterns from `examples/app-blocking`.
+- Use `@Component("beanName")` for handler bean naming (not `@Bean` methods),
+  consistent with the existing example.
+- The seeder needs to discover topic names. Simplest approach: inject the resolved
+  `TopicRegistry` and iterate its Kafka topic names, or accept a property list.
+- For the verification script, use `psql` with `--tuples-only` for parseable output.
+- Run `mvn -q spotless:apply` after every code change.
+- Run `mvn -q -DskipTests test-compile` for fast validation.
+- Run `mvn -T 1C -q test` before finishing.
 
-- **ShedLock table sharing**: All per-topic claim locks share the same `shedlock` table. This is fine — ShedLock is designed for this. Lock names just need to be unique per topic (e.g., `superduper-claim-orders`).
-- **Backward compatibility**: The single-topic fallback is critical. Must be covered by existing tests running unchanged against the new code.
-- **Test matrix**: Each SQL change must be verified for both PostgreSQL and MariaDB, both JDBC and R2DBC — 4 combinations.
-- **Claim index performance**: The new composite index `(topic, status, message_key, id)` replaces `(message_key, id)`. Verify via EXPLAIN that claim queries still use the index efficiently with the topic predicate. The existing `JdbcWorkerClaimExplainIntegrationTest` should be extended.
+## Validation
+
+- `mvn -q -DskipTests test-compile`
+- `mvn -T 1C -q test`

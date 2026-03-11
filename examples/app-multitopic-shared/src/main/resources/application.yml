@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: superduper-example-multitopic-shared
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcInitializationAutoConfiguration
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcTransactionManagerAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcRepositoriesAutoConfiguration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/superduper}
+    username: ${SPRING_DATASOURCE_USERNAME:superduper}
+    password: ${SPRING_DATASOURCE_PASSWORD:superduper}
+  liquibase:
+    change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
+
+superduper:
+  db:
+    dialect: ${SUPERDUPER_DB_DIALECT:postgres}
+  consumer:
+    type: spring
+  observability:
+    enabled: true
+    outputs:
+      metrics:
+        enabled: true
+  kafka:
+    bootstrap-servers: ${SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    group-id: example-multitopic-shared
+  topics:
+    orders:
+      kafka-topic: orders.events
+      handler: ordersMessageHandler
+      batch-size: 200
+      max-retries: 5
+    invoices:
+      kafka-topic: invoices.events
+      handler: invoicesMessageHandler
+  worker:
+    max-retries: 3
+    claim-interval-ms: 2000
+    batch-size: 500
+    queue-health:
+      enabled: true
+      interval-ms: 30000
+    retention:
+      enabled: true
+      processed-retention-days: 14
+      stopped-retention-days: 30
+      heartbeat-retention-days: 1
+      interval-ms: 86400000
+  example:
+    seed:
+      enabled: false
+      count: 500
+      keys: 20
+      await-timeout-seconds: 180
+      readiness-timeout-seconds: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
