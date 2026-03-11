@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - property:
+      name: table.name
+      value: invoices_messages
+      global: false
+  - changeSet:
+      id: multitopic-002-invoices-messages-postgres
+      author: superduper-example
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/topic-messages-template-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: multitopic-002-invoices-messages-mariadb
+      author: superduper-example
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/topic-messages-template-mariadb.sql
+            relativeToChangelogFile: false

@@ -254,7 +254,7 @@ mvn -T 1C test
 
 ## Examples
 
-Two runnable apps are included:
+Four runnable apps are included:
 
 - `examples/app-blocking` — classic, blocking JDBC + Spring Kafka.
 - `examples/app-multitopic-shared` — multi-topic example with a shared `messages` table (blocking).

@@ -1,19 +1,9 @@
 databaseChangeLog:
   - include:
       file: db/changelog/superduper/db.changelog-master.yaml
-  - changeSet:
-      id: multitopic-001-orders-messages-postgres
-      author: superduper-example
-      dbms: postgresql
-      changes:
-        - sqlFile:
-            path: db/changelog/multitopic-dedicated/orders-messages-postgres.sql
-            relativeToChangelogFile: false
-  - changeSet:
-      id: multitopic-002-invoices-messages-postgres
-      author: superduper-example
-      dbms: postgresql
-      changes:
-        - sqlFile:
-            path: db/changelog/multitopic-dedicated/invoices-messages-postgres.sql
-            relativeToChangelogFile: false
+  - include:
+      file: db/changelog/multitopic-dedicated/orders-messages.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/multitopic-dedicated/invoices-messages.yaml
+      relativeToChangelogFile: false
