@@ -525,8 +525,8 @@ Regression warning signs:
 
 Reference the Liquibase changelogs for required indexes:
 
-- `schema-liquibase/src/main/resources/db/changelog/superduper/002-worker-claim-indexes-postgres.sql`
-- `schema-liquibase/src/main/resources/db/changelog/superduper/003-worker-claim-indexes-mariadb.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-postgres.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-mariadb.sql`
 
 ## Consumer Metadata SPI
 

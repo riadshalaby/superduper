@@ -19,7 +19,7 @@ CREATE INDEX idx_${table.name}_topic_status_key_id
     ON ${table.name} (topic, status, message_key, id);
 
 CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
-    ON ${table.name} (topic, status, container_id, message_key, id);
+    ON ${table.name} (status, container_id(191), topic(191), message_key(191), id);
 
 CREATE INDEX idx_${table.name}_processing_stale_status_last_updated
     ON ${table.name} (topic, status, last_updated);

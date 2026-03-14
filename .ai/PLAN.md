@@ -6,6 +6,146 @@ Goal: deliver robust multi-topic runtime tooling, clean dedicated-mode schema, a
 
 ---
 
+## Phase 4 — Shared-Mode Schema Template Consolidation (T-004)
+
+### Objective
+
+Eliminate schema duplication between shared-mode SQL files and dedicated-mode templates by making `topic-messages-template-*.sql` the single source of truth for all message table creation (both shared and dedicated modes). Delete the redundant `001-init-messages-*.sql` and `002/003-worker-claim-indexes-*.sql` files.
+
+### Background
+
+The T-002 review identified two duplication issues:
+
+1. **`001-init-messages-postgres.sql`** and **`001-init-messages-mariadb.sql`** are non-parameterized copies of `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`, with `messages` hardcoded where templates use `${table.name}`.
+2. **`002-worker-claim-indexes-postgres.sql`** and **`003-worker-claim-indexes-mariadb.sql`** contain claim indexes that are already present in the templates. In shared mode, `idx_messages_topic_status_key_id` is created twice — once in `001-init-messages-*.sql` and again (with `IF NOT EXISTS`) in `002/003-worker-claim-indexes-*.sql`.
+
+Since there are no existing users, changeset IDs can be freely reassigned.
+
+### Deliverables
+
+#### 1. Rewrite `db.changelog-master.yaml`
+
+Replace the four message/claim-index changesets with a property declaration and two template-based changesets, following the same pattern used by `orders-messages.yaml` and `invoices-messages.yaml` in dedicated mode:
+
+```yaml
+databaseChangeLog:
+  - include:
+      file: db/changelog/superduper/db.changelog-infra.yaml
+  - property:
+      name: table.name
+      value: messages
+      global: false
+  - changeSet:
+      id: 003-init-messages-postgres
+      author: superduper
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/topic-messages-template-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 004-init-messages-mariadb
+      author: superduper
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/topic-messages-template-mariadb.sql
+            relativeToChangelogFile: false
+```
+
+Key changes from the current version:
+- **Property `table.name=messages`** added with `global: false` (scoped to this changelog).
+- **Changesets 003/004** now reference `topic-messages-template-*.sql` instead of `001-init-messages-*.sql`. The templates create the table AND all three indexes in one pass.
+- **Changesets 005/006** (claim indexes) removed entirely — the templates already include all claim indexes.
+
+#### 2. Delete four redundant SQL files
+
+Delete from `schema-liquibase/src/main/resources/db/changelog/superduper/`:
+
+| File | Reason |
+|------|--------|
+| `001-init-messages-postgres.sql` | Replaced by `topic-messages-template-postgres.sql` with `table.name=messages` |
+| `001-init-messages-mariadb.sql` | Replaced by `topic-messages-template-mariadb.sql` with `table.name=messages` |
+| `002-worker-claim-indexes-postgres.sql` | Claim indexes already in `topic-messages-template-postgres.sql` |
+| `003-worker-claim-indexes-mariadb.sql` | Claim indexes already in `topic-messages-template-mariadb.sql` |
+
+Note: The `DROP INDEX IF EXISTS idx_messages_message_key_id` legacy migration in the claim index files is no longer needed — there are no existing users with the old index name, and the templates create tables fresh.
+
+#### 3. Update documentation
+
+Three documentation files reference the deleted SQL files and must be updated.
+
+**`README.md`** (line 128):
+
+Replace:
+```
+**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus the processing/reclaim indexes shown in `002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`.
+```
+
+With:
+```
+**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus processing/reclaim indexes, all defined in `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`.
+```
+
+**`docs/USAGE.md`** (lines 526–529):
+
+Replace the claim index file references:
+```
+- `schema-liquibase/src/main/resources/db/changelog/superduper/002-worker-claim-indexes-postgres.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/003-worker-claim-indexes-mariadb.sql`
+```
+
+With:
+```
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-postgres.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-mariadb.sql`
+```
+
+**`docs/ARCHITECTURE.md`** (lines 20, 125, 128):
+
+Update the module table (line 20) — remove `001-init-messages-postgres.sql`, `001-init-messages-mariadb.sql`, `002-worker-claim-indexes-postgres.sql`, `003-worker-claim-indexes-mariadb.sql` and add `topic-messages-template-postgres.sql`, `topic-messages-template-mariadb.sql`.
+
+Update the Database Dialect Support table:
+- "shared messages schema" row: change from `001-init-messages-*.sql` to `topic-messages-template-*.sql` (with note: `table.name=messages`)
+- "claim indexes" row: change from `002/003-worker-claim-indexes-*.sql` to `topic-messages-template-*.sql` (bundled with table creation)
+
+#### 4. No changes to templates or dedicated-mode files
+
+The following files are **not modified**:
+- `topic-messages-template-postgres.sql` — already correct
+- `topic-messages-template-mariadb.sql` — already correct
+- `db.changelog-infra.yaml` — unchanged
+- `db.changelog-dedicated.yaml` — unchanged
+- `orders-messages.yaml` — unchanged
+- `invoices-messages.yaml` — unchanged
+
+#### 5. No changes to integration tests
+
+The existing integration tests should pass without modification:
+
+- **`SharedMultitopicLiquibaseIntegrationTest`** — asserts `messages` table, `container_heartbeats`, `shedlock`, and all three indexes (`idx_messages_topic_status_key_id`, `idx_messages_processing_worker_key_id`, `idx_messages_processing_last_updated`). The templates create exactly these indexes when `table.name=messages`.
+- **`DedicatedMultitopicLiquibaseIntegrationTest`** — unchanged (uses `db.changelog-dedicated.yaml` which is not modified).
+
+### Implementation Notes
+
+- The Liquibase `property` with `global: false` scopes `table.name` to the declaring changelog. This is the same mechanism used by the dedicated-mode topic YAML files.
+- After consolidation, the schema-liquibase SQL file inventory is:
+  - `001-init-infra-postgres.sql` — infrastructure tables (postgres)
+  - `001-init-infra-mariadb.sql` — infrastructure tables (mariadb)
+  - `topic-messages-template-postgres.sql` — parameterized messages table + indexes (postgres)
+  - `topic-messages-template-mariadb.sql` — parameterized messages table + indexes (mariadb)
+- Both shared mode (`db.changelog-master.yaml` with `table.name=messages`) and dedicated mode (per-topic YAML files with `table.name=<topic>_messages`) now use the same templates. One definition, many tables.
+
+### Validation
+
+- `mvn -q spotless:apply` — formatting
+- `mvn -q -DskipTests test-compile` — compile check
+- `mvn -T 1C -q test` — all tests including shared and dedicated Liquibase integration tests
+- Verify that exactly 4 SQL files remain in `schema-liquibase/src/main/resources/db/changelog/superduper/` (2 infra + 2 templates)
+- Verify `db.changelog-master.yaml` has no references to deleted files
+
+---
+
 ## Phase 1 — Runtime Script for Multi-Topic Modes (T-001)
 
 ### Objective

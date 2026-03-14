@@ -125,7 +125,7 @@ container_heartbeats(container_id PRIMARY KEY, last_heartbeat TIMESTAMP)
 shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), locked_by VARCHAR(255))
 ```
 
-**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus the processing/reclaim indexes shown in `002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`.
+**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus processing/reclaim indexes, all defined in `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`.
 
 ---
 

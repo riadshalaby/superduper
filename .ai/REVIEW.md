@@ -1,16 +1,131 @@
 # Review — 0.5.2-SNAPSHOT
 
-Status: **pending**
+Status: **complete**
 
 Review Round: **1**
 
-Reviewed: YYYY-MM-DD
+Reviewed: 2026-03-14
 
-## Findings
-- Pending review.
+Commit: `08f48fb` — `feat: add multitopic runtime tooling and schema split`
 
-## Open Questions
-- None.
+---
 
 ## Verdict
-`PENDING`
+
+`PASS_WITH_NOTES`
+
+All three tasks (T-001, T-002, T-003) meet their acceptance criteria. No required fixes.
+
+**Note:** Schema duplication between shared-mode SQL files and dedicated-mode templates identified during review. Tracked as follow-up task **T-004**.
+
+---
+
+## T-001 — Runtime Script for Multi-Topic Modes
+
+**Verdict: PASS**
+
+### Acceptance Criteria Validation
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | `run-multitopic-modes.sh start --mode shared` starts workers + embedded seeder, seeder completes | PASS — confirmed in handoff evidence |
+| 2 | `run-multitopic-modes.sh start --mode dedicated` starts workers + embedded seeder, seeder completes | PASS — confirmed in handoff evidence |
+| 3 | `--count N` scales workers 1–5 | PASS — script validates 1–5 range, dynamically enables/disables workers |
+| 4 | `stop` and `down --volumes` work | PASS — confirmed in handoff evidence |
+| 5 | `verify-multitopic.sh` deleted | PASS — file removed in commit |
+
+### Findings (informational)
+
+1. **docker-compose.multitopic.yml** — Correctly modelled on `docker-compose.multi.yml`. Kafka-init creates `orders.events` and `invoices.events` with 3 partitions. No separate seeder services; worker-1 embeds the seeder via `SUPERDUPER_EXAMPLE_SEED_ENABLED`. Workers 2–5 have Liquibase and seeding disabled. Observability (Prometheus, Grafana) reused from multi config.
+2. **run-multitopic-modes.sh** — Implements `start`, `stop`, `down [--volumes]` commands. `--mode shared|dedicated` correctly maps to the right worker context and group-id. `--count N` (1–5) and `--seeder-count N` optional flags present with validation. Pre-start runs `mvn -DskipTests -q package`. Mode-specific SQL verification queries printed on start.
+3. **Dockerfiles** — Both `app-multitopic-shared/Dockerfile` and `app-multitopic-dedicated/Dockerfile` are identical to `app-blocking/Dockerfile` (`eclipse-temurin:25-jre-alpine`).
+4. **pom.xml files** — Both example apps have correct dependencies: `superduper-schema-liquibase`, `superduper-starter-autoselect`, `superduper-consumer-kafka-blocking`, Testcontainers, and schema-liquibase test-jar. Spring Boot repackage plugin configured.
+
+---
+
+## T-002 — Dedicated-Mode Schema Cleanup
+
+**Verdict: PASS**
+
+### Acceptance Criteria Validation
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | Shared mode creates messages + container_heartbeats + shedlock + claim indexes | PASS — `db.changelog-master.yaml` includes infra + messages + claim indexes |
+| 2 | Dedicated mode creates orders_messages + invoices_messages + container_heartbeats + shedlock only — no messages table | PASS — `db.changelog-dedicated.yaml` includes only infra + per-topic changelogs |
+| 3 | Single-topic examples unchanged | PASS — `db.changelog-master.yaml` still serves as the default |
+| 4 | `mvn -T 1C -q test` passes | PASS — confirmed in handoff evidence |
+
+### Findings (informational)
+
+1. **Schema split executed correctly.** Old combined `001-init-schema-postgres.sql` / `001-init-schema-mariadb.sql` renamed to `001-init-messages-*.sql` (git detects as rename with ~66–69% similarity). New `001-init-infra-*.sql` files extracted with only `container_heartbeats` and `shedlock` tables.
+2. **db.changelog-infra.yaml** — New file with changeset IDs `001` (postgres) and `002` (mariadb), exactly matching the plan.
+3. **db.changelog-master.yaml** — Restructured to include `db.changelog-infra.yaml` first, then messages changesets (`003`/`004`) and claim index changesets (`005`/`006`). Changeset IDs match the plan exactly.
+4. **db.changelog-dedicated.yaml** — Correctly switched from including `db.changelog-master.yaml` to including only `db.changelog-infra.yaml`, then the per-topic changelogs. This ensures no `messages` table in dedicated mode.
+5. **Integration tests added (bonus, not in plan):**
+   - `DedicatedMultitopicLiquibaseIntegrationTest` — asserts `container_heartbeats`, `shedlock`, `orders_messages`, `invoices_messages` exist and `messages` does NOT exist.
+   - `SharedMultitopicLiquibaseIntegrationTest` — asserts `messages`, `container_heartbeats`, `shedlock` exist and all three claim indexes are present.
+   - Both use Testcontainers with PostgreSQL 16 Alpine.
+6. **LiquibaseTestSupport** — Overloaded `migrate()` method added to accept a custom changelog path. Clean separation of default and dedicated changelog testing.
+
+---
+
+## T-003 — Documentation and Release Readiness
+
+**Verdict: PASS**
+
+### Acceptance Criteria Validation
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | EXAMPLES.md references run-multitopic-modes.sh instead of verify-multitopic.sh | PASS |
+| 2 | USAGE.md documents schema outcomes for shared vs dedicated | PASS — "Schema outcome" row added to comparison table |
+| 3 | README.md has multi-topic quickstart snippet | PASS — container quickstart with run-multitopic-modes.sh commands |
+| 4 | Dedicated-mode SQL assertions updated to reflect no messages table | PASS — `SELECT to_regclass('public.messages')` returns null |
+
+### Findings (informational)
+
+1. **EXAMPLES.md** — "Running Multi-Topic Modes (Containers)" section added with script usage examples. Dedicated-mode verification updated to check that `messages` table does not exist at all (via `to_regclass`).
+2. **USAGE.md** — Comparison table includes "Schema outcome" row. Dedicated mode section documents use of `db.changelog-infra.yaml`.
+3. **README.md** — Multi-topic configuration section added with YAML config example, schema split explanation, and container quickstart snippet. Examples section updated to list all four apps.
+4. **ARCHITECTURE.md** — Updated schema-liquibase module description and dialect support table to reference the new split file names. This was not explicitly required by T-003 but is a welcome consistency improvement.
+
+---
+
+## Architecture Compliance (CLAUDE.md)
+
+| Rule | Status |
+|------|--------|
+| Schema migrations centralized in `schema-liquibase` | PASS — all SQL and changelog YAML in schema-liquibase |
+| Workers/consumers use repository ports (no direct SQL in service classes) | PASS — no service-layer changes |
+| Documentation in `docs/` except README, ROADMAP, CLAUDE | PASS |
+| English for code comments, log/output messages | PASS |
+| Conventional Commit message | PASS — `feat: add multitopic runtime tooling and schema split` |
+| Spotless formatting applied | PASS — confirmed in handoff |
+| Tests pass | PASS — `mvn -T 1C -q test` confirmed |
+
+---
+
+## Follow-up: T-004 — Schema Template Consolidation
+
+**Severity: design improvement (not a blocker)**
+
+Two duplication/inconsistency issues identified in the schema split design (originating from the plan, faithfully implemented):
+
+### Finding 1: Shared-mode messages SQL duplicates the dedicated-mode templates
+
+`001-init-messages-postgres.sql` and `001-init-messages-mariadb.sql` are non-parameterized copies of `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`. The shared mode could reuse the same templates with `table.name=messages`, eliminating two redundant files.
+
+### Finding 2: Claim indexes split in shared mode but bundled in dedicated mode
+
+In dedicated mode, `topic-messages-template-*.sql` creates the table **and** all three indexes in one file. In shared mode, the table + base index are in `001-init-messages-*.sql`, and the claim indexes are in separate `002/003-worker-claim-indexes-*.sql` files. This also causes `idx_messages_topic_status_key_id` to be created twice (once in `001`, again with `IF NOT EXISTS` in `002/003`).
+
+### Resolution
+
+Tracked as **T-004** in `.ai/TASKS.md` with status `todo`. Next role: `plan`.
+
+---
+
+## Open Questions
+
+None.
