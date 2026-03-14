@@ -1,30 +1,21 @@
 # ROADMAP
 
-Goal: deliver `0.5.2-SNAPSHOT` with robust multi-topic examples and a runtime script that works like `./examples/run-multi.sh` for the new modes.
+Goal: define and deliver the `0.6.0` scope.
 
-## Priority 1: Runtime Script for New Modes
+## Priority 1
 
-Objective: replace `./examples/verify-multitopic.sh` with a `run-multi.sh`-style operator script for the new multi-topic modes.
+Objective: replace with objective.
 
-- Replace `./examples/verify-multitopic.sh` with a new run script (for example `./examples/run-multitopic-modes.sh`).
-- Run seeder and worker containers in parallel, following the behavior pattern of `./examples/run-multi.sh`.
-- Support both shared-table mode and dedicated-table-per-topic mode from one script entrypoint.
-- Print clear runtime guidance for inspecting logs and database state while containers are running.
-- Keep the script focused on starting/running flows for the new modes, not test-style verification output.
+- Replace with planned outcome.
 
-## Priority 2: Dedicated-Mode Schema Cleanup
+## Priority 2
 
-Objective: remove unused schema artifacts when running in dedicated-table mode.
+Objective: replace with objective.
 
-- Ensure the standard Liquibase path does not leave an unused default `messages` table in dedicated mode.
-- Define and implement the dedicated-mode schema strategy explicitly in migrations/docs.
-- Validate that shared mode and dedicated mode each create only the expected tables.
+- Replace with planned outcome.
 
-## Priority 3: Documentation and Release Readiness
+## Priority 3
 
-Objective: make the new run workflow discoverable and release-safe.
+Objective: replace with objective.
 
-- Update `README.md` and `docs/USAGE.md` with quickstart instructions for both modes.
-- Document trade-offs and expected database outcomes for shared vs dedicated strategies.
-- Add CI coverage for building and starting the new mode-specific run flow.
-- Define release acceptance criteria: run script works for both modes, schema outcome verified, docs updated.
+- Replace with planned outcome.
