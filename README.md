@@ -10,6 +10,12 @@
 
 ## Why SUPERDUPER? (Problem & Goals)
 
+### The core problem
+
+Kafka gives you per-**partition** ordering, but not per-**key** ordering across failures and retries.
+When message 5 for key A fails, Kafka alone cannot hold messages 6, 7, 8 for key A while continuing to process key B on the same partition.
+Retry topics make this worse: a message on a retry topic can overtake an in-flight message on the main topic, breaking key order silently.
+
 When multiple containers consume messages concurrently and persist them for later processing, you need to guarantee:
 
 - **Per-key ordering**: All messages with the same `message_key` are processed strictly in the order they were received.
@@ -18,6 +24,31 @@ When multiple containers consume messages concurrently and persist them for late
 - **Resilience**: Crashing containers leave **no** stuck work; **orphaned** `PROCESSING` rows are recovered.
 - **Observability**: Heartbeats detect dead containers; status fields show lifecycle progress.
 - **Flexibility**: Use **Spring Kafka + JDBC** or **Spring Kafka + R2DBC (reactive processing chain)** with the same algorithm and schema on PostgreSQL or MariaDB.
+
+### Why a transactional inbox and not …
+
+| Alternative | Why it falls short for this problem |
+|---|---|
+| **Kafka consumer groups alone** | Per-partition ordering, not per-key. A failed message blocks the entire partition, or you skip it and lose ordering for that key. No clean retry/inspect/redrive. |
+| **Kafka retry topics + DLQ** | Per-key ordering across retries is extremely hard. A message on the retry topic can overtake an in-flight message on the main topic. |
+| **Kafka Streams with state stores** | Solves ordering within a partition, but retry/stop/redrive/inspect requires building most of what SUPERDUPER already provides. |
+| **SQS FIFO / Azure Service Bus sessions** | Vendor lock-in. Ordering semantics vary. Loses Kafka's strengths (replay, high throughput, ecosystem). |
+| **Redis Streams with consumer groups** | Fast, but no transactional guarantees for the claim-process-update lifecycle. Ordering after failures is manual. |
+
+### What the transactional inbox gives us
+
+- **SQL atomicity for claiming** — `FOR UPDATE SKIP LOCKED` in a single statement is race-free and well-understood.
+- **Per-key blocking in the claim query** — the `LEFT JOIN … WHERE status='PROCESSING'` elegantly prevents claiming a key that already has work in flight. This is the hardest part and the SQL handles it in one database round-trip.
+- **Database as queryable state** — failures are rows you can `SELECT`, inspect, and redrive. Far more ergonomic than opaque Kafka DLQ topics.
+- **Decoupled ingest from processing** — the consumer acks Kafka quickly; the worker processes at its own pace.
+- **Portable** — works on PostgreSQL and MariaDB, blocking or reactive, with no vendor lock-in.
+
+### Known tradeoffs
+
+- **Database throughput ceiling.** Every message does INSERT (ingest) + UPDATE (claim) + UPDATE (outcome). Kafka can handle millions/sec; the DB caps throughput at tens of thousands/sec depending on hardware.
+- **Poll-based latency.** The claim loop runs on a fixed interval. A message arriving right after a claim cycle waits for the next one, adding P50 latency of roughly half the interval.
+- **ShedLock serializes claiming.** Processing is parallel, but the claim entry point is a single-threaded global lock. At very high scale this becomes a funnel.
+- **Table growth pressure.** The claim index scan degrades as the `messages` table grows unless cleanup and retention are tuned.
 
 ---
 
