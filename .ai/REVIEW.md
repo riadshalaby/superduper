@@ -2,7 +2,7 @@
 
 Status: **complete**
 
-Review Round: **2**
+Review Round: **3**
 
 Reviewed: 2026-03-14
 
@@ -12,7 +12,7 @@ Reviewed: 2026-03-14
 
 `PASS`
 
-All four tasks (T-001, T-002, T-003, T-004) meet their acceptance criteria. No required fixes.
+All five tasks (T-001, T-002, T-003, T-004, T-005) meet their acceptance criteria. No required fixes.
 
 ---
 
@@ -122,6 +122,39 @@ Commit: `72a0338` — `fix: consolidate shared schema templates`
 
 ---
 
+## T-005 — Narrow `message_key` and Remove MariaDB Index Prefix Limits
+
+**Verdict: PASS** (Round 3)
+
+Commit: `f678f72` — `fix: narrow message key columns`
+
+### Acceptance Criteria Validation
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | `message_key` changed from VARCHAR(255) to VARCHAR(36) in both SQL templates | PASS — both `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql` updated |
+| 2 | All `(191)` prefix limits removed from `topic-messages-template-mariadb.sql` | PASS — `grep "(191)"` returns zero matches across all `.sql` and `.java` files |
+| 3 | MariaDB index key total remains under 3072 bytes | PASS — calculated 2,320 bytes (128 + 1020 + 1020 + 144 + 8) |
+| 4 | README.md and docs updated if they reference `message_key` sizing | PASS — README schema diagram updated to `VARCHAR(36)` |
+| 5 | `mvn -T 1C -q test` passes | PASS — confirmed in handoff evidence |
+| 6 | Both shared and dedicated integration tests pass | PASS — confirmed in handoff evidence |
+
+### Findings (informational)
+
+1. **PostgreSQL template** — `message_key` narrowed to `VARCHAR(36)`. No other changes needed since PostgreSQL uses partial indexes with no key-length pressure.
+2. **MariaDB template** — `message_key` narrowed to `VARCHAR(36)` and all three `(191)` prefix limits removed. The processing worker index is now `(status, container_id, topic, message_key, id)` — full-column indexing with no truncation risk for any column.
+3. **Repository integration tests (4 files)** — All inline schema DDL updated consistently: `message_key VARCHAR(36)` in all four test classes, and `(191)` prefixes removed from both MariaDB test classes.
+4. **No stale references** — `grep` confirms zero `message_key VARCHAR(255)` in production code, SQL templates, tests, or documentation. Only `.ai/PLAN.md` historical text contains the old width (expected).
+5. **Index key math verified:**
+   - `status` VARCHAR(32) × 4 = 128 bytes
+   - `container_id` VARCHAR(255) × 4 = 1,020 bytes
+   - `topic` VARCHAR(255) × 4 = 1,020 bytes
+   - `message_key` VARCHAR(36) × 4 = 144 bytes
+   - `id` BIGINT = 8 bytes
+   - **Total: 2,320 bytes** — 752 bytes of headroom under the 3,072-byte InnoDB limit.
+
+---
+
 ## Architecture Compliance (CLAUDE.md)
 
 | Rule | Status |
@@ -130,9 +163,9 @@ Commit: `72a0338` — `fix: consolidate shared schema templates`
 | Workers/consumers use repository ports (no direct SQL in service classes) | PASS — no service-layer changes |
 | Documentation in `docs/` except README, ROADMAP, CLAUDE | PASS |
 | English for code comments, log/output messages | PASS |
-| Conventional Commit messages | PASS — `feat:` (08f48fb) and `fix:` (72a0338) |
-| Spotless formatting applied | PASS — confirmed in both handoffs |
-| Tests pass | PASS — `mvn -T 1C -q test` confirmed for both commits |
+| Conventional Commit messages | PASS — `feat:` (08f48fb), `fix:` (72a0338), `fix:` (f678f72) |
+| Spotless formatting applied | PASS — confirmed in all handoffs |
+| Tests pass | PASS — `mvn -T 1C -q test` confirmed for all three commits |
 
 ---
 
