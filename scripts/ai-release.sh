@@ -8,14 +8,13 @@ cd "$REPO_ROOT"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/ai-release.sh prepare <X.Y.Z> [--open-pr]
+  scripts/ai-release.sh prepare <X.Y.Z>
   scripts/ai-release.sh finalize <X.Y.Z> [NEXT_VERSION] [--branch <branch-name>] [--archive]
 
 Examples:
   scripts/ai-release.sh prepare 0.5.0
-  scripts/ai-release.sh prepare 0.5.0 --open-pr
   scripts/ai-release.sh finalize 0.5.0
-  scripts/ai-release.sh finalize 0.5.0 0.5.1-SNAPSHOT --branch feature/v0.5.1-SNAPSHOT --archive
+  scripts/ai-release.sh finalize 0.5.0 0.6.0 --branch feature/v0.6.0 --archive
 EOF
 }
 
@@ -40,11 +39,53 @@ validate_next_version() {
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || die "Next version is invalid: $version"
 }
 
-ensure_clean_worktree() {
-  if [[ -n "$(git status --porcelain)" ]]; then
-    die "Worktree is not clean. Commit or stash changes first."
+AUTO_STASHED="false"
+AUTO_STASH_LABEL=""
+AUTO_STASH_RESTORED="false"
+
+auto_stash_worktree() {
+  if [[ -z "$(git status --porcelain)" ]]; then
+    return
   fi
+
+  AUTO_STASH_LABEL="ai-release-$(date -u +%Y%m%dT%H%M%SZ)"
+  git stash push -u -m "$AUTO_STASH_LABEL" >/dev/null
+  AUTO_STASHED="true"
+  echo "Temporarily stashed existing worktree changes."
 }
+
+restore_worktree() {
+  if [[ "$AUTO_STASHED" != "true" || "$AUTO_STASH_RESTORED" == "true" ]]; then
+    return 0
+  fi
+
+  local stash_ref
+  stash_ref="$(git stash list --format='%gd %s' | awk -v label="$AUTO_STASH_LABEL" '$0 ~ label { print $1; exit }')"
+  AUTO_STASH_RESTORED="true"
+
+  if [[ -z "$stash_ref" ]]; then
+    echo "Warning: could not find auto-stashed worktree entry '$AUTO_STASH_LABEL' to restore." >&2
+    return 1
+  fi
+
+  if git stash pop "$stash_ref" >/dev/null; then
+    echo "Restored stashed worktree changes."
+    return 0
+  fi
+
+  echo "Warning: failed to restore stashed worktree changes from $stash_ref. Resolve manually with 'git stash list' and 'git stash pop $stash_ref'." >&2
+  return 1
+}
+
+cleanup_release() {
+  local rc=$?
+  if ! restore_worktree; then
+    rc=1
+  fi
+  exit "$rc"
+}
+
+trap cleanup_release EXIT
 
 project_version() {
   mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1
@@ -136,21 +177,8 @@ build_commit_list_markdown() {
 prepare_release() {
   local release="$1"
   shift
-
-  local open_pr="false"
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --open-pr)
-        open_pr="true"
-        ;;
-      *)
-        die "Unknown option for prepare: $1"
-        ;;
-    esac
-    shift
-  done
-
-  ensure_clean_worktree
+  [[ $# -eq 0 ]] || die "Unknown option for prepare: $1"
+  auto_stash_worktree
 
   local branch
   branch="$(git rev-parse --abbrev-ref HEAD)"
@@ -211,30 +239,21 @@ $commit_list
 EOF
 )"
 
-  if [[ "$open_pr" == "true" ]]; then
-    require_cmd gh
-    if gh pr view --head "$branch" >/dev/null 2>&1; then
-      gh pr edit --title "$pr_title" --body "$pr_body"
-      echo "Updated existing PR for branch $branch."
-    else
-      gh pr create --base main --head "$branch" --title "$pr_title" --body "$pr_body"
-    fi
+  require_cmd gh
+  if gh pr view --head "$branch" >/dev/null 2>&1; then
+    gh pr edit --title "$pr_title" --body "$pr_body"
+    echo "Updated existing PR for branch $branch."
+  else
+    gh pr create --base main --head "$branch" --title "$pr_title" --body "$pr_body"
   fi
 
   cat <<EOF
 Release prepare completed for v$release.
 
 Next steps:
-1. Open/update a PR to main:
-   gh pr create --base main --head $branch --title "$pr_title" --body '<body>' 
-2. Ask the user to merge the PR on GitHub.
-3. After merge confirmation, run:
+1. Ask the user to review and merge the PR on GitHub.
+2. After merge confirmation, run:
    scripts/ai-release.sh finalize $release
-
-Suggested PR body:
-------------------------------------------------------------
-$pr_body
-------------------------------------------------------------
 EOF
 }
 
@@ -267,7 +286,7 @@ finalize_release() {
     shift
   done
 
-  ensure_clean_worktree
+  auto_stash_worktree
 
   git fetch origin --tags
   git checkout main
@@ -302,16 +321,6 @@ finalize_release() {
   fi
 
   validate_next_version "$next_version"
-
-  if [[ "$next_version" != *-SNAPSHOT ]]; then
-    if [[ -t 0 ]]; then
-      local confirm
-      read -r -p "Next version does not end with -SNAPSHOT. Continue? [y/N]: " confirm
-      [[ "$confirm" =~ ^[Yy]$ ]] || die "Aborted by user."
-    else
-      die "NEXT_VERSION should usually end with -SNAPSHOT."
-    fi
-  fi
 
   if [[ -z "$branch_name" ]]; then
     branch_name="feature/v$next_version"
