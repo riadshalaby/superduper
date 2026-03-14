@@ -14,13 +14,17 @@ public final class LiquibaseTestSupport {
     private LiquibaseTestSupport() {}
 
     public static void migrate(String jdbcUrl, String username, String password) {
+        migrate(jdbcUrl, username, password, MASTER_CHANGELOG);
+    }
+
+    public static void migrate(String jdbcUrl, String username, String password, String changelog) {
         try (var connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             var database =
                     DatabaseFactory.getInstance().findCorrectDatabaseImplementation(new JdbcConnection(connection));
-            Liquibase liquibase = new Liquibase(MASTER_CHANGELOG, new ClassLoaderResourceAccessor(), database);
+            Liquibase liquibase = new Liquibase(changelog, new ClassLoaderResourceAccessor(), database);
             liquibase.update(new Contexts(), new LabelExpression());
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to apply Liquibase changelog: " + MASTER_CHANGELOG, e);
+            throw new IllegalStateException("Failed to apply Liquibase changelog: " + changelog, e);
         }
     }
 }

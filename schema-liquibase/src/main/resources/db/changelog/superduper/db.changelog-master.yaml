@@ -1,31 +1,33 @@
 databaseChangeLog:
+  - include:
+      file: db/changelog/superduper/db.changelog-infra.yaml
   - changeSet:
-      id: 001-init-schema-postgres
-      author: codex
+      id: 003-init-messages-postgres
+      author: superduper
       dbms: postgresql
       changes:
         - sqlFile:
-            path: db/changelog/superduper/001-init-schema-postgres.sql
+            path: db/changelog/superduper/001-init-messages-postgres.sql
             relativeToChangelogFile: false
   - changeSet:
-      id: 002-init-schema-mariadb
-      author: codex
+      id: 004-init-messages-mariadb
+      author: superduper
       dbms: mariadb
       changes:
         - sqlFile:
-            path: db/changelog/superduper/001-init-schema-mariadb.sql
+            path: db/changelog/superduper/001-init-messages-mariadb.sql
             relativeToChangelogFile: false
   - changeSet:
-      id: 003-worker-claim-indexes-postgres
-      author: codex
+      id: 005-worker-claim-indexes-postgres
+      author: superduper
       dbms: postgresql
       changes:
         - sqlFile:
             path: db/changelog/superduper/002-worker-claim-indexes-postgres.sql
             relativeToChangelogFile: false
   - changeSet:
-      id: 004-worker-claim-indexes-mariadb
-      author: codex
+      id: 006-worker-claim-indexes-mariadb
+      author: superduper
       dbms: mariadb
       changes:
         - sqlFile:

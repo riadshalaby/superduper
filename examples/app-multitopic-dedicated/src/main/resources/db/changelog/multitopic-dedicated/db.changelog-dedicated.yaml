@@ -1,6 +1,6 @@
 databaseChangeLog:
   - include:
-      file: db/changelog/superduper/db.changelog-master.yaml
+      file: db/changelog/superduper/db.changelog-infra.yaml
   - include:
       file: db/changelog/multitopic-dedicated/orders-messages.yaml
       relativeToChangelogFile: false

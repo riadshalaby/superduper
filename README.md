@@ -262,6 +262,20 @@ In multi-topic mode:
 - backlog, cleanup, reclaim, and redrive operations route to the correct shared or dedicated table
 - observability always carries the topic dimension for worker and maintenance signals
 
+Schema split:
+
+- shared mode keeps the standard `messages` table plus `container_heartbeats` and `shedlock`
+- dedicated mode creates only `container_heartbeats`, `shedlock`, and the configured per-topic tables such as `orders_messages` and `invoices_messages`
+
+Container quickstart:
+
+```bash
+./examples/run-multitopic-modes.sh start --mode shared
+./examples/run-multitopic-modes.sh start --mode dedicated --count 2 --seeder-count 1000
+./examples/run-multitopic-modes.sh stop
+./examples/run-multitopic-modes.sh down --volumes
+```
+
 > See [docs/USAGE.md](docs/USAGE.md) for integration guide and configuration reference.
 >
 > See [docs/EXAMPLES.md](docs/EXAMPLES.md) for running examples locally.
@@ -293,6 +307,7 @@ Four runnable apps are included:
 - `examples/app-reactive` — reactive processing with Spring Kafka + R2DBC.
 
 See [docs/EXAMPLES.md](docs/EXAMPLES.md) for local setup, multi-container runs, and reproducible SQL assertions.
+Use `./examples/run-multitopic-modes.sh` for the shared and dedicated multi-topic container flows.
 See [docs/EXAMPLES.md#multi-topic-examples](docs/EXAMPLES.md#multi-topic-examples) for the shared-vs-dedicated multitopic walkthrough.
 
 ---

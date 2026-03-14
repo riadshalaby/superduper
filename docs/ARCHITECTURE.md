@@ -17,7 +17,7 @@ This document is optimized for fast repo navigation by humans and agents.
 | `consumer-kafka-blocking` | `superduper-consumer-kafka-blocking` | Spring Kafka consumer that persists records through JDBC repositories | `KafkaConsumerService`, `KafkaConsumerAutoConfiguration` |
 | `consumer-kafka-reactive` | `superduper-consumer-kafka-reactive` | Spring Kafka consumer that persists records through R2DBC repositories | `KafkaReactiveR2dbcConsumerService`, `KafkaReactiveR2dbcAutoConfiguration` |
 | `starter-autoselect` | `superduper-starter-autoselect` | Auto-selects worker stack and observer backend from properties and resolves topic-aware worker topology | `AutoSelectConfiguration`, `WorkerProperties`, `ObservabilityProperties`, `TopicProperties`, `TopicRegistry`, `RepositoryFactory` |
-| `schema-liquibase` | `superduper-schema-liquibase` | Database schema and index changelogs | `db.changelog-master.yaml`, `001-init-schema-postgres.sql`, `001-init-schema-mariadb.sql`, `002-worker-claim-indexes-postgres.sql`, `003-worker-claim-indexes-mariadb.sql` |
+| `schema-liquibase` | `superduper-schema-liquibase` | Database schema and index changelogs | `db.changelog-infra.yaml`, `db.changelog-master.yaml`, `001-init-infra-postgres.sql`, `001-init-infra-mariadb.sql`, `001-init-messages-postgres.sql`, `001-init-messages-mariadb.sql`, `002-worker-claim-indexes-postgres.sql`, `003-worker-claim-indexes-mariadb.sql` |
 | `examples/app-blocking` | `example-app-blocking` | Runnable JDBC example application | `BlockingExampleApplication`, `ExampleBlockingSeeder`, `ExampleBlockingMessageHandler` |
 | `examples/app-reactive` | `example-app-reactive` | Runnable reactive example application | `ReactiveExampleApplication`, `ExampleReactiveSeeder`, `ExampleReactiveMessageHandler` |
 | `examples/seeder` | `example-seeder` | One-shot Kafka load generator for multi-container demos | `SeederApplication`, `SeederRunner` |
@@ -121,7 +121,8 @@ These ports isolate service logic from dialect-specific SQL.
 
 | Concern | PostgreSQL | MariaDB |
 |---|---|---|
-| init schema | `001-init-schema-postgres.sql` | `001-init-schema-mariadb.sql` |
+| infra schema | `001-init-infra-postgres.sql` | `001-init-infra-mariadb.sql` |
+| shared messages schema | `001-init-messages-postgres.sql` | `001-init-messages-mariadb.sql` |
 | claim SQL shape | `WITH candidate ... UPDATE ... FROM candidate` | `UPDATE ... JOIN (SELECT ... FOR UPDATE SKIP LOCKED)` |
 | row locking primitive | `FOR UPDATE OF m1 SKIP LOCKED` | `FOR UPDATE SKIP LOCKED` in nested candidate query |
 | claim indexes | `002-worker-claim-indexes-postgres.sql` | `003-worker-claim-indexes-mariadb.sql` |
