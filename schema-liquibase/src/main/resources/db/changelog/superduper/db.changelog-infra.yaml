@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-init-infra-postgres
+      author: superduper
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-infra-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 002-init-infra-mariadb
+      author: superduper
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-infra-mariadb.sql
+            relativeToChangelogFile: false

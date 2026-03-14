@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.5.1</version>
+    <version>0.5.2</version>
   </parent>
   <artifactId>superduper-starter-autoselect</artifactId>
 

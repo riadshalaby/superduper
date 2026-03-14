@@ -1,456 +1,615 @@
-# Plan — 0.5.1-SNAPSHOT
+# Plan — 0.5.2-SNAPSHOT
 
-Status: **ready_for_implement**
+Status: **approved**
 
-Goal: create two multi-topic example applications and supporting documentation as
-defined in `ROADMAP.md`.
-
-## Design Decision Record
-
-- **Structure:** two new standalone example modules (option B).
-  - `examples/app-multitopic-shared` — shared `messages` table, two Kafka topics.
-  - `examples/app-multitopic-dedicated` — one table per Kafka topic.
-- **Stack coverage:** blocking only (option 2a). Reactive users extrapolate from the pattern.
-- **Topics:** `orders.events` and `invoices.events` (two Kafka topics, two handlers).
-- **Liquibase:** shared module reuses core `db.changelog-master.yaml`. Dedicated module
-  uses an extended changelog that includes the core master and adds per-topic table DDL
-  inside its own resources.
-- **Docker infrastructure:** reuse existing `docker-compose.yml` (Kafka auto-creates topics).
-- Existing `app-blocking` and `app-reactive` examples are **not modified**.
+Goal: deliver robust multi-topic runtime tooling, clean dedicated-mode schema, and updated documentation for `0.5.2-SNAPSHOT`.
 
 ---
 
-## T-001 — Shared-Table Multi-Topic Example (ROADMAP Priority 1)
+## Phase 5 — Narrow `message_key` and Remove MariaDB Index Prefix Limits (T-005)
 
-### Scope
+### Objective
 
-Create the `examples/app-multitopic-shared` Maven module. Two Kafka topics
-(`orders.events`, `invoices.events`) share one `messages` table.
+Narrow the `message_key` column from `VARCHAR(255)` to `VARCHAR(36)` across all SQL templates and inline test schemas, and remove all `(191)` column prefix limits from MariaDB indexes now that the reduced column width keeps total index key size under 3072 bytes.
 
-### Files to Create
+### Background
 
-#### 1. `examples/app-multitopic-shared/pom.xml`
+After T-004 consolidated the schema templates, the MariaDB processing index still uses `(191)` prefix limits on three columns:
 
-Maven module. Parent: `superduper-parent`. Artifact id: `example-app-multitopic-shared`.
-
-Dependencies (mirror `examples/app-blocking/pom.xml`):
-- `spring-boot-starter`
-- `spring-boot-starter-web`
-- `spring-boot-starter-jdbc`
-- `spring-boot-starter-actuator`
-- `micrometer-registry-prometheus`
-- `spring-kafka`
-- `postgresql`
-- `spring-boot-starter-liquibase`
-- `superduper-schema-liquibase`
-- `superduper-starter-autoselect`
-- `superduper-consumer-kafka-blocking`
-
-Build plugin: `spring-boot-maven-plugin` with `repackage` goal.
-Property: `<sonar.skip>true</sonar.skip>`.
-
-#### 2. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/SharedMultitopicApplication.java`
-
-Standard `@SpringBootApplication` main class.
-
-#### 3. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/OrdersMessageHandler.java`
-
-`@Component("ordersMessageHandler")` implementing `MessageHandler`.
-
-Behavior:
-- Log prefix `[Orders]`.
-- Same failure patterns as the existing blocking handler:
-  `always-fail` -> `FAILURE`, `retry-once` first attempt -> `FAILURE`, else `SUCCESS`.
-- Register progress with `SeedProgress`.
-
-#### 4. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/InvoicesMessageHandler.java`
-
-`@Component("invoicesMessageHandler")` implementing `MessageHandler`.
-
-Same pattern as `OrdersMessageHandler` but with log prefix `[Invoices]`.
-
-#### 5. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/SeedProgress.java`
-
-Copy from `examples/app-blocking` (same latch-based tracking utility). Shared by both handlers.
-
-#### 6. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/MultitopicSeeder.java`
-
-`@Component` activated by `superduper.example.seed.enabled=true`.
-
-Behavior:
-- On `ApplicationReadyEvent`, publish `count` messages to **each** of the two Kafka topics.
-- Use `keyCount` distinct keys per topic (e.g., `order-0..order-19`, `invoice-0..invoice-19`).
-- Same failure content patterns (`retry-once`, `always-fail`) as the existing seeder.
-- Wait for `SeedProgress` latch (expected total = 2 * count).
-- Read topic names from `superduper.topics` config keys and bootstrap servers from config.
-
-Config properties consumed:
-- `superduper.kafka.bootstrap-servers`
-- `superduper.example.seed.enabled` (default `false`)
-- `superduper.example.seed.count` (default `500`, per topic)
-- `superduper.example.seed.keys` (default `20`, per topic)
-- `superduper.example.seed.await-timeout-seconds` (default `180`)
-- `superduper.example.seed.readiness-timeout-seconds` (default `30`)
-
-#### 7. `examples/app-multitopic-shared/src/main/java/net/rsworld/superduper/example/multitopic/shared/MultitopicOperatorEndpoints.java`
-
-Copy of `ExampleBlockingOperatorEndpoints` adapted for the new package.
-Same `/ops/queue`, `/ops/messages`, `/ops/redrive/{id}`, `/ops/redrive` endpoints.
-
-#### 8. `examples/app-multitopic-shared/src/main/resources/application.yml`
-
-```yaml
-spring:
-  application:
-    name: superduper-example-multitopic-shared
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
-      - org.springframework.boot.r2dbc.autoconfigure.R2dbcInitializationAutoConfiguration
-      - org.springframework.boot.r2dbc.autoconfigure.R2dbcTransactionManagerAutoConfiguration
-      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcAutoConfiguration
-      - org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcRepositoriesAutoConfiguration
-  datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/superduper}
-    username: ${SPRING_DATASOURCE_USERNAME:superduper}
-    password: ${SPRING_DATASOURCE_PASSWORD:superduper}
-  liquibase:
-    change-log: classpath:db/changelog/superduper/db.changelog-master.yaml
-
-superduper:
-  db:
-    dialect: ${SUPERDUPER_DB_DIALECT:postgres}
-  consumer:
-    type: spring
-  observability:
-    enabled: true
-    outputs:
-      metrics:
-        enabled: true
-  kafka:
-    bootstrap-servers: ${SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    group-id: example-multitopic-shared
-  topics:
-    orders:
-      kafka-topic: orders.events
-      handler: ordersMessageHandler
-      batch-size: 200
-      max-retries: 5
-    invoices:
-      kafka-topic: invoices.events
-      handler: invoicesMessageHandler
-  worker:
-    max-retries: 3
-    claim-interval-ms: 2000
-    batch-size: 500
-    queue-health:
-      enabled: true
-      interval-ms: 30000
-    retention:
-      enabled: true
-      processed-retention-days: 14
-      stopped-retention-days: 30
-      heartbeat-retention-days: 1
-      interval-ms: 86400000
-  example:
-    seed:
-      enabled: false
-      count: 500
-      keys: 20
-      await-timeout-seconds: 180
-      readiness-timeout-seconds: 30
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-  endpoint:
-    health:
-      show-details: always
-  prometheus:
-    metrics:
-      export:
-        enabled: true
-
-logging:
-  level:
-    root: INFO
+```sql
+CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
+    ON ${table.name} (status, container_id(191), topic(191), message_key(191), id);
 ```
 
-No `table` field on either topic entry — both use the default shared `messages` table.
+Prefix indexes sacrifice selectivity — MariaDB can only match on the first 191 characters of each column, not the full value. The root cause is that the full-width index (`status` 32 + `container_id` 255 + `topic` 255 + `message_key` 255 + `id` 8 = 805 chars × 4 bytes/char = 3220 bytes) exceeds InnoDB's 3072-byte key limit with `utf8mb4`.
 
-### Files to Modify
+Narrowing `message_key` to `VARCHAR(36)` resolves this:
+
+| Column | Type | Bytes (utf8mb4) |
+|--------|------|-----------------|
+| status | VARCHAR(32) | 128 |
+| container_id | VARCHAR(255) | 1020 |
+| topic | VARCHAR(255) | 1020 |
+| message_key | **VARCHAR(36)** | **144** |
+| id | BIGINT | 8 |
+| **Total** | | **2320** |
+
+2320 < 3072 — all prefix limits can be removed.
+
+### Design Note
+
+`message_key` is populated directly from `consumerRecord.key()` (the Kafka record key) in both `KafkaConsumerService` and `KafkaReactiveR2dbcConsumerService`, with a fallback to `"default"` when null. VARCHAR(36) accommodates UUIDs (36 chars) and all key patterns used in examples/tests (longest is ~17 chars: `"parallel-key-1000"`). Users sending Kafka record keys longer than 36 characters would get a database truncation/rejection error. This is an intentional sizing constraint — no consumer-side validation is added in this task.
+
+### Deliverables
+
+#### 1. Update SQL templates (2 files)
+
+**`topic-messages-template-postgres.sql`** — change line 5:
+```sql
+-- before
+message_key VARCHAR(255) NOT NULL,
+-- after
+message_key VARCHAR(36) NOT NULL,
+```
+
+No index changes needed — PostgreSQL has no prefix limits.
+
+**`topic-messages-template-mariadb.sql`** — two changes:
+
+Column width (line 5):
+```sql
+-- before
+message_key VARCHAR(255) NOT NULL,
+-- after
+message_key VARCHAR(36) NOT NULL,
+```
+
+Remove all `(191)` prefix limits from the processing index (line 21–22):
+```sql
+-- before
+CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
+    ON ${table.name} (status, container_id(191), topic(191), message_key(191), id);
+-- after
+CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
+    ON ${table.name} (status, container_id, topic, message_key, id);
+```
+
+#### 2. Update inline test schemas (4 files)
+
+These repository integration tests create tables inline and must match the templates.
+
+**`JdbcWorkerMessageRepositoryIntegrationTest.java`** (line 199):
+```java
+// before
++ "message_key VARCHAR(255) NOT NULL,"
+// after
++ "message_key VARCHAR(36) NOT NULL,"
+```
+
+**`JdbcWorkerMessageRepositoryMariaDbIntegrationTest.java`** — two changes:
+- Line 176: `VARCHAR(255)` → `VARCHAR(36)` for `message_key`
+- Line 192: remove `(191)` prefix limits:
+```java
+// before
++ "ON orders_messages (status, container_id(191), topic(191), message_key(191), id)")
+// after
++ "ON orders_messages (status, container_id, topic, message_key, id)")
+```
+
+**`R2dbcWorkerMessageRepositoryIntegrationTest.java`** (line 224):
+```java
+// before
++ "message_key VARCHAR(255) NOT NULL,"
+// after
++ "message_key VARCHAR(36) NOT NULL,"
+```
+
+**`R2dbcWorkerMessageRepositoryMariaDbIntegrationTest.java`** — two changes:
+- Line 179: `VARCHAR(255)` → `VARCHAR(36)` for `message_key`
+- Line 199: remove `(191)` prefix limits:
+```java
+// before
++ "ON orders_messages (status, container_id(191), topic(191), message_key(191), id)")
+// after
++ "ON orders_messages (status, container_id, topic, message_key, id)")
+```
+
+#### 3. Update documentation (1 file)
+
+**`README.md`** (line 109) — update the schema diagram:
+```
+-- before
+message_key      VARCHAR(255) NOT NULL
+-- after
+message_key      VARCHAR(36) NOT NULL
+```
+
+No other docs reference `message_key` sizing. `docs/USAGE.md` mentions `messages(message_key, id)` as an index but not the column width.
+
+#### 4. Files NOT modified
+
+- `001-init-infra-postgres.sql` / `001-init-infra-mariadb.sql` — no `message_key` column (infra tables only)
+- `db.changelog-master.yaml` / `db.changelog-infra.yaml` — YAML changelogs unchanged
+- `db.changelog-dedicated.yaml` / `orders-messages.yaml` / `invoices-messages.yaml` — dedicated-mode unchanged (they reference the same templates, so they inherit the change automatically)
+- `SharedMultitopicLiquibaseIntegrationTest.java` / `DedicatedMultitopicLiquibaseIntegrationTest.java` — these assert table/index existence, not column widths; no changes needed
+- Consumer services (`KafkaConsumerService`, `KafkaReactiveR2dbcConsumerService`) — no validation added; column width is the enforcement boundary
+
+### Complete Change Summary
 
 | File | Change |
-|---|---|
-| `pom.xml` (root) | Add `<module>examples/app-multitopic-shared</module>` |
+|------|--------|
+| `topic-messages-template-postgres.sql` | `message_key VARCHAR(255)` → `VARCHAR(36)` |
+| `topic-messages-template-mariadb.sql` | `message_key VARCHAR(255)` → `VARCHAR(36)`, remove 3× `(191)` prefix limits |
+| `JdbcWorkerMessageRepositoryIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)` |
+| `JdbcWorkerMessageRepositoryMariaDbIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)`, remove `(191)` prefix limits |
+| `R2dbcWorkerMessageRepositoryIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)` |
+| `R2dbcWorkerMessageRepositoryMariaDbIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)`, remove `(191)` prefix limits |
+| `README.md` | Schema diagram: `VARCHAR(255)` → `VARCHAR(36)` |
+
+**Total: 7 files, ~10 line-level edits.**
 
 ### Validation
 
-- `mvn -q -DskipTests test-compile` passes with the new module.
-- `mvn -T 1C -q test` passes (no regressions).
-- Running with seed enabled produces messages in the shared `messages` table with
-  distinct `topic` values (`orders.events`, `invoices.events`).
-
-### Acceptance Criteria
-
-1. `examples/app-multitopic-shared` compiles as part of the reactor build.
-2. The app starts successfully.
-3. Two independent Kafka topics are consumed and persisted to the shared `messages` table.
-4. Worker runs per-topic claim loops (verified by log output showing topic dimension).
-5. Seeder publishes to both topics and waits for handler completion.
-6. `SELECT topic, COUNT(*) FROM messages GROUP BY topic;` shows rows for both topics.
-7. Per-key ordering holds for each topic independently.
+- `mvn -q spotless:apply` — formatting
+- `mvn -q -DskipTests test-compile` — compile check
+- Targeted MariaDB tests: `mvn -q -pl repository-jdbc,repository-r2dbc -am -Dtest="*MariaDb*" -Dsurefire.failIfNoSpecifiedTests=false test`
+- Full suite: `mvn -T 1C -q test` — all tests including shared and dedicated Liquibase integration tests
+- Verify no `(191)` prefix limits remain: `grep -r "(191)" schema-liquibase/ repository-jdbc/ repository-r2dbc/`
+- Verify no `VARCHAR(255)` remains for `message_key`: `grep -r "message_key VARCHAR(255)" schema-liquibase/ repository-jdbc/ repository-r2dbc/ README.md`
 
 ---
 
-## T-002 — Dedicated-Table Multi-Topic Example (ROADMAP Priority 2)
+## Phase 4 — Shared-Mode Schema Template Consolidation (T-004)
 
-### Scope
+### Objective
 
-Create the `examples/app-multitopic-dedicated` Maven module. Each Kafka topic writes
-to its own message table (`orders_messages`, `invoices_messages`), with Liquibase
-wiring to create those tables.
+Eliminate schema duplication between shared-mode SQL files and dedicated-mode templates by making `topic-messages-template-*.sql` the single source of truth for all message table creation (both shared and dedicated modes). Delete the redundant `001-init-messages-*.sql` and `002/003-worker-claim-indexes-*.sql` files.
 
-### Files to Create
+### Background
 
-#### 1. `examples/app-multitopic-dedicated/pom.xml`
+The T-002 review identified two duplication issues:
 
-Same dependency set as T-001's module. Artifact id: `example-app-multitopic-dedicated`.
+1. **`001-init-messages-postgres.sql`** and **`001-init-messages-mariadb.sql`** are non-parameterized copies of `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`, with `messages` hardcoded where templates use `${table.name}`.
+2. **`002-worker-claim-indexes-postgres.sql`** and **`003-worker-claim-indexes-mariadb.sql`** contain claim indexes that are already present in the templates. In shared mode, `idx_messages_topic_status_key_id` is created twice — once in `001-init-messages-*.sql` and again (with `IF NOT EXISTS`) in `002/003-worker-claim-indexes-*.sql`.
 
-#### 2. `examples/app-multitopic-dedicated/src/main/java/net/rsworld/superduper/example/multitopic/dedicated/DedicatedMultitopicApplication.java`
+Since there are no existing users, changeset IDs can be freely reassigned.
 
-Standard `@SpringBootApplication` main class.
+### Deliverables
 
-#### 3. Handler + support classes
+#### 1. Rewrite `db.changelog-master.yaml`
 
-Same set of classes as T-001, adapted for the `dedicated` package:
-- `OrdersMessageHandler.java`
-- `InvoicesMessageHandler.java`
-- `SeedProgress.java`
-- `MultitopicSeeder.java`
-- `MultitopicOperatorEndpoints.java`
-
-These can be near-identical copies. The handler and seeder logic is the same;
-only the package name and application name differ.
-
-#### 4. `examples/app-multitopic-dedicated/src/main/resources/application.yml`
-
-Same base config as T-001 except:
-- `spring.application.name: superduper-example-multitopic-dedicated`
-- `spring.liquibase.change-log` points to the dedicated changelog.
-- `superduper.kafka.group-id: example-multitopic-dedicated`
-- Each topic entry includes an explicit `table`:
-
-```yaml
-superduper:
-  topics:
-    orders:
-      kafka-topic: orders.events
-      handler: ordersMessageHandler
-      batch-size: 200
-      max-retries: 5
-      table: orders_messages
-    invoices:
-      kafka-topic: invoices.events
-      handler: invoicesMessageHandler
-      table: invoices_messages
-```
-
-Liquibase override:
-
-```yaml
-spring:
-  liquibase:
-    change-log: classpath:db/changelog/multitopic-dedicated/db.changelog-dedicated.yaml
-```
-
-#### 5. `examples/app-multitopic-dedicated/src/main/resources/db/changelog/multitopic-dedicated/db.changelog-dedicated.yaml`
-
-Extended changelog:
+Replace the four message/claim-index changesets with a property declaration and two template-based changesets, following the same pattern used by `orders-messages.yaml` and `invoices-messages.yaml` in dedicated mode:
 
 ```yaml
 databaseChangeLog:
   - include:
-      file: db/changelog/superduper/db.changelog-master.yaml
+      file: db/changelog/superduper/db.changelog-infra.yaml
+  - property:
+      name: table.name
+      value: messages
+      global: false
   - changeSet:
-      id: multitopic-001-orders-messages-postgres
-      author: superduper-example
+      id: 003-init-messages-postgres
+      author: superduper
       dbms: postgresql
       changes:
         - sqlFile:
-            path: db/changelog/multitopic-dedicated/orders-messages-postgres.sql
+            path: db/changelog/superduper/topic-messages-template-postgres.sql
             relativeToChangelogFile: false
   - changeSet:
-      id: multitopic-002-invoices-messages-postgres
-      author: superduper-example
-      dbms: postgresql
+      id: 004-init-messages-mariadb
+      author: superduper
+      dbms: mariadb
       changes:
         - sqlFile:
-            path: db/changelog/multitopic-dedicated/invoices-messages-postgres.sql
+            path: db/changelog/superduper/topic-messages-template-mariadb.sql
             relativeToChangelogFile: false
 ```
 
-Includes the core master first (creates `shedlock`, `container_heartbeats`, and default
-`messages` — the default table is harmless), then adds per-topic tables.
+Key changes from the current version:
+- **Property `table.name=messages`** added with `global: false` (scoped to this changelog).
+- **Changesets 003/004** now reference `topic-messages-template-*.sql` instead of `001-init-messages-*.sql`. The templates create the table AND all three indexes in one pass.
+- **Changesets 005/006** (claim indexes) removed entirely — the templates already include all claim indexes.
 
-#### 6. `examples/app-multitopic-dedicated/src/main/resources/db/changelog/multitopic-dedicated/orders-messages-postgres.sql`
+#### 2. Delete four redundant SQL files
 
-Concrete instantiation of `topic-messages-template-postgres.sql` with table name
-`orders_messages` (literal replacement of `${table.name}`).
+Delete from `schema-liquibase/src/main/resources/db/changelog/superduper/`:
 
-#### 7. `examples/app-multitopic-dedicated/src/main/resources/db/changelog/multitopic-dedicated/invoices-messages-postgres.sql`
+| File | Reason |
+|------|--------|
+| `001-init-messages-postgres.sql` | Replaced by `topic-messages-template-postgres.sql` with `table.name=messages` |
+| `001-init-messages-mariadb.sql` | Replaced by `topic-messages-template-mariadb.sql` with `table.name=messages` |
+| `002-worker-claim-indexes-postgres.sql` | Claim indexes already in `topic-messages-template-postgres.sql` |
+| `003-worker-claim-indexes-mariadb.sql` | Claim indexes already in `topic-messages-template-mariadb.sql` |
 
-Same template, table name `invoices_messages`.
+Note: The `DROP INDEX IF EXISTS idx_messages_message_key_id` legacy migration in the claim index files is no longer needed — there are no existing users with the old index name, and the templates create tables fresh.
 
-### Files to Modify
+#### 3. Update documentation
 
-| File | Change |
-|---|---|
-| `pom.xml` (root) | Add `<module>examples/app-multitopic-dedicated</module>` |
+Three documentation files reference the deleted SQL files and must be updated.
 
-### Validation
+**`README.md`** (line 128):
 
-- `mvn -q -DskipTests test-compile` passes.
-- `mvn -T 1C -q test` passes.
-- Running with seed enabled creates `orders_messages` and `invoices_messages` tables
-  and persists topic traffic to the correct dedicated tables.
+Replace:
+```
+**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus the processing/reclaim indexes shown in `002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`.
+```
 
-### Acceptance Criteria
+With:
+```
+**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus processing/reclaim indexes, all defined in `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`.
+```
 
-1. `examples/app-multitopic-dedicated` compiles as part of the reactor build.
-2. The app starts successfully.
-3. Liquibase creates `orders_messages` and `invoices_messages` at startup.
-4. Orders traffic lands exclusively in `orders_messages`.
-5. Invoices traffic lands exclusively in `invoices_messages`.
-6. The default `messages` table remains empty (or is ignored).
-7. Worker claim, maintenance, and queue-health operations route to the correct
-   per-topic table (verified by logs showing topic + table dimension).
-8. `SELECT COUNT(*) FROM orders_messages;` and `SELECT COUNT(*) FROM invoices_messages;`
-   show the expected row counts.
-9. Per-key ordering holds within each dedicated table.
+**`docs/USAGE.md`** (lines 526–529):
 
----
+Replace the claim index file references:
+```
+- `schema-liquibase/src/main/resources/db/changelog/superduper/002-worker-claim-indexes-postgres.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/003-worker-claim-indexes-mariadb.sql`
+```
 
-## T-003 — Documentation and Comparison (ROADMAP Priority 3)
+With:
+```
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-postgres.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-mariadb.sql`
+```
 
-### Scope
+**`docs/ARCHITECTURE.md`** (lines 20, 125, 128):
 
-Update project documentation to cover both multi-topic examples, add a
-shared-vs-dedicated comparison table, and add a verification script.
+Update the module table (line 20) — remove `001-init-messages-postgres.sql`, `001-init-messages-mariadb.sql`, `002-worker-claim-indexes-postgres.sql`, `003-worker-claim-indexes-mariadb.sql` and add `topic-messages-template-postgres.sql`, `topic-messages-template-mariadb.sql`.
 
-### Files to Create
+Update the Database Dialect Support table:
+- "shared messages schema" row: change from `001-init-messages-*.sql` to `topic-messages-template-*.sql` (with note: `table.name=messages`)
+- "claim indexes" row: change from `002/003-worker-claim-indexes-*.sql` to `topic-messages-template-*.sql` (bundled with table creation)
 
-#### 1. `examples/verify-multitopic.sh`
+#### 4. No changes to templates or dedicated-mode files
 
-Bash script that:
-1. Accepts `--mode shared|dedicated` argument.
-2. Connects to Postgres (`localhost:5432`, `superduper`/`superduper`).
-3. Runs SQL assertions for the chosen mode:
-   - **shared:** counts per topic in `messages`, per-key ordering check.
-   - **dedicated:** counts in `orders_messages` and `invoices_messages`, per-key ordering.
-4. Prints PASS/FAIL for each assertion.
+The following files are **not modified**:
+- `topic-messages-template-postgres.sql` — already correct
+- `topic-messages-template-mariadb.sql` — already correct
+- `db.changelog-infra.yaml` — unchanged
+- `db.changelog-dedicated.yaml` — unchanged
+- `orders-messages.yaml` — unchanged
+- `invoices-messages.yaml` — unchanged
 
-### Files to Modify
+#### 5. No changes to integration tests
 
-#### 1. `docs/EXAMPLES.md`
+The existing integration tests should pass without modification:
 
-Add a new section **"Multi-Topic Examples"** (after the existing content) with subsections:
+- **`SharedMultitopicLiquibaseIntegrationTest`** — asserts `messages` table, `container_heartbeats`, `shedlock`, and all three indexes (`idx_messages_topic_status_key_id`, `idx_messages_processing_worker_key_id`, `idx_messages_processing_last_updated`). The templates create exactly these indexes when `table.name=messages`.
+- **`DedicatedMultitopicLiquibaseIntegrationTest`** — unchanged (uses `db.changelog-dedicated.yaml` which is not modified).
 
-- **Shared-Table Mode (`app-multitopic-shared`):**
-  - Run steps: `docker compose up -d`, then `mvn -pl examples/app-multitopic-shared -am spring-boot:run -Dspring-boot.run.jvmArguments="-Dsuperduper.example.seed.enabled=true"`
-  - Config highlights (no `table` field).
-  - Expected SQL assertions (per-topic counts in shared `messages`).
-- **Dedicated-Table Mode (`app-multitopic-dedicated`):**
-  - Run steps: same infrastructure, different module path.
-  - Config highlights (`table: orders_messages` / `table: invoices_messages`).
-  - Liquibase wiring explanation.
-  - Expected SQL assertions (per-table counts).
-- **Verification:** how to run `verify-multitopic.sh` for each mode.
-- **SQL Assertions:** expected counts and per-key ordering queries for both modes.
+### Implementation Notes
 
-Expected SQL assertions per mode (assuming `count=500` per topic, `max-retries=3`):
-
-Shared mode:
-
-| Query | Expected |
-|---|---|
-| `SELECT COUNT(*) FROM messages;` | `1000` |
-| `SELECT topic, COUNT(*) FROM messages GROUP BY topic;` | `orders.events: 500`, `invoices.events: 500` |
-| `SELECT COUNT(*) FROM messages WHERE status = 'PROCESSED';` | `975` |
-| `SELECT COUNT(*) FROM messages WHERE status = 'STOPPED';` | `25` |
-
-Dedicated mode:
-
-| Query | Expected |
-|---|---|
-| `SELECT COUNT(*) FROM orders_messages;` | `500` |
-| `SELECT COUNT(*) FROM invoices_messages;` | `500` |
-| Per-table status distributions match the same ratios | |
-
-#### 2. `docs/USAGE.md`
-
-Add a **"Shared vs. Dedicated Table Comparison"** subsection after the existing
-multi-topic configuration section (after line 88):
-
-| Concern | Shared Table | Dedicated Table |
-|---|---|---|
-| Schema overhead | Single `messages` table, no extra DDL | One table per topic, Liquibase changesets needed |
-| Operational simplicity | One table to monitor, backup, index | Per-topic tables to manage independently |
-| Query isolation | `WHERE topic = :topic` filter | Full table-level isolation |
-| Index contention | All topics share the same indexes | Each table has its own index set |
-| Scaling model | Homogeneous topics, similar SLAs | Heterogeneous topics, independent retention/compliance |
-| Maintenance routing | Same repository, topic predicate | Separate repository instance per table |
-| Recommended when | Few topics, similar volume and latency | Many topics, varying SLAs, regulatory isolation |
-
-Add a **"Recommended Use-Cases"** paragraph:
-- Shared table: up to ~10 homogeneous topics, uniform SLAs, simpler ops.
-- Dedicated tables: compliance/audit isolation, independent scaling or retention,
-  very high per-topic volume where index contention matters.
-
-#### 3. `README.md`
-
-Add bullets under the **Examples** section:
-- `examples/app-multitopic-shared` — multi-topic example with a shared `messages` table (blocking).
-- `examples/app-multitopic-dedicated` — multi-topic example with per-topic tables (blocking).
-
-Link to `docs/EXAMPLES.md#multi-topic-examples`.
+- The Liquibase `property` with `global: false` scopes `table.name` to the declaring changelog. This is the same mechanism used by the dedicated-mode topic YAML files.
+- After consolidation, the schema-liquibase SQL file inventory is:
+  - `001-init-infra-postgres.sql` — infrastructure tables (postgres)
+  - `001-init-infra-mariadb.sql` — infrastructure tables (mariadb)
+  - `topic-messages-template-postgres.sql` — parameterized messages table + indexes (postgres)
+  - `topic-messages-template-mariadb.sql` — parameterized messages table + indexes (mariadb)
+- Both shared mode (`db.changelog-master.yaml` with `table.name=messages`) and dedicated mode (per-topic YAML files with `table.name=<topic>_messages`) now use the same templates. One definition, many tables.
 
 ### Validation
 
-- Documentation renders correctly (no broken links).
-- `verify-multitopic.sh` runs against a seeded database and reports PASS for all assertions.
-
-### Acceptance Criteria
-
-1. `docs/EXAMPLES.md` has run steps for both examples with SQL assertions.
-2. `docs/USAGE.md` has a comparison table: shared vs. dedicated.
-3. `README.md` links to both multi-topic examples.
-4. `verify-multitopic.sh` passes for both `--mode shared` and `--mode dedicated` after seeding.
-5. Both examples run locally with `docker compose up -d` + the app.
-6. Both process at least two Kafka topics.
-7. Behavior matches documented table strategy.
+- `mvn -q spotless:apply` — formatting
+- `mvn -q -DskipTests test-compile` — compile check
+- `mvn -T 1C -q test` — all tests including shared and dedicated Liquibase integration tests
+- Verify that exactly 4 SQL files remain in `schema-liquibase/src/main/resources/db/changelog/superduper/` (2 infra + 2 templates)
+- Verify `db.changelog-master.yaml` has no references to deleted files
 
 ---
 
-## Implementation Order
+## Phase 1 — Runtime Script for Multi-Topic Modes (T-001)
 
-T-001 -> T-002 -> T-003 (sequential; each builds on the prior).
+### Objective
 
-## Notes for Implementer
+Replace `examples/verify-multitopic.sh` with `examples/run-multitopic-modes.sh`, a `run-multi.sh`-style operator script that starts seeder + worker containers for shared-table or dedicated-table multi-topic modes.
 
-- Mirror the code style and patterns from `examples/app-blocking`.
-- Use `@Component("beanName")` for handler bean naming (not `@Bean` methods),
-  consistent with the existing example.
-- The seeder needs to discover topic names. Simplest approach: inject the resolved
-  `TopicRegistry` and iterate its Kafka topic names, or accept a property list.
-- For the verification script, use `psql` with `--tuples-only` for parseable output.
-- Run `mvn -q spotless:apply` after every code change.
-- Run `mvn -q -DskipTests test-compile` for fast validation.
-- Run `mvn -T 1C -q test` before finishing.
+### Deliverables
+
+#### 1. `docker-compose.multitopic.yml` (new file, project root)
+
+A compose file modelled on `docker-compose.multi.yml` with these differences:
+
+- **kafka-init** creates topics `orders.events` and `invoices.events` (not `superduper.example`).
+- **No separate seeder services.** The multi-topic examples embed their seeders (`MultitopicSeeder`) in the worker app, triggered by `SUPERDUPER_EXAMPLE_SEED_ENABLED=true`.
+- **Workers 1–5** build from `${SUPERDUPER_WORKER_CONTEXT}` (shared or dedicated app).
+  - `worker-1`: `SPRING_LIQUIBASE_ENABLED=true`, `SUPERDUPER_EXAMPLE_SEED_ENABLED=true`, `SUPERDUPER_EXAMPLE_SEED_COUNT=${SUPERDUPER_SEEDER_COUNT:-500}`.
+  - `worker-2..5`: `SPRING_LIQUIBASE_ENABLED=false`, `SUPERDUPER_EXAMPLE_SEED_ENABLED=false`.
+- **All workers** receive the same DB and Kafka env vars as `docker-compose.multi.yml`.
+- **Prometheus + Grafana** reuse the same observability config.
+- **kafka-ui + adminer** included as before.
+
+#### 2. `examples/app-multitopic-shared/Dockerfile` (new file)
+
+Identical to `examples/app-blocking/Dockerfile`:
+
+```dockerfile
+FROM eclipse-temurin:25-jre-alpine
+COPY target/*.jar /app/app.jar
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+```
+
+#### 3. `examples/app-multitopic-dedicated/Dockerfile` (new file)
+
+Same content as above.
+
+#### 4. `examples/run-multitopic-modes.sh` (new file)
+
+Shell script following `run-multi.sh` patterns:
+
+- **Commands:** `start`, `stop`, `down [--volumes]`
+- **Required flag:** `--mode shared|dedicated`
+- **Optional flags:**
+  - `--count N` (1–5, default `1`) — number of worker instances
+  - `--seeder-count N` (default `500`) — messages per topic from the embedded seeder
+- **Mode mapping:**
+  - `shared` → `SUPERDUPER_WORKER_CONTEXT=./examples/app-multitopic-shared`
+  - `dedicated` → `SUPERDUPER_WORKER_CONTEXT=./examples/app-multitopic-dedicated`
+- **Pre-start:** `mvn -DskipTests -q package`
+- **Dynamic services:** enable/disable workers based on `--count`, clean up disabled services.
+- **Runtime guidance:** print URLs (Kafka UI, Adminer, Prometheus, Grafana), log-follow commands, and mode-specific SQL queries for verifying outcomes.
+
+#### 5. Delete `examples/verify-multitopic.sh`
+
+The new run script replaces it. The SQL assertions remain documented in `docs/EXAMPLES.md`.
+
+### Implementation Notes
+
+- The script must use `docker-compose.multitopic.yml` (not the existing multi file).
+- Worker-1 runs both Liquibase migration and the embedded seeder. Other workers wait for Postgres health before starting.
+- The seeder produces `count` messages per topic (2 topics), so `--seeder-count 500` = 1000 total messages.
+- Follow the same argument parsing, validation, and error handling style as `run-multi.sh`.
+
+---
+
+## Phase 2 — Dedicated-Mode Schema Cleanup (T-002)
+
+### Objective
+
+Split the Liquibase changelogs so that dedicated mode creates only infrastructure tables + per-topic tables, without an unused `messages` table.
+
+### Approach: Split Changelogs (Option A)
+
+Since there are no existing users, changeset IDs can be freely reassigned.
+
+### Deliverables
+
+#### 1. New SQL files in `schema-liquibase/src/main/resources/db/changelog/superduper/`
+
+**`001-init-infra-postgres.sql`** — extracted from `001-init-schema-postgres.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS container_heartbeats (
+  container_id VARCHAR(255) PRIMARY KEY,
+  last_heartbeat TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS shedlock (
+  name VARCHAR(64) PRIMARY KEY,
+  lock_until TIMESTAMP(3) NOT NULL,
+  locked_at TIMESTAMP(3) NOT NULL,
+  locked_by VARCHAR(255) NOT NULL
+);
+```
+
+**`001-init-infra-mariadb.sql`** — extracted from `001-init-schema-mariadb.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS container_heartbeats (
+  container_id VARCHAR(255) PRIMARY KEY,
+  last_heartbeat TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS shedlock (
+  name VARCHAR(64) PRIMARY KEY,
+  lock_until TIMESTAMP(3) NOT NULL,
+  locked_at TIMESTAMP(3) NOT NULL,
+  locked_by VARCHAR(255) NOT NULL
+);
+```
+
+**`001-init-messages-postgres.sql`** — messages table extracted from `001-init-schema-postgres.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGSERIAL PRIMARY KEY,
+  topic VARCHAR(255) NOT NULL DEFAULT 'default',
+  message_id VARCHAR(36) UNIQUE NOT NULL,
+  message_key VARCHAR(255) NOT NULL,
+  content TEXT,
+  status VARCHAR(32) NOT NULL CHECK (status IN ('READY','PROCESSING','PROCESSED','FAILED','STOPPED')),
+  retry_count INT DEFAULT 0,
+  container_id VARCHAR(255),
+  correlation_id VARCHAR(36) NULL,
+  message_type VARCHAR(255) NULL,
+  occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  processed_at TIMESTAMP NULL,
+  last_updated TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_topic_status_key_id ON messages(topic, status, message_key, id);
+```
+
+**`001-init-messages-mariadb.sql`** — messages table extracted from `001-init-schema-mariadb.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  topic VARCHAR(255) NOT NULL DEFAULT 'default',
+  message_id VARCHAR(36) UNIQUE NOT NULL,
+  message_key VARCHAR(255) NOT NULL,
+  content TEXT,
+  status VARCHAR(32) NOT NULL,
+  retry_count INT DEFAULT 0,
+  container_id VARCHAR(255),
+  correlation_id VARCHAR(36) NULL,
+  message_type VARCHAR(255) NULL,
+  occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  processed_at TIMESTAMP NULL,
+  last_updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_messages_topic_status_key_id ON messages(topic, status, message_key, id);
+```
+
+#### 2. Delete old combined init files
+
+- Delete `001-init-schema-postgres.sql`
+- Delete `001-init-schema-mariadb.sql`
+
+#### 3. New YAML changelog: `db.changelog-infra.yaml`
+
+In `schema-liquibase/src/main/resources/db/changelog/superduper/`:
+
+```yaml
+databaseChangeLog:
+  - changeSet:
+      id: 001-init-infra-postgres
+      author: superduper
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-infra-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 002-init-infra-mariadb
+      author: superduper
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-infra-mariadb.sql
+            relativeToChangelogFile: false
+```
+
+#### 4. Restructure `db.changelog-master.yaml`
+
+Used by single-topic and shared multi-topic modes. Now includes infra + messages:
+
+```yaml
+databaseChangeLog:
+  - include:
+      file: db/changelog/superduper/db.changelog-infra.yaml
+  - changeSet:
+      id: 003-init-messages-postgres
+      author: superduper
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-messages-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 004-init-messages-mariadb
+      author: superduper
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/001-init-messages-mariadb.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 005-worker-claim-indexes-postgres
+      author: superduper
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/002-worker-claim-indexes-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: 006-worker-claim-indexes-mariadb
+      author: superduper
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/003-worker-claim-indexes-mariadb.sql
+            relativeToChangelogFile: false
+```
+
+#### 5. Update `db.changelog-dedicated.yaml` (in `examples/app-multitopic-dedicated/`)
+
+Switch from including `db.changelog-master.yaml` to including only `db.changelog-infra.yaml`:
+
+```yaml
+databaseChangeLog:
+  - include:
+      file: db/changelog/superduper/db.changelog-infra.yaml
+  - include:
+      file: db/changelog/multitopic-dedicated/orders-messages.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/multitopic-dedicated/invoices-messages.yaml
+      relativeToChangelogFile: false
+```
+
+#### 6. Validation
+
+- Shared mode: Liquibase creates `messages`, `container_heartbeats`, `shedlock` + claim indexes.
+- Dedicated mode: Liquibase creates `orders_messages`, `invoices_messages`, `container_heartbeats`, `shedlock`. No `messages` table.
+- Single-topic mode (blocking/reactive examples): unchanged — uses `db.changelog-master.yaml`.
+- All existing tests must pass: `mvn -T 1C -q test`.
+
+---
+
+## Phase 3 — Documentation and Release Readiness (T-003)
+
+### Objective
+
+Update docs to reflect the new run script, the split schema strategy, and define release acceptance criteria.
+
+### Deliverables
+
+#### 1. Update `docs/EXAMPLES.md`
+
+- Replace the **Verification** section (lines 320–329) that references `verify-multitopic.sh` with instructions for the new `run-multitopic-modes.sh` script.
+- Add a **Running Multi-Topic Modes (Containers)** section after the existing shared/dedicated sections, showing:
+  ```bash
+  ./examples/run-multitopic-modes.sh start --mode shared
+  ./examples/run-multitopic-modes.sh start --mode dedicated --count 2 --seeder-count 1000
+  ./examples/run-multitopic-modes.sh stop
+  ./examples/run-multitopic-modes.sh down --volumes
+  ```
+- Update the dedicated-mode assertion `SELECT COUNT(*) FROM messages WHERE topic IN (...) = 0` to note that in dedicated mode the `messages` table is not created at all.
+
+#### 2. Update `docs/USAGE.md`
+
+- In the **Shared vs. Dedicated Table Comparison** table, add a row for "Schema outcome":
+  - Shared: `messages` + `container_heartbeats` + `shedlock`
+  - Dedicated: `<topic>_messages` per topic + `container_heartbeats` + `shedlock` (no `messages` table)
+- In the multi-topic configuration section, document that dedicated mode uses `db.changelog-infra.yaml` instead of `db.changelog-master.yaml`.
+
+#### 3. Update `README.md`
+
+- Add a quickstart snippet for multi-topic container mode referencing `run-multitopic-modes.sh`.
+- Briefly note the schema difference between shared and dedicated modes.
+
+#### 4. Release acceptance criteria
+
+Document in this plan (not in code):
+
+1. `./examples/run-multitopic-modes.sh start --mode shared` starts and the embedded seeder completes. SQL assertions from `docs/EXAMPLES.md` pass manually.
+2. `./examples/run-multitopic-modes.sh start --mode dedicated` starts and the embedded seeder completes. Dedicated SQL assertions pass. `messages` table does NOT exist.
+3. `mvn -T 1C -q test` passes.
+4. `mvn -q -DskipTests test-compile` passes.
+5. Docs in `README.md`, `docs/USAGE.md`, and `docs/EXAMPLES.md` are updated and accurate.
+
+---
+
+## Task Dependency Order
+
+```
+T-002 (schema cleanup)  ──┐
+                           ├──> T-003 (docs)
+T-001 (runtime script)  ──┘
+```
+
+T-001 and T-002 are independent and can be implemented in parallel. T-003 depends on both.
+
+---
 
 ## Validation
 
 - `mvn -q -DskipTests test-compile`
 - `mvn -T 1C -q test`
+- Manual: `./examples/run-multitopic-modes.sh start --mode shared` → verify SQL assertions
+- Manual: `./examples/run-multitopic-modes.sh start --mode dedicated` → verify SQL assertions + no `messages` table

@@ -86,12 +86,14 @@ Operational behavior:
 - workers create one scheduled claim loop per configured topic
 - queue health, cleanup, orphan reclaim, and redrive route per topic and per table
 - metrics and logs include the topic dimension for worker and maintenance observations
+- dedicated-table mode should point Liquibase at `db.changelog-infra.yaml`, then include the per-topic table changelogs instead of `db.changelog-master.yaml`
 
 ### Shared vs. Dedicated Table Comparison
 
 | Concern | Shared Table | Dedicated Table |
 |---|---|---|
 | Schema overhead | Single `messages` table, no extra DDL | One table per topic, Liquibase changesets needed |
+| Schema outcome | `messages` + `container_heartbeats` + `shedlock` | `<topic>_messages` per topic + `container_heartbeats` + `shedlock` (no `messages` table) |
 | Operational simplicity | One table to monitor, backup, and index | Per-topic tables to manage independently |
 | Query isolation | `WHERE topic = :topic` filter | Full table-level isolation |
 | Index contention | All topics share the same indexes | Each table has its own index set |
@@ -523,8 +525,8 @@ Regression warning signs:
 
 Reference the Liquibase changelogs for required indexes:
 
-- `schema-liquibase/src/main/resources/db/changelog/superduper/002-worker-claim-indexes-postgres.sql`
-- `schema-liquibase/src/main/resources/db/changelog/superduper/003-worker-claim-indexes-mariadb.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-postgres.sql`
+- `schema-liquibase/src/main/resources/db/changelog/superduper/topic-messages-template-mariadb.sql`
 
 ## Consumer Metadata SPI
 

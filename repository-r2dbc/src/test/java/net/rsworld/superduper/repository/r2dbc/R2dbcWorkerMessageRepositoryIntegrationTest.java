@@ -221,7 +221,7 @@ class R2dbcWorkerMessageRepositoryIntegrationTest {
                         + "id BIGSERIAL PRIMARY KEY,"
                         + "topic VARCHAR(255) NOT NULL DEFAULT 'default',"
                         + "message_id VARCHAR(36) UNIQUE NOT NULL,"
-                        + "message_key VARCHAR(255) NOT NULL,"
+                        + "message_key VARCHAR(36) NOT NULL,"
                         + "content TEXT,"
                         + "status VARCHAR(32) NOT NULL CHECK (status IN ('READY','PROCESSING','PROCESSED','FAILED','STOPPED')),"
                         + "retry_count INT DEFAULT 0,"

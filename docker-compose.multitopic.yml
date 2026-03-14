@@ -1,0 +1,220 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: >
+      bash -c "kafka-topics --bootstrap-server kafka:29092
+      --create --if-not-exists --topic orders.events
+      --partitions 3 --replication-factor 1
+      && kafka-topics --bootstrap-server kafka:29092
+      --create --if-not-exists --topic invoices.events
+      --partitions 3 --replication-factor 1"
+    restart: "no"
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8089:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: superduper
+      POSTGRES_PASSWORD: superduper
+      POSTGRES_USER: superduper
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superduper -d superduper"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8090:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker-1:
+    build:
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-multitopic-shared}
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_LIQUIBASE_ENABLED: "true"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_DATASOURCE_USERNAME: superduper
+      SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
+      SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-multitopic-shared}
+      SUPERDUPER_EXAMPLE_SEED_ENABLED: "true"
+      SUPERDUPER_EXAMPLE_SEED_COUNT: ${SUPERDUPER_SEEDER_COUNT:-500}
+
+  worker-2:
+    build:
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-multitopic-shared}
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_DATASOURCE_USERNAME: superduper
+      SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
+      SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-multitopic-shared}
+      SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
+
+  worker-3:
+    build:
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-multitopic-shared}
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_DATASOURCE_USERNAME: superduper
+      SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
+      SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-multitopic-shared}
+      SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
+
+  worker-4:
+    build:
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-multitopic-shared}
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_DATASOURCE_USERNAME: superduper
+      SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
+      SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-multitopic-shared}
+      SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
+
+  worker-5:
+    build:
+      context: ${SUPERDUPER_WORKER_CONTEXT:-./examples/app-multitopic-shared}
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_LIQUIBASE_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_DATASOURCE_USERNAME: superduper
+      SPRING_DATASOURCE_PASSWORD: superduper
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/superduper
+      SPRING_R2DBC_USERNAME: superduper
+      SPRING_R2DBC_PASSWORD: superduper
+      SPRING_LIQUIBASE_URL: jdbc:postgresql://postgres:5432/superduper
+      SPRING_LIQUIBASE_USER: superduper
+      SPRING_LIQUIBASE_PASSWORD: superduper
+      SUPERDUPER_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SUPERDUPER_KAFKA_GROUP_ID: ${SUPERDUPER_WORKER_GROUP_ID:-example-multitopic-shared}
+      SUPERDUPER_EXAMPLE_SEED_ENABLED: "false"
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./examples/observability/prometheus-multi.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./examples/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./examples/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro

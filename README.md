@@ -10,6 +10,12 @@
 
 ## Why SUPERDUPER? (Problem & Goals)
 
+### The core problem
+
+Kafka gives you per-**partition** ordering, but not per-**key** ordering across failures and retries.
+When message 5 for key A fails, Kafka alone cannot hold messages 6, 7, 8 for key A while continuing to process key B on the same partition.
+Retry topics make this worse: a message on a retry topic can overtake an in-flight message on the main topic, breaking key order silently.
+
 When multiple containers consume messages concurrently and persist them for later processing, you need to guarantee:
 
 - **Per-key ordering**: All messages with the same `message_key` are processed strictly in the order they were received.
@@ -18,6 +24,31 @@ When multiple containers consume messages concurrently and persist them for late
 - **Resilience**: Crashing containers leave **no** stuck work; **orphaned** `PROCESSING` rows are recovered.
 - **Observability**: Heartbeats detect dead containers; status fields show lifecycle progress.
 - **Flexibility**: Use **Spring Kafka + JDBC** or **Spring Kafka + R2DBC (reactive processing chain)** with the same algorithm and schema on PostgreSQL or MariaDB.
+
+### Why a transactional inbox and not …
+
+| Alternative | Why it falls short for this problem |
+|---|---|
+| **Kafka consumer groups alone** | Per-partition ordering, not per-key. A failed message blocks the entire partition, or you skip it and lose ordering for that key. No clean retry/inspect/redrive. |
+| **Kafka retry topics + DLQ** | Per-key ordering across retries is extremely hard. A message on the retry topic can overtake an in-flight message on the main topic. |
+| **Kafka Streams with state stores** | Solves ordering within a partition, but retry/stop/redrive/inspect requires building most of what SUPERDUPER already provides. |
+| **SQS FIFO / Azure Service Bus sessions** | Vendor lock-in. Ordering semantics vary. Loses Kafka's strengths (replay, high throughput, ecosystem). |
+| **Redis Streams with consumer groups** | Fast, but no transactional guarantees for the claim-process-update lifecycle. Ordering after failures is manual. |
+
+### What the transactional inbox gives us
+
+- **SQL atomicity for claiming** — `FOR UPDATE SKIP LOCKED` in a single statement is race-free and well-understood.
+- **Per-key blocking in the claim query** — the `LEFT JOIN … WHERE status='PROCESSING'` elegantly prevents claiming a key that already has work in flight. This is the hardest part and the SQL handles it in one database round-trip.
+- **Database as queryable state** — failures are rows you can `SELECT`, inspect, and redrive. Far more ergonomic than opaque Kafka DLQ topics.
+- **Decoupled ingest from processing** — the consumer acks Kafka quickly; the worker processes at its own pace.
+- **Portable** — works on PostgreSQL and MariaDB, blocking or reactive, with no vendor lock-in.
+
+### Known tradeoffs
+
+- **Database throughput ceiling.** Every message does INSERT (ingest) + UPDATE (claim) + UPDATE (outcome). Kafka can handle millions/sec; the DB caps throughput at tens of thousands/sec depending on hardware.
+- **Poll-based latency.** The claim loop runs on a fixed interval. A message arriving right after a claim cycle waits for the next one, adding P50 latency of roughly half the interval.
+- **ShedLock serializes claiming.** Processing is parallel, but the claim entry point is a single-threaded global lock. At very high scale this becomes a funnel.
+- **Table growth pressure.** The claim index scan degrades as the `messages` table grows unless cleanup and retention are tuned.
 
 ---
 
@@ -75,7 +106,7 @@ sequenceDiagram
 id               BIGINT AUTO_INCREMENT / SERIAL PRIMARY KEY
 topic            VARCHAR(255) NOT NULL DEFAULT 'default'
 message_id       VARCHAR(36) UNIQUE NOT NULL
-message_key      VARCHAR(255) NOT NULL
+message_key      VARCHAR(36) NOT NULL
 content          TEXT
 status           VARCHAR(32) NOT NULL CHECK (status IN ('READY','PROCESSING','PROCESSED','FAILED','STOPPED'))
 retry_count      INT DEFAULT 0
@@ -94,7 +125,7 @@ container_heartbeats(container_id PRIMARY KEY, last_heartbeat TIMESTAMP)
 shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), locked_by VARCHAR(255))
 ```
 
-**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus the processing/reclaim indexes shown in `002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql`.
+**Indexes:** the default schema creates `messages(topic, status, message_key, id)` for topic-aware claim scans plus processing/reclaim indexes, all defined in `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`.
 
 ---
 
@@ -231,6 +262,20 @@ In multi-topic mode:
 - backlog, cleanup, reclaim, and redrive operations route to the correct shared or dedicated table
 - observability always carries the topic dimension for worker and maintenance signals
 
+Schema split:
+
+- shared mode keeps the standard `messages` table plus `container_heartbeats` and `shedlock`
+- dedicated mode creates only `container_heartbeats`, `shedlock`, and the configured per-topic tables such as `orders_messages` and `invoices_messages`
+
+Container quickstart:
+
+```bash
+./examples/run-multitopic-modes.sh start --mode shared
+./examples/run-multitopic-modes.sh start --mode dedicated --count 2 --seeder-count 1000
+./examples/run-multitopic-modes.sh stop
+./examples/run-multitopic-modes.sh down --volumes
+```
+
 > See [docs/USAGE.md](docs/USAGE.md) for integration guide and configuration reference.
 >
 > See [docs/EXAMPLES.md](docs/EXAMPLES.md) for running examples locally.
@@ -262,6 +307,7 @@ Four runnable apps are included:
 - `examples/app-reactive` — reactive processing with Spring Kafka + R2DBC.
 
 See [docs/EXAMPLES.md](docs/EXAMPLES.md) for local setup, multi-container runs, and reproducible SQL assertions.
+Use `./examples/run-multitopic-modes.sh` for the shared and dedicated multi-topic container flows.
 See [docs/EXAMPLES.md#multi-topic-examples](docs/EXAMPLES.md#multi-topic-examples) for the shared-vs-dedicated multitopic walkthrough.
 
 ---

@@ -1,38 +1,30 @@
 # ROADMAP
 
-Goal: create two multi-topic examples:
-- one example with a shared `messages` table for all topics,
-- one example with dedicated message tables per topic.
+Goal: deliver `0.5.2-SNAPSHOT` with robust multi-topic examples and a runtime script that works like `./examples/run-multi.sh` for the new modes.
 
-## Priority 1: Example A — Shared Table Multi-Topic
+## Priority 1: Runtime Script for New Modes
 
-Objective: provide a runnable example where multiple Kafka topics share one `messages` table.
+Objective: replace `./examples/verify-multitopic.sh` with a `run-multi.sh`-style operator script for the new multi-topic modes.
 
-- Add or extend an example app with at least two topics and different handlers.
-- Configure `superduper.topics` entries without `table` overrides.
-- Show topic-specific worker tuning (`batch-size`, `max-retries`) in config.
-- Add a short run guide and expected behavior (topic-aware claim and processing).
-- Add a smoke test or verification script for end-to-end ingest and processing.
+- Replace `./examples/verify-multitopic.sh` with a new run script (for example `./examples/run-multitopic-modes.sh`).
+- Run seeder and worker containers in parallel, following the behavior pattern of `./examples/run-multi.sh`.
+- Support both shared-table mode and dedicated-table-per-topic mode from one script entrypoint.
+- Print clear runtime guidance for inspecting logs and database state while containers are running.
+- Keep the script focused on starting/running flows for the new modes, not test-style verification output.
 
-## Priority 2: Example B — Dedicated Table Per Topic
+## Priority 2: Dedicated-Mode Schema Cleanup
 
-Objective: provide a runnable example where each topic uses its own message table.
+Objective: remove unused schema artifacts when running in dedicated-table mode.
 
-- Add or extend an example app with at least two topics and explicit `table` per topic.
-- Add Liquibase example wiring for creating per-topic message tables.
-- Keep a single shared connection pool (`DataSource`/`ConnectionFactory`) and document it.
-- Add a run guide with verification steps showing table-level isolation.
-- Add a smoke test or verification script validating records land in the expected topic tables.
+- Ensure the standard Liquibase path does not leave an unused default `messages` table in dedicated mode.
+- Define and implement the dedicated-mode schema strategy explicitly in migrations/docs.
+- Validate that shared mode and dedicated mode each create only the expected tables.
 
-## Priority 3: Documentation and Comparison
+## Priority 3: Documentation and Release Readiness
 
-Objective: make both examples easy to understand, run, and compare.
+Objective: make the new run workflow discoverable and release-safe.
 
-- Update `docs/USAGE.md` with a dedicated section for both example modes.
-- Add a comparison table: shared vs dedicated tables (ops model, isolation, schema overhead).
-- Document recommended use-cases and trade-offs.
-- Ensure README links directly to both examples and their startup steps.
-- Define acceptance criteria:
-  - both examples run locally,
-  - both process at least two topics,
-  - behavior matches documented table strategy.
+- Update `README.md` and `docs/USAGE.md` with quickstart instructions for both modes.
+- Document trade-offs and expected database outcomes for shared vs dedicated strategies.
+- Add CI coverage for building and starting the new mode-specific run flow.
+- Define release acceptance criteria: run script works for both modes, schema outcome verified, docs updated.

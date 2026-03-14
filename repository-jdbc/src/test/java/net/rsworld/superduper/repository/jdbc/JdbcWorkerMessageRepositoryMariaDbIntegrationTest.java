@@ -173,7 +173,7 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
                         + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
                         + "topic VARCHAR(255) NOT NULL DEFAULT 'default',"
                         + "message_id VARCHAR(36) UNIQUE NOT NULL,"
-                        + "message_key VARCHAR(255) NOT NULL,"
+                        + "message_key VARCHAR(36) NOT NULL,"
                         + "content TEXT,"
                         + "status VARCHAR(32) NOT NULL,"
                         + "retry_count INT DEFAULT 0,"
@@ -189,7 +189,7 @@ class JdbcWorkerMessageRepositoryMariaDbIntegrationTest {
                         + "ON orders_messages (topic, status, message_key, id)");
         jdbc.getJdbcTemplate()
                 .execute("CREATE INDEX idx_orders_messages_processing_worker_status_container_key_id "
-                        + "ON orders_messages (status, container_id(191), topic(191), message_key(191), id)");
+                        + "ON orders_messages (status, container_id, topic, message_key, id)");
         jdbc.getJdbcTemplate()
                 .execute("CREATE INDEX idx_orders_messages_processing_stale_status_last_updated "
                         + "ON orders_messages (topic, status, last_updated)");

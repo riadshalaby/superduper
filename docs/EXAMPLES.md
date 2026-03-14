@@ -304,7 +304,7 @@ Config highlights:
 
 - `orders.events` writes to `orders_messages`
 - `invoices.events` writes to `invoices_messages`
-- Liquibase loads `db.changelog-master.yaml` first, then the dedicated-table DDL in `db/changelog/multitopic-dedicated/db.changelog-dedicated.yaml`
+- Liquibase loads `db.changelog-infra.yaml`, then the dedicated-table DDL in `db/changelog/multitopic-dedicated/db.changelog-dedicated.yaml`
 - `/ops/queue?topic=orders.events` and `/ops/queue?topic=invoices.events` query the correct per-topic repository/table
 
 Expected dedicated-table SQL assertions:
@@ -313,20 +313,29 @@ Expected dedicated-table SQL assertions:
 |---|---|
 | `SELECT COUNT(*) FROM orders_messages WHERE topic = 'orders.events';` | `500` |
 | `SELECT COUNT(*) FROM invoices_messages WHERE topic = 'invoices.events';` | `500` |
-| `SELECT COUNT(*) FROM messages WHERE topic IN ('orders.events', 'invoices.events');` | `0` |
+| `SELECT to_regclass('public.messages');` | `null` |
 | `SELECT (SELECT COUNT(*) FROM orders_messages WHERE status = 'PROCESSED') + (SELECT COUNT(*) FROM invoices_messages WHERE status = 'PROCESSED');` | `975` |
 | `SELECT (SELECT COUNT(*) FROM orders_messages WHERE status = 'STOPPED') + (SELECT COUNT(*) FROM invoices_messages WHERE status = 'STOPPED');` | `25` |
 
-### Verification
+### Running Multi-Topic Modes (Containers)
 
-Run the helper script after the seeder completion log appears:
+Run the containerized multitopic examples with the operator script:
 
 ```bash
-./examples/verify-multitopic.sh --mode shared
-./examples/verify-multitopic.sh --mode dedicated
+./examples/run-multitopic-modes.sh start --mode shared
+./examples/run-multitopic-modes.sh start --mode dedicated --count 2 --seeder-count 1000
+./examples/run-multitopic-modes.sh stop
+./examples/run-multitopic-modes.sh down --volumes
 ```
 
-The script connects to the local Postgres instance (`localhost:5432`, `superduper` / `superduper` by default), runs the documented assertions, and prints PASS or FAIL for each one. Override connection details with `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, or `PGDATABASE` when needed.
+What the script does:
+
+- packages the example jars before container startup
+- starts the shared or dedicated multitopic worker image with embedded seeding on `worker-1`
+- scales workers from `1` to `5` with `--count`
+- prints the verification SQL for the selected mode, plus Kafka UI, Adminer, Prometheus, and Grafana URLs
+
+Use Adminer against the local Postgres instance (`localhost:5432`, `superduper` / `superduper`) to run the SQL assertions below after the seeder completion log appears.
 
 ### SQL Assertions
 
