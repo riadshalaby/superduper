@@ -2,27 +2,25 @@
 
 Status: **complete**
 
-Review Round: **1**
+Review Round: **2**
 
 Reviewed: 2026-03-14
-
-Commit: `08f48fb` — `feat: add multitopic runtime tooling and schema split`
 
 ---
 
 ## Verdict
 
-`PASS_WITH_NOTES`
+`PASS`
 
-All three tasks (T-001, T-002, T-003) meet their acceptance criteria. No required fixes.
-
-**Note:** Schema duplication between shared-mode SQL files and dedicated-mode templates identified during review. Tracked as follow-up task **T-004**.
+All four tasks (T-001, T-002, T-003, T-004) meet their acceptance criteria. No required fixes.
 
 ---
 
 ## T-001 — Runtime Script for Multi-Topic Modes
 
-**Verdict: PASS**
+**Verdict: PASS** (Round 1)
+
+Commit: `08f48fb` — `feat: add multitopic runtime tooling and schema split`
 
 ### Acceptance Criteria Validation
 
@@ -45,7 +43,9 @@ All three tasks (T-001, T-002, T-003) meet their acceptance criteria. No require
 
 ## T-002 — Dedicated-Mode Schema Cleanup
 
-**Verdict: PASS**
+**Verdict: PASS** (Round 1)
+
+Commit: `08f48fb` — `feat: add multitopic runtime tooling and schema split`
 
 ### Acceptance Criteria Validation
 
@@ -72,7 +72,9 @@ All three tasks (T-001, T-002, T-003) meet their acceptance criteria. No require
 
 ## T-003 — Documentation and Release Readiness
 
-**Verdict: PASS**
+**Verdict: PASS** (Round 1)
+
+Commit: `08f48fb` — `feat: add multitopic runtime tooling and schema split`
 
 ### Acceptance Criteria Validation
 
@@ -92,6 +94,34 @@ All three tasks (T-001, T-002, T-003) meet their acceptance criteria. No require
 
 ---
 
+## T-004 — Schema Template Consolidation
+
+**Verdict: PASS** (Round 2)
+
+Commit: `72a0338` — `fix: consolidate shared schema templates`
+
+### Acceptance Criteria Validation
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | `001-init-messages-postgres.sql` and `001-init-messages-mariadb.sql` deleted | PASS — both files removed |
+| 2 | `db.changelog-master.yaml` uses `topic-messages-template-*.sql` with `table.name=messages` | PASS — property set with `global: false`, changesets 003/004 reference templates |
+| 3 | `002-worker-claim-indexes-postgres.sql` and `003-worker-claim-indexes-mariadb.sql` deleted | PASS — both files removed |
+| 4 | Claim indexes folded into `topic-messages-template-*.sql` | PASS — already bundled in templates, no separate files needed |
+| 5 | No redundant `idx_messages_topic_status_key_id` double-creation | PASS — index created once per template invocation only |
+| 6 | `mvn -T 1C -q test` passes | PASS — confirmed in handoff evidence |
+| 7 | Both shared and dedicated integration tests pass | PASS — confirmed in handoff evidence |
+
+### Findings (informational)
+
+1. **db.changelog-master.yaml** — Reduced from 35 lines (6 changesets) to 24 lines (infra include + property + 2 changesets). Sets `table.name=messages` with `global: false` so it doesn't leak into included changelogs. Changesets 003/004 reference the same templates used by dedicated mode — single source of truth achieved.
+2. **MariaDB template fix** — The processing worker index was adjusted from `(topic, status, container_id, message_key, id)` to `(status, container_id(191), topic(191), message_key(191), id)` with column prefix lengths. This matches the index shape already exercised by the MariaDB repository tests and avoids key-length violations. Good catch during validation.
+3. **File inventory clean** — `schema-liquibase/.../superduper/` now contains exactly 4 SQL files (`001-init-infra-postgres.sql`, `001-init-infra-mariadb.sql`, `topic-messages-template-postgres.sql`, `topic-messages-template-mariadb.sql`) + 2 YAML changelogs (`db.changelog-infra.yaml`, `db.changelog-master.yaml`). No redundancy.
+4. **Documentation updated** — README.md indexes reference, ARCHITECTURE.md module table and dialect support table, and USAGE.md index reference all point to the template files now. No stale references to deleted files in production code or documentation.
+5. **Dedicated mode untouched** — `db.changelog-dedicated.yaml` and per-topic changelogs (`orders-messages.yaml`, `invoices-messages.yaml`) were not modified, confirming no regression.
+
+---
+
 ## Architecture Compliance (CLAUDE.md)
 
 | Rule | Status |
@@ -100,29 +130,9 @@ All three tasks (T-001, T-002, T-003) meet their acceptance criteria. No require
 | Workers/consumers use repository ports (no direct SQL in service classes) | PASS — no service-layer changes |
 | Documentation in `docs/` except README, ROADMAP, CLAUDE | PASS |
 | English for code comments, log/output messages | PASS |
-| Conventional Commit message | PASS — `feat: add multitopic runtime tooling and schema split` |
-| Spotless formatting applied | PASS — confirmed in handoff |
-| Tests pass | PASS — `mvn -T 1C -q test` confirmed |
-
----
-
-## Follow-up: T-004 — Schema Template Consolidation
-
-**Severity: design improvement (not a blocker)**
-
-Two duplication/inconsistency issues identified in the schema split design (originating from the plan, faithfully implemented):
-
-### Finding 1: Shared-mode messages SQL duplicates the dedicated-mode templates
-
-`001-init-messages-postgres.sql` and `001-init-messages-mariadb.sql` are non-parameterized copies of `topic-messages-template-postgres.sql` and `topic-messages-template-mariadb.sql`. The shared mode could reuse the same templates with `table.name=messages`, eliminating two redundant files.
-
-### Finding 2: Claim indexes split in shared mode but bundled in dedicated mode
-
-In dedicated mode, `topic-messages-template-*.sql` creates the table **and** all three indexes in one file. In shared mode, the table + base index are in `001-init-messages-*.sql`, and the claim indexes are in separate `002/003-worker-claim-indexes-*.sql` files. This also causes `idx_messages_topic_status_key_id` to be created twice (once in `001`, again with `IF NOT EXISTS` in `002/003`).
-
-### Resolution
-
-Tracked as **T-004** in `.ai/TASKS.md` with status `todo`. Next role: `plan`.
+| Conventional Commit messages | PASS — `feat:` (08f48fb) and `fix:` (72a0338) |
+| Spotless formatting applied | PASS — confirmed in both handoffs |
+| Tests pass | PASS — `mvn -T 1C -q test` confirmed for both commits |
 
 ---
 

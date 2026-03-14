@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS ${table.name} (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   topic VARCHAR(255) NOT NULL DEFAULT 'default',
   message_id VARCHAR(36) UNIQUE NOT NULL,
-  message_key VARCHAR(255) NOT NULL,
+  message_key VARCHAR(36) NOT NULL,
   content TEXT,
   status VARCHAR(32) NOT NULL,
   retry_count INT DEFAULT 0,
@@ -19,7 +19,7 @@ CREATE INDEX idx_${table.name}_topic_status_key_id
     ON ${table.name} (topic, status, message_key, id);
 
 CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
-    ON ${table.name} (status, container_id(191), topic(191), message_key(191), id);
+    ON ${table.name} (status, container_id, topic, message_key, id);
 
 CREATE INDEX idx_${table.name}_processing_stale_status_last_updated
     ON ${table.name} (topic, status, last_updated);

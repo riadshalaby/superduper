@@ -6,6 +6,159 @@ Goal: deliver robust multi-topic runtime tooling, clean dedicated-mode schema, a
 
 ---
 
+## Phase 5 — Narrow `message_key` and Remove MariaDB Index Prefix Limits (T-005)
+
+### Objective
+
+Narrow the `message_key` column from `VARCHAR(255)` to `VARCHAR(36)` across all SQL templates and inline test schemas, and remove all `(191)` column prefix limits from MariaDB indexes now that the reduced column width keeps total index key size under 3072 bytes.
+
+### Background
+
+After T-004 consolidated the schema templates, the MariaDB processing index still uses `(191)` prefix limits on three columns:
+
+```sql
+CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
+    ON ${table.name} (status, container_id(191), topic(191), message_key(191), id);
+```
+
+Prefix indexes sacrifice selectivity — MariaDB can only match on the first 191 characters of each column, not the full value. The root cause is that the full-width index (`status` 32 + `container_id` 255 + `topic` 255 + `message_key` 255 + `id` 8 = 805 chars × 4 bytes/char = 3220 bytes) exceeds InnoDB's 3072-byte key limit with `utf8mb4`.
+
+Narrowing `message_key` to `VARCHAR(36)` resolves this:
+
+| Column | Type | Bytes (utf8mb4) |
+|--------|------|-----------------|
+| status | VARCHAR(32) | 128 |
+| container_id | VARCHAR(255) | 1020 |
+| topic | VARCHAR(255) | 1020 |
+| message_key | **VARCHAR(36)** | **144** |
+| id | BIGINT | 8 |
+| **Total** | | **2320** |
+
+2320 < 3072 — all prefix limits can be removed.
+
+### Design Note
+
+`message_key` is populated directly from `consumerRecord.key()` (the Kafka record key) in both `KafkaConsumerService` and `KafkaReactiveR2dbcConsumerService`, with a fallback to `"default"` when null. VARCHAR(36) accommodates UUIDs (36 chars) and all key patterns used in examples/tests (longest is ~17 chars: `"parallel-key-1000"`). Users sending Kafka record keys longer than 36 characters would get a database truncation/rejection error. This is an intentional sizing constraint — no consumer-side validation is added in this task.
+
+### Deliverables
+
+#### 1. Update SQL templates (2 files)
+
+**`topic-messages-template-postgres.sql`** — change line 5:
+```sql
+-- before
+message_key VARCHAR(255) NOT NULL,
+-- after
+message_key VARCHAR(36) NOT NULL,
+```
+
+No index changes needed — PostgreSQL has no prefix limits.
+
+**`topic-messages-template-mariadb.sql`** — two changes:
+
+Column width (line 5):
+```sql
+-- before
+message_key VARCHAR(255) NOT NULL,
+-- after
+message_key VARCHAR(36) NOT NULL,
+```
+
+Remove all `(191)` prefix limits from the processing index (line 21–22):
+```sql
+-- before
+CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
+    ON ${table.name} (status, container_id(191), topic(191), message_key(191), id);
+-- after
+CREATE INDEX idx_${table.name}_processing_worker_status_container_key_id
+    ON ${table.name} (status, container_id, topic, message_key, id);
+```
+
+#### 2. Update inline test schemas (4 files)
+
+These repository integration tests create tables inline and must match the templates.
+
+**`JdbcWorkerMessageRepositoryIntegrationTest.java`** (line 199):
+```java
+// before
++ "message_key VARCHAR(255) NOT NULL,"
+// after
++ "message_key VARCHAR(36) NOT NULL,"
+```
+
+**`JdbcWorkerMessageRepositoryMariaDbIntegrationTest.java`** — two changes:
+- Line 176: `VARCHAR(255)` → `VARCHAR(36)` for `message_key`
+- Line 192: remove `(191)` prefix limits:
+```java
+// before
++ "ON orders_messages (status, container_id(191), topic(191), message_key(191), id)")
+// after
++ "ON orders_messages (status, container_id, topic, message_key, id)")
+```
+
+**`R2dbcWorkerMessageRepositoryIntegrationTest.java`** (line 224):
+```java
+// before
++ "message_key VARCHAR(255) NOT NULL,"
+// after
++ "message_key VARCHAR(36) NOT NULL,"
+```
+
+**`R2dbcWorkerMessageRepositoryMariaDbIntegrationTest.java`** — two changes:
+- Line 179: `VARCHAR(255)` → `VARCHAR(36)` for `message_key`
+- Line 199: remove `(191)` prefix limits:
+```java
+// before
++ "ON orders_messages (status, container_id(191), topic(191), message_key(191), id)")
+// after
++ "ON orders_messages (status, container_id, topic, message_key, id)")
+```
+
+#### 3. Update documentation (1 file)
+
+**`README.md`** (line 109) — update the schema diagram:
+```
+-- before
+message_key      VARCHAR(255) NOT NULL
+-- after
+message_key      VARCHAR(36) NOT NULL
+```
+
+No other docs reference `message_key` sizing. `docs/USAGE.md` mentions `messages(message_key, id)` as an index but not the column width.
+
+#### 4. Files NOT modified
+
+- `001-init-infra-postgres.sql` / `001-init-infra-mariadb.sql` — no `message_key` column (infra tables only)
+- `db.changelog-master.yaml` / `db.changelog-infra.yaml` — YAML changelogs unchanged
+- `db.changelog-dedicated.yaml` / `orders-messages.yaml` / `invoices-messages.yaml` — dedicated-mode unchanged (they reference the same templates, so they inherit the change automatically)
+- `SharedMultitopicLiquibaseIntegrationTest.java` / `DedicatedMultitopicLiquibaseIntegrationTest.java` — these assert table/index existence, not column widths; no changes needed
+- Consumer services (`KafkaConsumerService`, `KafkaReactiveR2dbcConsumerService`) — no validation added; column width is the enforcement boundary
+
+### Complete Change Summary
+
+| File | Change |
+|------|--------|
+| `topic-messages-template-postgres.sql` | `message_key VARCHAR(255)` → `VARCHAR(36)` |
+| `topic-messages-template-mariadb.sql` | `message_key VARCHAR(255)` → `VARCHAR(36)`, remove 3× `(191)` prefix limits |
+| `JdbcWorkerMessageRepositoryIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)` |
+| `JdbcWorkerMessageRepositoryMariaDbIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)`, remove `(191)` prefix limits |
+| `R2dbcWorkerMessageRepositoryIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)` |
+| `R2dbcWorkerMessageRepositoryMariaDbIntegrationTest.java` | `message_key VARCHAR(255)` → `VARCHAR(36)`, remove `(191)` prefix limits |
+| `README.md` | Schema diagram: `VARCHAR(255)` → `VARCHAR(36)` |
+
+**Total: 7 files, ~10 line-level edits.**
+
+### Validation
+
+- `mvn -q spotless:apply` — formatting
+- `mvn -q -DskipTests test-compile` — compile check
+- Targeted MariaDB tests: `mvn -q -pl repository-jdbc,repository-r2dbc -am -Dtest="*MariaDb*" -Dsurefire.failIfNoSpecifiedTests=false test`
+- Full suite: `mvn -T 1C -q test` — all tests including shared and dedicated Liquibase integration tests
+- Verify no `(191)` prefix limits remain: `grep -r "(191)" schema-liquibase/ repository-jdbc/ repository-r2dbc/`
+- Verify no `VARCHAR(255)` remains for `message_key`: `grep -r "message_key VARCHAR(255)" schema-liquibase/ repository-jdbc/ repository-r2dbc/ README.md`
+
+---
+
 ## Phase 4 — Shared-Mode Schema Template Consolidation (T-004)
 
 ### Objective
