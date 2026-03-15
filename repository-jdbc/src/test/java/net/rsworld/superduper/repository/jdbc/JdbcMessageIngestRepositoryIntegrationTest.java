@@ -3,6 +3,8 @@ package net.rsworld.superduper.repository.jdbc;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.util.List;
+import net.rsworld.superduper.repository.api.MessageIngestData;
 import net.rsworld.superduper.schema.liquibase.test.LiquibaseTestSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -59,6 +61,30 @@ class JdbcMessageIngestRepositoryIntegrationTest {
     }
 
     @Test
+    void batchUpsertWorksOnPostgres() {
+        DriverManagerDataSource ds = new DriverManagerDataSource();
+        ds.setDriverClassName("org.postgresql.Driver");
+        ds.setUrl(postgres.getJdbcUrl());
+        ds.setUsername(postgres.getUsername());
+        ds.setPassword(postgres.getPassword());
+
+        JdbcTemplate jdbc = new JdbcTemplate(ds);
+        jdbc.execute("TRUNCATE TABLE messages RESTART IDENTITY");
+
+        JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
+                new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.POSTGRES);
+        Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
+        repo.batchUpsertReadyMessages(List.of(
+                new MessageIngestData("default", "u1", "k1", "v1", occurredAt, null, null),
+                new MessageIngestData("default", "u2", "k2", "v2", occurredAt, "corr-2", "order.created"),
+                new MessageIngestData("default", "u1", "k1", "v3", occurredAt, null, null)));
+
+        Integer count =
+                jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE message_id IN ('u1','u2')", Integer.class);
+        assertThat(count).isEqualTo(2);
+    }
+
+    @Test
     void upsertWorksOnMariaDb() {
         DriverManagerDataSource ds = new DriverManagerDataSource();
         ds.setDriverClassName("org.mariadb.jdbc.Driver");
@@ -76,5 +102,29 @@ class JdbcMessageIngestRepositoryIntegrationTest {
 
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE message_id='u1'", Integer.class);
         assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void batchUpsertWorksOnMariaDb() {
+        DriverManagerDataSource ds = new DriverManagerDataSource();
+        ds.setDriverClassName("org.mariadb.jdbc.Driver");
+        ds.setUrl(mariadb.getJdbcUrl());
+        ds.setUsername(mariadb.getUsername());
+        ds.setPassword(mariadb.getPassword());
+
+        JdbcTemplate jdbc = new JdbcTemplate(ds);
+        jdbc.execute("TRUNCATE TABLE messages");
+
+        JdbcMessageIngestRepository repo = new JdbcMessageIngestRepository(
+                new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(ds), SqlDialect.MARIADB);
+        Instant occurredAt = Instant.parse("2026-02-21T12:00:00Z");
+        repo.batchUpsertReadyMessages(List.of(
+                new MessageIngestData("default", "u1", "k1", "v1", occurredAt, null, null),
+                new MessageIngestData("default", "u2", "k2", "v2", occurredAt, "corr-2", "order.created"),
+                new MessageIngestData("default", "u1", "k1", "v3", occurredAt, null, null)));
+
+        Integer count =
+                jdbc.queryForObject("SELECT COUNT(*) FROM messages WHERE message_id IN ('u1','u2')", Integer.class);
+        assertThat(count).isEqualTo(2);
     }
 }

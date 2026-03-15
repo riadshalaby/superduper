@@ -20,6 +20,7 @@ superduper:
     dialect: ${SUPERDUPER_DB_DIALECT:postgres}
   consumer:
     type: spring
+    max-poll-records: 500
   observability:
     enabled: true
     outputs:

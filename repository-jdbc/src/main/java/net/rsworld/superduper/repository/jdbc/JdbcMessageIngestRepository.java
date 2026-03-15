@@ -2,10 +2,13 @@ package net.rsworld.superduper.repository.jdbc;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
+import net.rsworld.superduper.repository.api.MessageIngestData;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 
 public class JdbcMessageIngestRepository implements MessageIngestRepository {
 
@@ -44,13 +47,30 @@ public class JdbcMessageIngestRepository implements MessageIngestRepository {
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         jdbc.update(
                 dialect.upsertReadyMessageSql(),
-                new MapSqlParameterSource()
-                        .addValue("topic", topic)
-                        .addValue("messageId", messageId)
-                        .addValue("messageKey", messageKey)
-                        .addValue("content", content)
-                        .addValue("occurredAt", Timestamp.from(occurredAt))
-                        .addValue("correlationId", correlationId)
-                        .addValue("messageType", messageType));
+                toParameterSource(new MessageIngestData(
+                        topic, messageId, messageKey, content, occurredAt, correlationId, messageType)));
+    }
+
+    @Override
+    public void batchUpsertReadyMessages(List<MessageIngestData> messages) {
+        Objects.requireNonNull(messages, "messages must not be null");
+        if (messages.isEmpty()) {
+            return;
+        }
+        SqlParameterSource[] batchParameters =
+                messages.stream().map(this::toParameterSource).toArray(SqlParameterSource[]::new);
+        jdbc.batchUpdate(dialect.upsertReadyMessageSql(), batchParameters);
+    }
+
+    private MapSqlParameterSource toParameterSource(MessageIngestData message) {
+        Objects.requireNonNull(message.occurredAt(), "occurredAt must not be null");
+        return new MapSqlParameterSource()
+                .addValue("topic", message.topic())
+                .addValue("messageId", message.messageId())
+                .addValue("messageKey", message.messageKey())
+                .addValue("content", message.content())
+                .addValue("occurredAt", Timestamp.from(message.occurredAt()))
+                .addValue("correlationId", message.correlationId())
+                .addValue("messageType", message.messageType());
     }
 }
