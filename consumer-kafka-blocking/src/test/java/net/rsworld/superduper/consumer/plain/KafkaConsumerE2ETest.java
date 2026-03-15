@@ -3,11 +3,14 @@ package net.rsworld.superduper.consumer.plain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import javax.sql.DataSource;
+import net.rsworld.superduper.repository.api.MessageIngestData;
 import net.rsworld.superduper.repository.api.MessageIngestRepository;
 import net.rsworld.superduper.repository.jdbc.JdbcMessageIngestRepository;
 import net.rsworld.superduper.repository.jdbc.SqlDialect;
@@ -20,10 +23,12 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +37,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.kafka.annotation.EnableKafka;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
@@ -52,12 +59,16 @@ class KafkaConsumerE2ETest {
     @Container
     static PostgreSQLContainer pg = new PostgreSQLContainer("postgres:16-alpine");
 
+    @Autowired
+    KafkaListenerEndpointRegistry registry;
+
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
         r.add("superduper.consumer.type", () -> "spring");
         r.add("superduper.kafka.bootstrap-servers", kafka::getBootstrapServers);
         r.add("superduper.kafka.group-id", () -> "e2e-jdbc");
         r.add("superduper.kafka.topic", () -> TOPIC);
+        r.add("superduper.consumer.max-poll-records", () -> 10);
         r.add("spring.datasource.url", pg::getJdbcUrl);
         r.add("spring.datasource.username", pg::getUsername);
         r.add("spring.datasource.password", pg::getPassword);
@@ -72,16 +83,10 @@ class KafkaConsumerE2ETest {
     static void shutdown() {}
 
     @Test
-    void endToEnd_insertOnConsume() throws Exception {
+    void endToEnd_batchInsertAndDedupByMessageId() throws Exception {
         ensureTopic(kafka.getBootstrapServers(), TOPIC);
-
-        Properties p = new Properties();
-        p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-        p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        try (KafkaProducer<String, String> prod = new KafkaProducer<>(p)) {
-            prod.send(new ProducerRecord<>(TOPIC, "k-e2e", "hello-jdbc")).get();
-        }
+        stopContainers();
+        TestConfig.reset();
 
         var ds = DataSourceBuilder.create()
                 .url(pg.getJdbcUrl())
@@ -89,16 +94,57 @@ class KafkaConsumerE2ETest {
                 .password(pg.getPassword())
                 .build();
         JdbcTemplate jdbc = new JdbcTemplate(ds);
+        jdbc.execute("TRUNCATE TABLE messages RESTART IDENTITY");
+
+        Properties p = new Properties();
+        p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+        p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        try (KafkaProducer<String, String> prod = new KafkaProducer<>(p)) {
+            prod.send(record("k-1", "hello-1", "msg-1")).get();
+            prod.send(record("k-2", "hello-2", "msg-2")).get();
+            prod.send(record("k-3", "hello-3", "dup-1")).get();
+            prod.send(record("k-4", "hello-4", "dup-1")).get();
+            prod.send(record("k-5", "hello-5", "msg-5")).get();
+        }
+
+        startContainers();
+
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(20).toMillis();
         Integer found = 0;
         while (System.currentTimeMillis() < deadline) {
-            found = jdbc.queryForObject(
-                    "SELECT COUNT(*) FROM messages WHERE message_key='k-e2e' AND content='hello-jdbc'", Integer.class);
-            if (found != null && found > 0) break;
+            found = jdbc.queryForObject("SELECT COUNT(*) FROM messages", Integer.class);
+            if (found != null && found == 4 && TestConfig.maxBatchSize.get() >= 2) {
+                break;
+            }
             pauseMillis(250);
         }
-        assertThat(found).isNotNull();
-        assertThat(found).isGreaterThan(0);
+
+        assertThat(found).isEqualTo(4);
+        assertThat(TestConfig.batchCalls.get()).isGreaterThan(0);
+        assertThat(TestConfig.maxBatchSize.get()).isGreaterThanOrEqualTo(2);
+        assertThat(TestConfig.singleCalls.get()).isEqualTo(0);
+    }
+
+    private void stopContainers() {
+        registry.getListenerContainers().forEach(MessageListenerContainer::stop);
+    }
+
+    private void startContainers() {
+        registry.getListenerContainers().forEach(MessageListenerContainer::start);
+    }
+
+    private static ProducerRecord<String, String> record(String key, String value, String messageId) {
+        ProducerRecord<String, String> record = new ProducerRecord<>(TOPIC, key, value);
+        record.headers()
+                .add(new RecordHeader("message_id", messageId.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        record.headers()
+                .add(new RecordHeader(
+                        "occurred_at",
+                        Instant.parse("2026-02-21T10:15:30Z")
+                                .toString()
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        return record;
     }
 
     private static void ensureTopic(String bootstrapServers, String topic) throws Exception {
@@ -146,6 +192,16 @@ class KafkaConsumerE2ETest {
     @EnableKafka
     @Import(KafkaConsumerAutoConfiguration.class)
     static class TestConfig {
+        static final AtomicInteger batchCalls = new AtomicInteger();
+        static final AtomicInteger maxBatchSize = new AtomicInteger();
+        static final AtomicInteger singleCalls = new AtomicInteger();
+
+        static void reset() {
+            batchCalls.set(0);
+            maxBatchSize.set(0);
+            singleCalls.set(0);
+        }
+
         @Bean
         DataSource dataSource() {
             return DataSourceBuilder.create()
@@ -162,7 +218,33 @@ class KafkaConsumerE2ETest {
 
         @Bean
         MessageIngestRepository messageIngestRepository(NamedParameterJdbcTemplate np) {
-            return new JdbcMessageIngestRepository(np, SqlDialect.POSTGRES);
+            return new TrackingJdbcMessageIngestRepository(np, SqlDialect.POSTGRES);
+        }
+    }
+
+    static class TrackingJdbcMessageIngestRepository extends JdbcMessageIngestRepository {
+        TrackingJdbcMessageIngestRepository(NamedParameterJdbcTemplate jdbc, SqlDialect dialect) {
+            super(jdbc, dialect);
+        }
+
+        @Override
+        public void batchUpsertReadyMessages(List<MessageIngestData> messages) {
+            TestConfig.batchCalls.incrementAndGet();
+            TestConfig.maxBatchSize.accumulateAndGet(messages.size(), Math::max);
+            super.batchUpsertReadyMessages(messages);
+        }
+
+        @Override
+        public void upsertReadyMessage(
+                String topic,
+                String messageId,
+                String messageKey,
+                String content,
+                Instant occurredAt,
+                String correlationId,
+                String messageType) {
+            TestConfig.singleCalls.incrementAndGet();
+            super.upsertReadyMessage(topic, messageId, messageKey, content, occurredAt, correlationId, messageType);
         }
     }
 }

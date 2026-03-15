@@ -8,14 +8,13 @@ cd "$REPO_ROOT"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/ai-release.sh prepare <X.Y.Z> [--open-pr]
+  scripts/ai-release.sh prepare <X.Y.Z>
   scripts/ai-release.sh finalize <X.Y.Z> [NEXT_VERSION] [--branch <branch-name>] [--archive]
 
 Examples:
   scripts/ai-release.sh prepare 0.5.0
-  scripts/ai-release.sh prepare 0.5.0 --open-pr
   scripts/ai-release.sh finalize 0.5.0
-  scripts/ai-release.sh finalize 0.5.0 0.5.1-SNAPSHOT --branch feature/v0.5.1-SNAPSHOT --archive
+  scripts/ai-release.sh finalize 0.5.0 0.6.0 --branch feature/v0.6.0 --archive
 EOF
 }
 
@@ -40,11 +39,88 @@ validate_next_version() {
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || die "Next version is invalid: $version"
 }
 
-ensure_clean_worktree() {
-  if [[ -n "$(git status --porcelain)" ]]; then
-    die "Worktree is not clean. Commit or stash changes first."
+AUTO_STASHED="false"
+AUTO_STASH_LABEL=""
+AUTO_STASH_RESTORED="false"
+
+path_in_list() {
+  local needle="$1"
+  shift
+  local candidate
+  for candidate in "$@"; do
+    [[ "$candidate" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+auto_stash_worktree() {
+  local preserve_paths=("$@")
+  local seen_paths=()
+  local stash_paths=()
+  local path
+
+  while IFS= read -r -d '' path; do
+    [[ -n "$path" ]] || continue
+    if [[ ${#seen_paths[@]} -gt 0 ]]; then
+      path_in_list "$path" "${seen_paths[@]}" && continue
+    fi
+    seen_paths+=("$path")
+    if [[ ${#preserve_paths[@]} -gt 0 ]]; then
+      path_in_list "$path" "${preserve_paths[@]}" && continue
+    fi
+    stash_paths+=("$path")
+  done < <({
+    git diff --name-only -z
+    git diff --cached --name-only -z
+    git ls-files --others --exclude-standard -z
+  })
+
+  if [[ ${#stash_paths[@]} -eq 0 ]]; then
+    return
+  fi
+
+  AUTO_STASH_LABEL="ai-release-$(date -u +%Y%m%dT%H%M%SZ)"
+  git stash push -u -m "$AUTO_STASH_LABEL" -- "${stash_paths[@]}" >/dev/null
+  AUTO_STASHED="true"
+  if [[ ${#preserve_paths[@]} -gt 0 ]]; then
+    echo "Temporarily stashed unrelated worktree changes."
+  else
+    echo "Temporarily stashed existing worktree changes."
   fi
 }
+
+restore_worktree() {
+  if [[ "$AUTO_STASHED" != "true" || "$AUTO_STASH_RESTORED" == "true" ]]; then
+    return 0
+  fi
+
+  local stash_ref
+  stash_ref="$(git stash list --format='%gd %s' | awk -v label="$AUTO_STASH_LABEL" '$0 ~ label { print $1; exit }')"
+  AUTO_STASH_RESTORED="true"
+
+  if [[ -z "$stash_ref" ]]; then
+    echo "Warning: could not find auto-stashed worktree entry '$AUTO_STASH_LABEL' to restore." >&2
+    return 1
+  fi
+
+  if git stash pop "$stash_ref" >/dev/null; then
+    echo "Restored stashed worktree changes."
+    return 0
+  fi
+
+  echo "Warning: failed to restore stashed worktree changes from $stash_ref. Resolve manually with 'git stash list' and 'git stash pop $stash_ref'." >&2
+  return 1
+}
+
+cleanup_release() {
+  local rc=$?
+  if ! restore_worktree; then
+    rc=1
+  fi
+  exit "$rc"
+}
+
+trap cleanup_release EXIT
 
 project_version() {
   mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1
@@ -133,24 +209,16 @@ build_commit_list_markdown() {
   fi
 }
 
+find_existing_pr_number() {
+  local branch="$1"
+  gh pr list --head "$branch" --base main --state open --limit 1 --json number --jq '.[0].number // empty'
+}
+
 prepare_release() {
   local release="$1"
   shift
-
-  local open_pr="false"
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --open-pr)
-        open_pr="true"
-        ;;
-      *)
-        die "Unknown option for prepare: $1"
-        ;;
-    esac
-    shift
-  done
-
-  ensure_clean_worktree
+  [[ $# -eq 0 ]] || die "Unknown option for prepare: $1"
+  auto_stash_worktree ".ai/REVIEW.md" ".ai/TASKS.md"
 
   local branch
   branch="$(git rev-parse --abbrev-ref HEAD)"
@@ -161,10 +229,17 @@ prepare_release() {
   mvn -T 1C -q test
 
   git add -A
-  git diff --cached --quiet && die "No staged changes after release prepare."
-
   local commit_msg="chore(release): v$release"
-  git commit -m "$commit_msg"
+  if git diff --cached --quiet; then
+    local current_version
+    current_version="$(project_version)"
+    [[ "$current_version" == "$release" ]] || die \
+      "No staged changes after release prepare, and project version is $current_version instead of $release."
+    echo "No new release changes to commit; continuing with existing branch state for v$release."
+  else
+    git commit -m "$commit_msg"
+  fi
+
   git push -u origin "$branch"
 
   # Refresh remote refs when available so the PR body reflects the latest main.
@@ -211,30 +286,23 @@ $commit_list
 EOF
 )"
 
-  if [[ "$open_pr" == "true" ]]; then
-    require_cmd gh
-    if gh pr view --head "$branch" >/dev/null 2>&1; then
-      gh pr edit --title "$pr_title" --body "$pr_body"
-      echo "Updated existing PR for branch $branch."
-    else
-      gh pr create --base main --head "$branch" --title "$pr_title" --body "$pr_body"
-    fi
+  require_cmd gh
+  local existing_pr_number
+  existing_pr_number="$(find_existing_pr_number "$branch")"
+  if [[ -n "$existing_pr_number" ]]; then
+    gh pr edit "$existing_pr_number" --title "$pr_title" --body "$pr_body"
+    echo "Updated existing PR #$existing_pr_number for branch $branch."
+  else
+    gh pr create --base main --head "$branch" --title "$pr_title" --body "$pr_body"
   fi
 
   cat <<EOF
 Release prepare completed for v$release.
 
 Next steps:
-1. Open/update a PR to main:
-   gh pr create --base main --head $branch --title "$pr_title" --body '<body>' 
-2. Ask the user to merge the PR on GitHub.
-3. After merge confirmation, run:
+1. Ask the user to review and merge the PR on GitHub.
+2. After merge confirmation, run:
    scripts/ai-release.sh finalize $release
-
-Suggested PR body:
-------------------------------------------------------------
-$pr_body
-------------------------------------------------------------
 EOF
 }
 
@@ -267,7 +335,7 @@ finalize_release() {
     shift
   done
 
-  ensure_clean_worktree
+  auto_stash_worktree
 
   git fetch origin --tags
   git checkout main
@@ -302,16 +370,6 @@ finalize_release() {
   fi
 
   validate_next_version "$next_version"
-
-  if [[ "$next_version" != *-SNAPSHOT ]]; then
-    if [[ -t 0 ]]; then
-      local confirm
-      read -r -p "Next version does not end with -SNAPSHOT. Continue? [y/N]: " confirm
-      [[ "$confirm" =~ ^[Yy]$ ]] || die "Aborted by user."
-    else
-      die "NEXT_VERSION should usually end with -SNAPSHOT."
-    fi
-  fi
 
   if [[ -z "$branch_name" ]]; then
     branch_name="feature/v$next_version"

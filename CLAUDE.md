@@ -9,7 +9,7 @@
   - `mvn -q spotless:apply`
 - Use Maven version bumps for release and post-release transitions:
   - `mvn versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`
-  - `mvn versions:set -DnewVersion=X.Y.(Z+1)-SNAPSHOT -DgenerateBackupPoms=false`
+  - `mvn versions:set -DnewVersion=NEXT_VERSION -DgenerateBackupPoms=false`
 - Stage newly created files explicitly:
   - `git add <new-file>`
 - Commit behavior by role:
@@ -113,16 +113,17 @@ Build and maintain the library described in `README.md`:
 - Release actions require explicit user command in-session.
 - Two-phase release workflow:
   1. Prepare release on feature branch:
-     - `scripts/ai-release.sh prepare X.Y.Z --open-pr`
-     - Performs version bump to `X.Y.Z`, runs required validations, commits `chore(release): vX.Y.Z`, and pushes the branch.
-     - Opens/updates a PR to `main`.
+     - `scripts/ai-release.sh prepare X.Y.Z`
+     - Automatically stashes and restores unrelated worktree changes when needed.
+     - Performs version bump to `X.Y.Z`, runs required validations, commits `chore(release): vX.Y.Z`, pushes the branch, and opens/updates a PR to `main`.
   2. Finalize release after user confirms PR merge:
      - Ask the user what the next version will be.
      - `scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]`
+     - Automatically stashes and restores unrelated worktree changes when needed.
      - Switches to `main`, verifies merged release version, creates/pushes tag `vX.Y.Z`, prompts for `NEXT_VERSION` when omitted, creates branch `feature/vNEXT_VERSION`, bumps to next version, resets cycle files from templates, updates `ROADMAP.md`, and commits `chore: start vNEXT_VERSION`.
 - PR policy:
   - A PR to `main` is mandatory for release.
-  - The user merges the PR on GitHub.
+  - The agent opens or updates the PR; the user reviews and merges it on GitHub.
   - `finalize` must not run before user merge confirmation.
 
 ## Release Safety

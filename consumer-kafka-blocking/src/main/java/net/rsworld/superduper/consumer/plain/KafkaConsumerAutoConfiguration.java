@@ -28,7 +28,8 @@ public class KafkaConsumerAutoConfiguration {
     @Bean
     public ConsumerFactory<String, String> consumerFactory(
             @Value("${superduper.kafka.bootstrap-servers}") String bootstrap,
-            @Value("${superduper.kafka.group-id}") String groupId) {
+            @Value("${superduper.kafka.group-id}") String groupId,
+            @Value("${superduper.consumer.max-poll-records:500}") int maxPollRecords) {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
@@ -36,6 +37,7 @@ public class KafkaConsumerAutoConfiguration {
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecords);
         return new DefaultKafkaConsumerFactory<>(props);
     }
 
@@ -44,7 +46,8 @@ public class KafkaConsumerAutoConfiguration {
             ConsumerFactory<String, String> cf) {
         var f = new ConcurrentKafkaListenerContainerFactory<String, String>();
         f.setConsumerFactory(cf);
-        f.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        f.setBatchListener(true);
+        f.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
         return f;
     }
 

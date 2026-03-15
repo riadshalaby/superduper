@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.5.2</version>
+    <version>0.6.0</version>
   </parent>
   <artifactId>superduper-schema-liquibase</artifactId>
   <name>superduper-schema-liquibase</name>

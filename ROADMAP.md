@@ -1,30 +1,23 @@
-# ROADMAP
+# ROADMAP v0.6.0
 
-Goal: deliver `0.5.2-SNAPSHOT` with robust multi-topic examples and a runtime script that works like `./examples/run-multi.sh` for the new modes.
+Goal: push the transactional inbox algorithm closer to its theoretical limits — reduce latency, increase claim parallelism, and extend the scale ceiling before a fundamentally different architecture becomes necessary.
 
-## Priority 1: Runtime Script for New Modes
+## Priority 1: Per-Topic Claim Locks
 
-Objective: replace `./examples/verify-multitopic.sh` with a `run-multi.sh`-style operator script for the new multi-topic modes.
+Objective: allow topics to claim in parallel instead of serializing all claim work behind a single ShedLock entry.
 
-- Replace `./examples/verify-multitopic.sh` with a new run script (for example `./examples/run-multitopic-modes.sh`).
-- Run seeder and worker containers in parallel, following the behavior pattern of `./examples/run-multi.sh`.
-- Support both shared-table mode and dedicated-table-per-topic mode from one script entrypoint.
-- Print clear runtime guidance for inspecting logs and database state while containers are running.
-- Keep the script focused on starting/running flows for the new modes, not test-style verification output.
+- Each topic entry in `TopicRegistry` already has a dedicated `claimLockName`; verify that claim loops for different topics actually acquire independent locks.
+- If not, wire each `TopicWorkerInstance` / `ReactiveTopicWorkerInstance` to its own ShedLock name so multi-topic deployments scale linearly with topic count.
+- Expected impact: N topics can claim concurrently instead of queuing behind one lock.
 
-## Priority 2: Dedicated-Mode Schema Cleanup
+## Priority 2: Batch Inserts on Ingest
 
-Objective: remove unused schema artifacts when running in dedicated-table mode.
+Objective: amortize database round-trips on the consumer ingest path.
 
-- Ensure the standard Liquibase path does not leave an unused default `messages` table in dedicated mode.
-- Define and implement the dedicated-mode schema strategy explicitly in migrations/docs.
-- Validate that shared mode and dedicated mode each create only the expected tables.
+- Buffer N consumed Kafka records (or up to a time window) before issuing a single batch INSERT.
+- Ensure `message_id` deduplication still works correctly with batch upserts.
+- Preserve at-least-once semantics: Kafka offsets must not be acknowledged before the batch is persisted.
+- Error handling: a DB error rolls back the entire batch, delaying all N records instead of one. Define a fallback strategy (retry full batch, split-and-retry to isolate the failing record, or fall back to single-record inserts on error). Batch size must be tunable so operators can balance throughput gain against blast radius.
+- Expected impact: ingest throughput improves proportionally to batch size, reducing per-record INSERT overhead.
 
-## Priority 3: Documentation and Release Readiness
 
-Objective: make the new run workflow discoverable and release-safe.
-
-- Update `README.md` and `docs/USAGE.md` with quickstart instructions for both modes.
-- Document trade-offs and expected database outcomes for shared vs dedicated strategies.
-- Add CI coverage for building and starting the new mode-specific run flow.
-- Define release acceptance criteria: run script works for both modes, schema outcome verified, docs updated.
