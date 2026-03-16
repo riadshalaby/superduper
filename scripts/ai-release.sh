@@ -225,6 +225,7 @@ prepare_release() {
   [[ "$branch" != "main" ]] || die "Run prepare on a feature branch, not main."
 
   mvn versions:set -DnewVersion="$release" -DgenerateBackupPoms=false
+  # Keep a local pre-flight sanity check before the authoritative GitHub Actions gates run.
   mvn -q -DskipTests test-compile
   mvn -T 1C -q test
 
@@ -275,14 +276,24 @@ $commit_type_breakdown
 ## Included Commits
 $commit_list
 
-## Validation
+## Local Pre-flight Validation
 - [x] mvn -q -DskipTests test-compile
 - [x] mvn -T 1C -q test
 
+## CI Status
+- authoritative release gate: GitHub Actions CI on this branch/PR
+- required checks:
+  - `spotless` formatting check
+  - `test-compile` build verification
+  - `test` suite execution
+  - `jacoco` coverage report generation
+  - `sonar` analysis status (added in follow-up task T-002)
+
 ## Release Checklist
 - [x] version bumped with mvn versions:set
+- [ ] GitHub Actions CI checks are green
 - [ ] user will merge this PR into main
-- [ ] release tag v$release will be created from main after merge
+- [ ] release tag v$release will be created from main after merge and will trigger the publish workflow
 EOF
 )"
 
@@ -355,6 +366,7 @@ finalize_release() {
   if git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
     echo "Tag $tag already exists on origin."
   else
+    # Tag pushes trigger the release GitHub Actions workflow for publish steps.
     git push origin "$tag"
   fi
 

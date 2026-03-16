@@ -19,6 +19,12 @@
   - Fast compile: `mvn -q -DskipTests test-compile`
   - Full tests: `mvn -T 1C -q test`
 
+## CI Pipeline
+- GitHub Actions CI runs on every push and on pull requests targeting `main`.
+- CI is the authoritative gate for formatting, compile, tests, and coverage artifacts.
+- Release tags matching `v*` trigger the publish workflow skeleton; publish steps are completed later.
+- `scripts/build-all.sh` was removed and must not be reintroduced as a project build entrypoint.
+
 ## Language Rules
 - Use English for code comments, log/output messages, `README.md`.
 
