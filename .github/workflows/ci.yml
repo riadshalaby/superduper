@@ -38,8 +38,8 @@ jobs:
       - name: Test
         run: mvn -T 1C test
 
-      - name: Generate JaCoCo reports
-        run: mvn jacoco:report
+      - name: Verify coverage
+        run: mvn -q -DskipTests verify
 
       - name: Upload build outputs
         if: always()
@@ -71,6 +71,7 @@ jobs:
           name: jacoco-reports-${{ github.run_id }}
           path: |
             **/target/site/jacoco/**
+            **/target/site/jacoco-aggregate/**
           if-no-files-found: ignore
           retention-days: 14
 

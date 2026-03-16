@@ -10,6 +10,7 @@
   <artifactId>example-app-reactive</artifactId>
 
   <properties>
+    <jacoco.check.skip>true</jacoco.check.skip>
     <sonar.skip>true</sonar.skip>
   </properties>
 

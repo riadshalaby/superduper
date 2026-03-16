@@ -9,6 +9,10 @@
   <artifactId>superduper-schema-liquibase</artifactId>
   <name>superduper-schema-liquibase</name>
 
+  <properties>
+    <jacoco.check.skip>true</jacoco.check.skip>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.liquibase</groupId>

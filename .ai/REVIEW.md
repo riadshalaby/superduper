@@ -1,37 +1,102 @@
-# Review — T-001: CI Pipeline + Release Workflow Rework
+# Review — T-002: Sonar Integration
 
-- **Verdict:** PASS
+- **Verdict:** PASS_WITH_NOTES
 - **Reviewer:** claude
-- **Reviewed at (UTC):** 2026-03-16T19:15Z
-- **Commit reviewed:** d8e9de0 — `ci: add GitHub Actions workflows`
+- **Reviewed at (UTC):** 2026-03-16T19:45Z
+- **Commits reviewed:** 75c1614, 83ee6a6, c14e2a0, c968e71, 11fb0d7
 
 ---
 
 ## Findings (ordered by severity)
 
-### INFO — JaCoCo report step is a separate Maven invocation
+### NOTE (medium) — Sonar runs on main-only push; no PR-level quality gate feedback
 
-**File:** `.github/workflows/ci.yml` (step `Generate JaCoCo reports`)
+**File:** `.github/workflows/ci.yml` (sonar job condition, line 81)
+**Criterion:** "SonarCloud quality gate status is reported on PRs to `main`"
 
-The workflow runs `mvn jacoco:report` as a separate invocation after `mvn -T 1C test`. This is the pattern prescribed in the plan and works correctly as long as the JaCoCo `prepare-agent` goal is bound to the Maven `initialize` phase in the POM (the standard configuration). If the POM uses the surefire/jacoco lifecycle binding correctly, instrumented `.exec` data will be present from the test run and `jacoco:report` will read it. This is low-risk but worth verifying when coverage drops unexpectedly in CI.
+The Sonar job condition is:
+```yaml
+if: ${{ needs.build.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+```
+
+This means Sonar only runs after merging to `main`, never on PRs or feature branches. The plan acceptance criteria explicitly requires "SonarCloud quality gate status is reported on PRs to `main`" — this is not met.
+
+**Mitigating factors:**
+- `sonar.qualitygate.wait=true` is configured, so a failing quality gate will fail the `main` push CI run.
+- The new `verify-main-ci` job in `release.yml` blocks publishing if the CI (including Sonar) did not succeed on main — meaning a quality gate failure on main prevents release.
+- Running Sonar on PRs from same-repo branches (using `pull_request_target`) would expose `SONAR_TOKEN` to PR code in the same repo, which is a valid security concern.
+
+**Assessment:** The main-only Sonar approach is a valid, safer trade-off, but it deviates from a documented acceptance criterion. PR authors get no Sonar feedback before merge. This is noted for awareness; it does not block this task if the main-gate approach is acceptable to the user. Recommend updating the acceptance criterion in TASKS.md to reflect the chosen approach, or plan a follow-up to add PR-level Sonar via `pull_request_target` with a careful permissions model.
+
+**No required fix; user decision on acceptable trade-off.**
+
+---
+
+### NOTE (low) — TASKS.md evidence claim does not match final implementation
+
+**File:** `.ai/TASKS.md` (T-002 Evidence column)
+
+The evidence column states: *"CI Sonar step added for push and same-repo PRs"*. The final implementation runs Sonar only on `push` to `main`, not on PRs. The evidence description was written for an earlier iteration and was not updated after the approach was narrowed to main-only.
+
+**No required fix for the code; the evidence description should be corrected in TASKS.md.**
+
+---
+
+### NOTE (low) — External runtime requirements not verifiable in code
+
+**Plan criteria that require live SonarCloud configuration:**
+1. "SonarCloud quality gate is defined and visible on the project dashboard"
+2. "No blocker or critical bugs/vulnerabilities in the existing codebase"
+
+These require an active SonarCloud account, a completed first scan, and quality gate configuration via the SonarCloud UI. They cannot be verified by static code review. The implementer correctly noted "live SonarCloud upload not run in-session."
+
+**No action required at code review time; operationally required before T-002 can be considered fully closed.**
+
+---
+
+### INFO — German comments in pom.xml (pre-existing, not introduced by T-002)
+
+**File:** `pom.xml` (lines 203, 205 in the spotless plugin configuration)
+
+```xml
+<!-- In CI wollen wir failen, wenn Format nicht passt -->
+<!-- lokales Auto-Fix optional als eigenes Execution/Profil -->
+```
+
+These German comments violate the CLAUDE.md rule "Use English for code comments." They pre-date T-002 (present in commit `d8e9de0`). T-002 is not responsible for them, but they represent existing technical debt to address in a cleanup task.
+
+**Not a T-002 issue; tracked as pre-existing debt.**
+
+---
+
+### INFO — byte-buddy-agent added to parent POM `<dependencies>` (not `<dependencyManagement>`)
+
+**File:** `pom.xml` (commit `c14e2a0`)
+
+```xml
+<dependencies>
+  <dependency>
+    <groupId>net.bytebuddy</groupId>
+    <artifactId>byte-buddy-agent</artifactId>
+    <version>${byte-buddy.version}</version>
+    <scope>test</scope>
+  </dependency>
+</dependencies>
+```
+
+Placing the agent in `<dependencies>` (not `<dependencyManagement>`) means it is inherited by all child modules. This is intentional — the surefire `argLine` references it by path at test time, so it must be present in every module's local repository before the test phase. The `<scope>test</scope>` limits transitive leakage. Valid pattern for a JVM agent required at test runtime.
 
 **No action required.**
 
-### INFO — No `permissions` block in workflow files
+---
 
-**Files:** `.github/workflows/ci.yml`, `.github/workflows/release.yml`
+### INFO — `release.yml` bonus: verify-main-ci gate (beyond T-002 plan scope)
 
-Neither workflow declares a `permissions` block. GitHub Actions defaults to `read` on all tokens for organization repos with the default permission setting. Since neither workflow performs write operations (no token push, no release asset upload, no PR comments), the default is sufficient today. When T-005 completes the publish step, a `permissions: contents: write` block will be needed in `release.yml`.
+**File:** `.github/workflows/release.yml` (commit `11fb0d7`)
 
-**No action required for T-001; T-005 must add it when implementing publish steps.**
+The release workflow now has a `verify-main-ci` job that uses `actions/github-script` to verify a successful CI run exists for the tagged main commit before proceeding to the publish job. This is a positive addition not in the T-002 plan that significantly strengthens the release safety guarantee.
 
-### INFO — release.yml only compiles (no full test run)
-
-**File:** `.github/workflows/release.yml`
-
-The release skeleton runs `mvn -q -DskipTests test-compile` only. This is the exact behavior specified in the plan ("verify the tag builds"). Full tests are the responsibility of the CI workflow that ran on the release PR branch before merge. The comment in `ai-release.sh` finalize (`# Tag pushes trigger the release GitHub Actions workflow for publish steps.`) makes this flow clear.
-
-**No action required.**
+**Positive finding; no action required.**
 
 ---
 
@@ -39,37 +104,33 @@ The release skeleton runs `mvn -q -DskipTests test-compile` only. This is the ex
 
 | Plan step | Expected | Actual | Status |
 |-----------|----------|--------|--------|
-| Delete `scripts/build-all.sh` | File absent | Not in repo | PASS |
-| `ci.yml` — push trigger all branches | `push: branches: '**'` | Present | PASS |
-| `ci.yml` — PR trigger to main | `pull_request: branches: main` | Present | PASS |
-| `ci.yml` — ubuntu-latest | ubuntu-latest | Present | PASS |
-| `ci.yml` — JDK 25 / temurin | java-version 25, temurin | Present | PASS |
-| `ci.yml` — Maven cache | `cache: maven` | Present | PASS |
-| `ci.yml` — spotless:check | `mvn -q spotless:check` | Present | PASS |
-| `ci.yml` — compile gate | `mvn -q -DskipTests test-compile` | Present | PASS |
-| `ci.yml` — full test suite | `mvn -T 1C test` | Present | PASS |
-| `ci.yml` — JaCoCo report | `mvn jacoco:report` | Present | PASS |
-| `ci.yml` — upload surefire reports | upload-artifact `if: always()` | Present | PASS |
-| `ci.yml` — upload JaCoCo reports | upload-artifact `if: always()` | Present | PASS |
-| `ci.yml` — concurrency/cancel | group + cancel-in-progress | Present | PASS |
-| `release.yml` — tag trigger `v*` | `push: tags: v*` | Present | PASS |
-| `release.yml` — test-compile step | Present | Present | PASS |
-| `release.yml` — publish placeholder | echo placeholder | Present | PASS |
-| `ai-release.sh` — CI status section in PR body | CI checks listed | Lines 283–296 | PASS |
-| `ai-release.sh` — local pre-flight kept | test-compile + test | Lines 228–230 | PASS |
-| `CLAUDE.md` — `## CI Pipeline` section | Added | Lines 22–26 | PASS |
-| `CLAUDE.md` — push/PR trigger noted | Present | Present | PASS |
-| `CLAUDE.md` — release tag triggers workflow | Present | Present | PASS |
-| `CLAUDE.md` — build-all.sh removal noted | Present | Present | PASS |
+| `sonar-maven-plugin` in `<pluginManagement>` | Present | Present (version 5.5.0.6356) | PASS |
+| `sonar.organization` property | `rsworld` | `rsworld` | PASS |
+| `sonar.host.url` property | `https://sonarcloud.io` | `https://sonarcloud.io` | PASS |
+| `sonar.projectKey` property | `rsworld_superduper` | `rsworld_superduper` | PASS |
+| `sonar.java.coveragePlugin` property | `jacoco` | `jacoco` | PASS |
+| `sonar.coverage.jacoco.xmlReportPaths` property | Per-module jacoco.xml | `**/target/site/jacoco/jacoco.xml` | PASS |
+| Example modules excluded from Sonar | `sonar.skip` or exclusions | `<sonar.skip>true</sonar.skip>` in all 5 example POMs | PASS (pre-existing) |
+| Sonar step in CI workflow | Present | Separate `sonar` job | PASS |
+| Sonar runs on push events | Present | Push to main only | PARTIAL |
+| Sonar not triggered on forked PRs | Secrets safe | main-only enforced | PASS |
+| `SONAR_TOKEN` from secrets | Present | `secrets.SONAR_TOKEN` | PASS |
+| Quality gate waiting | `sonar.qualitygate.wait=true` | Present | PASS |
+| PR quality gate reporting | "reported on PRs to main" | Not implemented | NOTE |
+| Live SonarCloud quality gate defined | External | Cannot verify | DEFERRED |
+| No blocker/critical findings | External | Cannot verify | DEFERRED |
 
 ---
 
 ## Required Fixes
 
-None. All acceptance criteria are satisfied.
+None that block verdict. The deviations are noted and the main-gate approach provides meaningful protection. Recommend:
+
+1. **Update TASKS.md T-002 evidence** to accurately state "CI Sonar step added for push to `main`; PR-level quality gate feedback not implemented" instead of "for push and same-repo PRs."
+2. **Operationally:** Configure SonarCloud quality gate and verify first scan results before declaring T-002 fully done.
 
 ---
 
 ## Summary
 
-The implementation is complete and correct. All five plan steps are implemented as specified. The CI workflow covers the full gate chain (format → compile → test → coverage → artifact upload) with proper concurrency cancellation. The release skeleton is minimal and correct. The `ai-release.sh` PR body now references CI as the authoritative gate. CLAUDE.md is updated with CI guidance. No blocking findings.
+The Sonar integration is structurally complete and correctly configured: properties, plugin version management, `sonar.qualitygate.wait`, and artifact sharing between jobs are all solid. The main-only Sonar restriction is a defensible security trade-off, and the new `verify-main-ci` release gate compensates by blocking publish if the post-merge Sonar run failed. The gap between the planned "reported on PRs" criterion and the main-only implementation is the primary deviation. Verdict **PASS_WITH_NOTES** — no blocking findings, but the PR feedback gap and the TASKS.md evidence mismatch should be noted.
