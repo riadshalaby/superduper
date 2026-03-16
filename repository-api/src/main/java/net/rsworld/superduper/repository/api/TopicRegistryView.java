@@ -23,6 +23,7 @@ public interface TopicRegistryView {
      *
      * @param kafkaTopic the Kafka topic name to resolve
      * @return the matching topic configuration
+     * @throws IllegalArgumentException if no topic is registered for the given Kafka topic name
      */
     TopicConfigView getByKafkaTopic(String kafkaTopic);
 }
