@@ -296,6 +296,12 @@ jobs:
           name: jacoco-reports-${{ github.run_id }}
           path: .
 
+      - name: Download build outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: build-outputs-${{ github.run_id }}
+          path: .
+
       - name: Publish to Maven Central
         run: mvn -B -Prelease -DskipTests deploy
 
