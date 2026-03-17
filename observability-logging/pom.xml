@@ -4,9 +4,11 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.0</version>
+    <version>0.6.1</version>
   </parent>
   <artifactId>superduper-observability-logging</artifactId>
+  <name>SUPERDUPER Observability Logging</name>
+  <description>Logging-based observer implementation for SUPERDUPER lifecycle events.</description>
 
   <dependencies>
     <dependency>

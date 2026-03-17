@@ -4,9 +4,11 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.0</version>
+    <version>0.6.1</version>
   </parent>
   <artifactId>superduper-consumer-kafka-blocking</artifactId>
+  <name>SUPERDUPER Consumer Kafka Blocking</name>
+  <description>Blocking Spring Kafka consumer integration for persisting records into SUPERDUPER.</description>
 
   <dependencies>
     <dependency>

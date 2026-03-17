@@ -4,9 +4,11 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.0</version>
+    <version>0.6.1</version>
   </parent>
   <artifactId>superduper-observability-metrics</artifactId>
+  <name>SUPERDUPER Observability Metrics</name>
+  <description>Micrometer metrics instrumentation for SUPERDUPER consumer and worker activity.</description>
 
   <dependencies>
     <dependency>

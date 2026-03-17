@@ -1,184 +1,368 @@
-# Plan — 0.6.0
+# Plan — 0.6.1
 
-Status: **approved**
+Status: **active**
 
-Goal: push the transactional inbox algorithm closer to its theoretical limits — reduce latency, increase claim parallelism, and extend the scale ceiling.
+Goal: make `v0.6.1` release-ready with CI pipeline, static analysis, ≥80% test coverage, documented public interfaces, and Maven Central publishing preparation.
 
 ---
 
-## T-001: Per-Topic Claim Locks — Verification
+## Task Overview
 
-### Current State
+| Task ID | Scope | Dependencies | Estimated Size |
+|---------|-------|-------------|----------------|
+| T-001 | CI Pipeline + Release Workflow Rework | none | large |
+| T-002 | Sonar Integration | T-001 | medium |
+| T-003 | Test Coverage ≥ 80% | T-001 | large |
+| T-004 | Public Interface JavaDoc | none | medium |
+| T-005 | Maven Central Preparation | T-001 | medium |
 
-Already fully implemented and tested. Investigation confirms:
+---
 
-- `AutoSelectConfiguration.topicRegistry()` generates `"superduper-claim-" + topicName` per topic (line 145).
-- `TopicRegistry.ResolvedTopicConfig` carries `claimLockName` through `TopicConfigView`.
-- `TopicWorkerInstance` and `ReactiveTopicWorkerInstance` pass the per-topic lock name to the worker service constructors.
-- `SuperDuperWorkerService` and `SuperDuperWorkerReactiveService` use the per-topic lock name in `LockConfiguration` when calling `lockExec.executeWithLock()`.
-- Unit test `topicWorkerInstance_usesTopicScopedLockName` in `TopicWorkerCoordinatorTest` explicitly asserts the per-topic lock name.
+## T-001 — CI Pipeline + Release Workflow Rework
 
 ### Scope
+Establish a GitHub Actions CI pipeline for push and pull_request events on all branches. Rework the existing release scripts to be CI-aware. Delete the stale `build-all.sh`.
 
-Verification-only. No code changes expected.
+### Current State
+- No `.github/workflows/` directory exists.
+- `scripts/build-all.sh` is a stale Go build script (gohour) — must be deleted.
+- `scripts/ai-release.sh` runs all validation locally; PR body uses manual checkboxes with no CI references.
 
-1. Run existing test suite and confirm all per-topic lock tests pass.
-2. If no multi-topic **integration test** exists that proves two topics claim concurrently (not just unit-level), add one to `worker-blocking` or `consumer-kafka-blocking` E2E tests.
-3. Close the task.
+### Implementation Steps
+
+#### 1. Delete stale script
+- Delete `scripts/build-all.sh`.
+
+#### 2. Create CI workflow: `.github/workflows/ci.yml`
+- Trigger on `push` (all branches) and `pull_request` (to `main`).
+- Use GitHub-hosted runners (`ubuntu-latest`).
+- Java setup: JDK 25 (matching `java.version` property). Use `actions/setup-java` with `temurin` distribution.
+- Maven dependency caching: use `actions/setup-java` cache option (`cache: maven`) or `actions/cache` for `~/.m2/repository`.
+- Steps:
+  1. Checkout code.
+  2. Setup Java + cache.
+  3. `mvn -q spotless:check` — format gate.
+  4. `mvn -q -DskipTests test-compile` — compile gate.
+  5. `mvn -T 1C test` — full test suite.
+  6. `mvn jacoco:report` — generate coverage reports (if not already done by `verify`).
+  7. Upload test reports (`target/surefire-reports`) and JaCoCo reports (`target/site/jacoco`) as workflow artifacts.
+- Concurrency: cancel in-progress runs for the same branch/PR.
+
+#### 3. Create release publish workflow: `.github/workflows/release.yml`
+- Trigger on tag push matching `v*`.
+- Steps:
+  1. Checkout code.
+  2. Setup Java.
+  3. `mvn -q -DskipTests test-compile` — verify the tag builds.
+  4. Placeholder step for Maven Central publish (implemented in T-005).
+- This workflow is a skeleton now; T-005 fills in the signing and publishing steps.
+
+#### 4. Rework `scripts/ai-release.sh`
+- In `prepare_release()`:
+  - Update the PR body template to include a CI status section referencing GitHub Actions checks (Sonar, coverage, tests, spotless).
+  - Keep local `test-compile` + `test` as a pre-flight sanity check, but make it clear in the PR body that CI is the authoritative gate.
+- In `finalize_release()`:
+  - No structural changes needed; the tag push will trigger `release.yml` automatically.
+- Update inline comments to reflect CI-aware flow.
+
+#### 5. Update `CLAUDE.md`
+- Add CI-related notes under a new `## CI Pipeline` section:
+  - CI runs on push/PR.
+  - Release tags trigger the publish workflow.
+  - Reference `build-all.sh` removal.
 
 ### Acceptance Criteria
+- `scripts/build-all.sh` is deleted.
+- `.github/workflows/ci.yml` runs successfully on push and pull_request, executing: spotless check, compile, test, JaCoCo report, artifact upload.
+- `.github/workflows/release.yml` exists as a skeleton triggered on `v*` tag push.
+- `scripts/ai-release.sh` PR body references CI status checks.
+- Maven dependency caching reduces CI runtime on subsequent runs.
+- Test and coverage artifacts are downloadable from the Actions tab.
 
-- `mvn -T 1C -q test` passes.
-- At least one test proves per-topic lock independence (unit or integration level).
+### Validation
+- Push the branch and verify the CI workflow triggers and passes.
+- Open a draft PR to main and verify CI runs on the PR.
+- `mvn -q -DskipTests test-compile` locally.
 
 ---
 
-## T-002: Batch Inserts on Ingest
+## T-002 — Sonar Integration
+
+### Scope
+Integrate SonarQube/SonarCloud analysis into the build (local + CI) and define enforceable quality gates.
+
+### Current State
+- No `sonar-maven-plugin`, no `sonar-project.properties`, no Sonar configuration anywhere.
+
+### Implementation Steps
+
+#### 1. Add SonarCloud project configuration
+- Add `sonar-maven-plugin` to the parent POM `<pluginManagement>`.
+- Add Sonar properties in the parent POM `<properties>`:
+  - `sonar.organization` — the SonarCloud organization key.
+  - `sonar.host.url` — `https://sonarcloud.io`.
+  - `sonar.projectKey` — `rsworld_superduper` (or as configured).
+  - `sonar.java.coveragePlugin=jacoco`.
+  - `sonar.coverage.jacoco.xmlReportPaths` — point to each module's `target/site/jacoco/jacoco.xml`.
+- Exclude example modules from Sonar analysis (`sonar.exclusions` or per-module `<properties>`).
+
+#### 2. Add Sonar step to CI workflow
+- In `.github/workflows/ci.yml`, add a Sonar analysis step after the test step:
+  - `mvn -B sonar:sonar` with `SONAR_TOKEN` from GitHub secrets.
+  - Run only on `push` events (not on PR from forks, since secrets are unavailable).
+  - Or use `pull_request_target` for PRs from the same repo.
+- Configure SonarCloud quality gate webhook or use the `sonarcloud-github-action` for PR decoration.
+
+#### 3. Define quality gates on SonarCloud
+- Configure quality gate rules on SonarCloud (via UI or API):
+  - New code coverage ≥ 80%.
+  - No new bugs (severity: blocker, critical).
+  - No new vulnerabilities.
+  - No new security hotspots (unreviewed).
+  - Maintainability: new code smells rating A.
+- Enable quality gate as a GitHub required status check on the `main` branch.
+
+#### 4. Fix critical existing findings
+- After first Sonar scan, triage findings.
+- Fix any blocker or critical bugs/vulnerabilities in the existing codebase.
+- Document accepted findings (if any) with `@SuppressWarnings` and justification.
+
+### Acceptance Criteria
+- `mvn sonar:sonar` runs locally and uploads results to SonarCloud.
+- CI workflow includes Sonar analysis and publishes results on every push.
+- SonarCloud quality gate is defined and visible on the project dashboard.
+- SonarCloud quality gate status is reported on PRs to `main`.
+- No blocker or critical bugs/vulnerabilities in the existing codebase (or documented exceptions).
+
+### Validation
+- Push the branch and verify Sonar analysis appears in CI logs.
+- Check SonarCloud dashboard for project overview.
+- Open a PR and verify quality gate status appears as a check.
+
+---
+
+## T-003 — Test Coverage ≥ 80%
+
+### Scope
+Reach and enforce ≥80% line coverage across the project by adding missing tests and configuring JaCoCo enforcement.
 
 ### Current State
 
-Both consumers (`KafkaConsumerService`, `KafkaReactiveR2dbcConsumerService`) use single-record `@KafkaListener`:
+| Module | Line Coverage | Gap to 80% |
+|--------|-------------|------------|
+| observability-metrics | 92% | — |
+| repository-jdbc | 87% | — |
+| observability-logging | 86% | — |
+| observability-api | 85% | — |
+| starter-autoselect | 66% | +14pp needed |
+| repository-api | 47% | +33pp needed |
+| worker-blocking | 20% | +60pp needed |
+| worker-reactive | 22% | +58pp needed |
+| repository-r2dbc | 9% | +71pp needed |
+| consumer-kafka-blocking | 0% | +80pp needed |
+| consumer-kafka-reactive | 0% | +80pp needed |
 
-- Receive one `ConsumerRecord<String, String>` per invocation.
-- Call `upsertReadyMessage()` (single INSERT/UPSERT) per record.
-- Manual-immediate ack per record (`AckMode.MANUAL_IMMEDIATE`).
-- No batch methods exist on `MessageIngestRepository` or `ReactiveMessageIngestRepository`.
+Total test files: 51 (mix of unit tests and Testcontainers integration tests).
 
-### Approach
+### Implementation Steps
 
-Use Spring Kafka's native batch listener mode. Kafka delivers one poll's worth of records as a `List<ConsumerRecord>`. The consumer groups records by topic, calls a new batch upsert on the correct repository, and acks the entire batch after persist succeeds.
+#### 1. Add JaCoCo aggregate report
+- Add a `jacoco-report-aggregate` module or configure `jacoco:report-aggregate` in the parent POM to produce a single project-wide coverage report.
+- This is needed for an accurate overall coverage number and for SonarCloud to consume a unified report.
 
-### Error Handling Strategy
+#### 2. Add JaCoCo enforcement
+- Add a `jacoco:check` execution in the parent POM:
+  - Rule: `BUNDLE` counter `LINE` minimum `0.80`.
+  - Exclude example modules from enforcement.
+- This makes the build fail if coverage drops below 80%.
 
-1. Try batch upsert (all records for a given topic in one DB call).
-2. On DB failure: fall back to single-record upserts to isolate the failing record.
-3. If any single-record upsert still fails: throw exception → no ack → Kafka re-delivers the entire poll batch.
-4. Upsert is idempotent (`ON CONFLICT`/`ON DUPLICATE KEY`), so re-processing is safe.
+#### 3. Add tests — priority order (largest gaps first)
 
-### Configuration
+**consumer-kafka-blocking (0% → ≥80%)**
+- Unit tests for `KafkaConsumerService`: mock the repository, verify ingest calls, metadata resolution, error handling.
+- Unit test for `KafkaConsumerAutoConfiguration`: verify bean wiring with mock context.
 
-| Property | Default | Description |
-|---|---|---|
-| `superduper.consumer.max-poll-records` | `500` | Maps to Kafka `max.poll.records`. Controls batch size. |
+**consumer-kafka-reactive (0% → ≥80%)**
+- Mirror the blocking consumer tests with reactive types (`StepVerifier`).
 
-### Implementation Phases
+**repository-r2dbc (9% → ≥80%)**
+- Unit tests for `R2dbcMessageIngestRepository`, `R2dbcWorkerMessageRepository`, `R2dbcWorkerMaintenanceRepository`.
+- Test SQL dialect methods for both Postgres and MariaDB R2DBC dialects.
+- Use `mockito-reactor` or manual `Mono`/`Flux` stubs.
 
-#### Phase 1 — Repository API + DTO
+**worker-blocking (20% → ≥80%)**
+- Unit tests for `TopicWorkerCoordinator`, `TopicWorkerInstance`, `HeartbeatService`, `OrphanReclaimer`, `CleanupService`, `RedriveService`, `QueueHealthService`.
+- Mock repository ports and observer.
+- Test claim-process-outcome lifecycle, per-key ordering, retry escalation, stop logic.
 
-**Files to create:**
+**worker-reactive (22% → ≥80%)**
+- Mirror blocking worker tests using `StepVerifier`.
+- Test `ReactiveTopicWorkerCoordinator`, `ReactiveTopicWorkerInstance`, `ReactiveHeartbeatService`, `ReactiveOrphanReclaimer`, `ReactiveCleanupService`, `ReactiveRedriveService`, `ReactiveQueueHealthService`.
 
-| File | Module | Description |
-|---|---|---|
-| `MessageIngestData.java` | `repository-api` | Record: `topic`, `messageId`, `messageKey`, `content`, `occurredAt`, `correlationId`, `messageType` |
+**starter-autoselect (66% → ≥80%)**
+- Test `AutoSelectConfiguration` edge cases: missing properties, fallback paths, multi-topic wiring.
+- Test `TopicRegistry` and `RepositoryFactory` for shared vs dedicated table paths.
 
-**Files to modify:**
+**repository-api (47% → ≥80%)**
+- Test any concrete/default methods on the interfaces.
+- Test `ConsumerMetadataResolver` implementations if any exist.
 
-| File | Module | Change |
-|---|---|---|
-| `MessageIngestRepository.java` | `repository-api` | Add `default void batchUpsertReadyMessages(List<MessageIngestData> messages)` — default iterates and calls single-record upsert |
-| `ReactiveMessageIngestRepository.java` | `repository-api` | Add `default Mono<Void> batchUpsertReadyMessages(List<MessageIngestData> messages)` — default iterates with `Flux.fromIterable().concatMap()` |
-
-#### Phase 2 — JDBC Implementation
-
-**Files to modify:**
-
-| File | Module | Change |
-|---|---|---|
-| `JdbcMessageIngestRepository.java` | `repository-jdbc` | Override `batchUpsertReadyMessages()` using `NamedParameterJdbcTemplate.batchUpdate(dialect.upsertReadyMessageSql(), SqlParameterSource[])` |
-
-No new SQL dialect method needed — `batchUpdate()` reuses the existing `upsertReadyMessageSql()` with an array of parameter sources.
-
-**Tests to add/update:**
-
-| File | Change |
-|---|---|
-| `JdbcMessageIngestRepositoryTest.java` | Add test for `batchUpsertReadyMessages()` verifying batch parameter source construction |
-
-#### Phase 3 — R2DBC Implementation
-
-**Files to modify:**
-
-| File | Module | Change |
-|---|---|---|
-| `R2dbcMessageIngestRepository.java` | `repository-r2dbc` | Override `batchUpsertReadyMessages()` using `DatabaseClient.inConnectionMany()` → `Connection.createStatement()` + `Statement.add()` for true DB-level batching |
-
-**Tests to add/update:**
-
-| File | Change |
-|---|---|
-| `R2dbcMessageIngestRepositoryTest.java` | Add test for `batchUpsertReadyMessages()` |
-
-#### Phase 4 — Blocking Consumer Batch Listener
-
-**Files to modify:**
-
-| File | Module | Change |
-|---|---|---|
-| `KafkaConsumerAutoConfiguration.java` | `consumer-kafka-blocking` | 1. Add `MAX_POLL_RECORDS_CONFIG` from new property. 2. Set `f.setBatchListener(true)`. 3. Change `AckMode` to `MANUAL` (batch-level ack). |
-| `KafkaConsumerService.java` | `consumer-kafka-blocking` | 1. Change `onMessage` signature to `List<ConsumerRecord<String, String>>` + `Acknowledgment`. 2. Group records by kafka topic. 3. Resolve metadata per record → build `MessageIngestData` list per topic. 4. Call `batchUpsertReadyMessages()` per repository. 5. On DB failure: fall back to single-record loop. 6. Ack after all records persisted. 7. Emit per-record observability signals (received/succeeded/failed). |
-
-**Property wiring:**
-
-| File | Module | Change |
-|---|---|---|
-| `KafkaConsumerAutoConfiguration.java` | `consumer-kafka-blocking` | Inject `@Value("${superduper.consumer.max-poll-records:500}")` and set on consumer factory props |
-
-**Tests to add/update:**
-
-| File | Change |
-|---|---|
-| `KafkaConsumerServiceTest.java` | Rewrite/add tests for: batch happy path, batch fallback to single-record on DB error, multi-topic batch routing, empty batch, null keys in batch |
-
-#### Phase 5 — Reactive Consumer Batch Listener
-
-**Files to modify:**
-
-| File | Module | Change |
-|---|---|---|
-| `KafkaReactiveR2dbcAutoConfiguration.java` | `consumer-kafka-reactive` | Same changes as blocking auto-config: `MAX_POLL_RECORDS_CONFIG`, `setBatchListener(true)`, `AckMode.MANUAL` |
-| `KafkaReactiveR2dbcConsumerService.java` | `consumer-kafka-reactive` | Same pattern as blocking: batch signature, group by topic, batch upsert, fallback, ack, observability |
-
-**Tests to add/update:**
-
-| File | Change |
-|---|---|
-| `KafkaReactiveR2dbcConsumerServiceTest.java` | Same test coverage as blocking counterpart |
-
-#### Phase 6 — Integration Tests + Examples
-
-**Tests to update:**
-
-| File | Change |
-|---|---|
-| `KafkaConsumerE2ETest.java` | Verify batch ingest writes N records in one poll cycle, verify deduplication works with batch |
-| `KafkaReactiveE2ETest.java` | Same coverage for reactive path |
-
-**Examples to update:**
-
-| File | Change |
-|---|---|
-| `examples/app-blocking/src/main/resources/application.yml` | Add `superduper.consumer.max-poll-records: 500` |
-| `examples/app-reactive/src/main/resources/application.yml` | Add `superduper.consumer.max-poll-records: 500` |
-| Multi-topic example configs | Add `superduper.consumer.max-poll-records: 500` |
-
-### Key Design Decisions
-
-1. **No new SQL dialect method.** `NamedParameterJdbcTemplate.batchUpdate()` reuses the existing single-row upsert SQL with an array of parameter sources. R2DBC uses `Statement.add()` with the same SQL.
-2. **Default method on interface.** The batch method has a default that iterates over single upserts. This keeps `TopicRepositoryFactory` and custom implementations backward-compatible. JDBC and R2DBC implementations override for performance.
-3. **Batch ack, not per-record.** `AckMode.MANUAL` acks after the full batch persists. If the batch fails and fallback also fails, no ack is sent → Kafka re-delivers. Idempotent upserts make this safe.
-4. **`max.poll.records` as the batch size knob.** No custom buffer — Kafka's native poll batching controls how many records arrive per listener invocation.
+#### 4. Publish coverage reports as CI artifacts
+- Already covered in T-001; verify JaCoCo XML + HTML reports are uploaded.
 
 ### Acceptance Criteria
+- Overall project line coverage ≥ 80% (measured by JaCoCo aggregate report).
+- Each library module (excluding examples) has line coverage ≥ 70% individually.
+- `jacoco:check` is configured in the build and fails on coverage regression below 80%.
+- All new tests pass in CI.
+- Example modules are excluded from coverage enforcement.
 
+### Validation
 - `mvn -T 1C -q test` passes.
-- Blocking consumer persists records via batch upsert (verified by unit + E2E tests).
-- Reactive consumer persists records via batch upsert (verified by unit + E2E tests).
-- DB failure triggers single-record fallback (verified by unit test).
-- `message_id` deduplication works correctly with batch upserts (verified by E2E test).
-- `superduper.consumer.max-poll-records` is configurable and wired to Kafka consumer.
-- Kafka offsets are not acknowledged before the batch is persisted.
+- `mvn verify` passes (includes JaCoCo check).
+- JaCoCo aggregate report shows ≥80% line coverage.
 
-## Validation
+---
 
-- `mvn -q -DskipTests test-compile`
-- `mvn -T 1C -q test`
+## T-004 — Public Interface JavaDoc
+
+### Scope
+Add meaningful English JavaDoc for all public methods in all 15 public interface types.
+
+### Current State
+
+| Interface | Class Doc? | Methods | Documented |
+|-----------|-----------|---------|------------|
+| SuperduperObserver | No | 13 | 6 |
+| ConsumerMetadataResolver | No | 4 | 0 |
+| MessageIngestRepository | No | 3 | 0 |
+| ReactiveMessageIngestRepository | No | 3 | 0 |
+| ReactiveWorkerMaintenanceRepository | Yes | 9 | 8 |
+| ReactiveWorkerMessageRepository | No | 12 | 5 |
+| TopicConfigView | No | 7 | 0 |
+| TopicRegistryView | No | 3 | 0 |
+| TopicRepositoryFactory | No | 6 | 0 |
+| WorkerMaintenanceRepository | Yes | 9 | 8 |
+| WorkerMessageRepository | No | 12 | 5 |
+| JdbcSqlDialect | No | 17 | 0 |
+| R2dbcSqlDialect | No | 17 | 0 |
+| MessageHandler | No | 1 | 0 |
+| ReactiveMessageHandler | No | 1 | 0 |
+| **Totals** | **2/15** | **~117** | **~32** |
+
+~85 public methods need JavaDoc. 13 interfaces need class-level JavaDoc.
+
+### Implementation Steps
+
+#### 1. Add class-level JavaDoc to all 15 interfaces
+- Each interface gets a one-to-three sentence description explaining its role, when it is used, and which module consumers interact with it.
+
+#### 2. Add method-level JavaDoc to all undocumented methods (~85 methods)
+- Priority order:
+  1. **User extension points** (highest visibility): `MessageHandler`, `ReactiveMessageHandler`, `ConsumerMetadataResolver`.
+  2. **Repository API contracts**: `MessageIngestRepository`, `ReactiveMessageIngestRepository`, `WorkerMessageRepository`, `ReactiveWorkerMessageRepository`, `WorkerMaintenanceRepository`, `ReactiveWorkerMaintenanceRepository`.
+  3. **Topic model**: `TopicConfigView`, `TopicRegistryView`, `TopicRepositoryFactory`.
+  4. **SQL dialect SPIs**: `JdbcSqlDialect`, `R2dbcSqlDialect`.
+  5. **Observability**: remaining undocumented methods in `SuperduperObserver`.
+- Each method gets: summary sentence, `@param` for each parameter, `@return` description, `@throws` if applicable.
+
+#### 3. Review and consistency pass
+- Ensure consistent terminology (e.g., "claim" not "lock", "topic" not "queue").
+- Ensure English only (no German remnants).
+- Run `mvn -q spotless:apply` to format JavaDoc.
+
+### Acceptance Criteria
+- All 15 public interfaces have class-level JavaDoc.
+- All ~117 public methods have method-level JavaDoc with `@param`, `@return`, and `@throws` where applicable.
+- All JavaDoc is in English.
+- `mvn -q spotless:apply` produces no diff after the changes.
+
+### Validation
+- `mvn -q -DskipTests test-compile` passes.
+- Manual review of JavaDoc quality and consistency.
+
+---
+
+## T-005 — Maven Central Preparation
+
+### Scope
+Prepare all technical prerequisites to publish the library to Maven Central, including POM metadata, signing, publishing configuration, and a dry-run validation.
+
+### Current State
+The parent POM is missing all Maven Central required metadata:
+- No `<name>`, `<description>`, `<url>`.
+- No `<licenses>`, `<scm>`, `<developers>`.
+- No `<distributionManagement>`.
+- No `maven-gpg-plugin` (signing).
+- No publishing plugin (`central-publishing-maven-plugin` or `nexus-staging-maven-plugin`).
+
+### Implementation Steps
+
+#### 1. Add required POM metadata to parent POM
+- `<name>`: `SUPERDUPER`
+- `<description>`: Resilient, ordered, database-backed Kafka consumption pattern with pluggable workers.
+- `<url>`: GitHub repository URL.
+- `<licenses>`: MIT license block.
+- `<scm>`: `connection`, `developerConnection`, `url` pointing to the GitHub repo.
+- `<developers>`: developer entry with id, name, email.
+- `<inceptionYear>`: project start year.
+
+#### 2. Add child module metadata
+- Each child POM gets a `<name>` and `<description>` appropriate to its artifact.
+- Alternatively, use `<name>${project.artifactId}</name>` in the parent and override only where needed.
+
+#### 3. Configure artifact signing
+- Add `maven-gpg-plugin` in a `release` profile in the parent POM.
+- Profile activation: `-Prelease` or by property (`-Dgpg.sign=true`).
+- Configure the plugin to use `--pinentry-mode loopback` for CI environments.
+- In CI (`release.yml`), import the GPG key from GitHub secrets and set the passphrase.
+
+#### 4. Configure Maven Central publishing
+- Use `central-publishing-maven-plugin` (the modern Sonatype Central Portal approach) or `nexus-staging-maven-plugin` (legacy OSSRH).
+  - Recommendation: `central-publishing-maven-plugin` — newer, simpler, maintained.
+- Add `maven-source-plugin` execution to attach source JARs.
+- Add `maven-javadoc-plugin` execution to attach JavaDoc JARs.
+- Configure `<distributionManagement>` pointing to Central.
+
+#### 5. Configure the release publish CI workflow
+- Complete the skeleton `release.yml` from T-001:
+  - Import GPG key from secrets.
+  - Run `mvn -Prelease deploy` to sign, package, and publish.
+  - Use `MAVEN_CENTRAL_TOKEN` / `MAVEN_CENTRAL_USERNAME` from GitHub secrets.
+
+#### 6. Dry-run validation
+- Run `mvn -Prelease verify -DskipTests` locally to ensure:
+  - Source JARs are attached.
+  - JavaDoc JARs are attached.
+  - GPG signatures are generated.
+  - POM passes Central validation.
+- Alternatively, publish to a staging repository and verify, then drop.
+
+#### 7. Exclude example modules from publishing
+- Add `<maven.deploy.skip>true</maven.deploy.skip>` to each example module POM.
+
+### Acceptance Criteria
+- Parent POM contains all Maven Central required metadata (name, description, url, licenses, scm, developers).
+- `maven-gpg-plugin` is configured in a `release` profile.
+- `maven-source-plugin` and `maven-javadoc-plugin` attach artifacts in the `release` profile.
+- Publishing plugin is configured (Central Portal or OSSRH).
+- Example modules are excluded from deploy.
+- `mvn -Prelease verify -DskipTests` passes locally, producing signed artifacts with source and JavaDoc JARs.
+- `.github/workflows/release.yml` is complete with signing and publishing steps.
+- Document the release workflow: build → sign → publish → verify.
+
+### Validation
+- `mvn -Prelease verify -DskipTests` passes.
+- Inspect `target/` for `.jar`, `-sources.jar`, `-javadoc.jar`, and `.asc` files.
+- Dry-run deploy to staging (if OSSRH) or validate with Central Portal.
+
+---
+
+## Global Validation (before release)
+- `mvn -q spotless:apply` — no formatting drift.
+- `mvn -q -DskipTests test-compile` — all modules compile.
+- `mvn -T 1C -q test` — all tests pass.
+- `mvn verify` — JaCoCo check passes at ≥80%.
+- CI pipeline green on push.
+- SonarCloud quality gate passes.
+- `mvn -Prelease verify -DskipTests` — signed artifacts produced.

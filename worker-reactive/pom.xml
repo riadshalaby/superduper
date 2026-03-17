@@ -4,9 +4,11 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.0</version>
+    <version>0.6.1</version>
   </parent>
   <artifactId>superduper-worker-reactive</artifactId>
+  <name>SUPERDUPER Worker Reactive</name>
+  <description>Reactive worker runtime for SUPERDUPER message claiming, processing, and recovery.</description>
 
   <dependencies>
     <dependency>

@@ -1,23 +1,58 @@
-# ROADMAP v0.6.0
+# ROADMAP
 
-Goal: push the transactional inbox algorithm closer to its theoretical limits — reduce latency, increase claim parallelism, and extend the scale ceiling before a fundamentally different architecture becomes necessary.
+Goal: make `v0.6.1` release-ready with measurable code quality, sufficient test coverage, documented public interfaces, and a prepared Maven Central publishing pipeline.
 
-## Priority 1: Per-Topic Claim Locks
+## Priority 1: Code Quality with Sonar
 
-Objective: allow topics to claim in parallel instead of serializing all claim work behind a single ShedLock entry.
+Objective: establish static analysis and enforceable quality gates with Sonar.
 
-- Each topic entry in `TopicRegistry` already has a dedicated `claimLockName`; verify that claim loops for different topics actually acquire independent locks.
-- If not, wire each `TopicWorkerInstance` / `ReactiveTopicWorkerInstance` to its own ShedLock name so multi-topic deployments scale linearly with topic count.
-- Expected impact: N topics can claim concurrently instead of queuing behind one lock.
+- Integrate Sonar analysis into the standard build (local + CI).
+- Enable relevant Sonar rules for bugs, vulnerabilities, and code smells.
+- Define quality gates and enforce them as merge prerequisites.
+- Prioritize and fix existing critical findings.
 
-## Priority 2: Batch Inserts on Ingest
+## Priority 2: Test Coverage at Least 80%
 
-Objective: amortize database round-trips on the consumer ingest path.
+Objective: reach and maintain reliable test coverage of at least 80%.
 
-- Buffer N consumed Kafka records (or up to a time window) before issuing a single batch INSERT.
-- Ensure `message_id` deduplication still works correctly with batch upserts.
-- Preserve at-least-once semantics: Kafka offsets must not be acknowledged before the batch is persisted.
-- Error handling: a DB error rolls back the entire batch, delaying all N records instead of one. Define a fallback strategy (retry full batch, split-and-retry to isolate the failing record, or fall back to single-record inserts on error). Batch size must be tunable so operators can balance throughput gain against blast radius.
-- Expected impact: ingest throughput improves proportionally to batch size, reducing per-record INSERT overhead.
+- Enable consistent coverage measurement in the build.
+- Add missing tests in core modules until at least 80% is reached.
+- Configure the coverage threshold as a build gate.
+- Publish coverage reports as CI artifacts.
 
+## Priority 3: Public Interface Documentation (English)
 
+Objective: provide meaningful English JavaDoc for all public methods in interface types.
+
+- Inventory all `public` methods in interfaces.
+- Add clear, meaningful English JavaDoc for each method.
+- Review comments for consistency and usefulness.
+- Add documentation checks to the review process.
+
+## Priority 4: Maven Central Preparation
+
+Objective: prepare the technical and organizational prerequisites to publish the library cleanly to Maven Central.
+
+- Finalize group ID, artifact ID, and versioning approach.
+- Complete POM metadata (name, description, license, SCM, developers).
+- Prepare and test signing and publishing configuration.
+- Document the release workflow: build, sign, publish, verify.
+- Run a dry run and close remaining blockers before final publish.
+
+## Priority 5: CI Pipeline with GitHub Actions (GitHub-Hosted Runners)
+
+Objective: establish an automated CI pipeline on GitHub-hosted runners for build, test, and quality checks.
+
+- Add a GitHub Actions workflow for `push` and `pull_request`.
+- Run at least: compile, tests, coverage report generation, and Sonar analysis.
+- Configure workflow caching for Maven dependencies to reduce CI runtime.
+- Publish test and coverage artifacts for troubleshooting.
+- Define the CI workflow as the default quality gate before release preparation.
+
+## Done Criteria for v0.6.1
+
+- Sonar runs in CI and quality gates are active.
+- Test coverage is at least 80%.
+- All public interface methods have meaningful English JavaDoc.
+- Maven Central publishing is technically prepared and validated via dry run.
+- GitHub Actions CI runs successfully on GitHub-hosted runners for `push` and `pull_request`.

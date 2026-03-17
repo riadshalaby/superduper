@@ -4,10 +4,15 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.0</version>
+    <version>0.6.1</version>
   </parent>
   <artifactId>superduper-schema-liquibase</artifactId>
-  <name>superduper-schema-liquibase</name>
+  <name>SUPERDUPER Schema Liquibase</name>
+  <description>Liquibase changelogs and test fixtures for SUPERDUPER database schemas.</description>
+
+  <properties>
+    <jacoco.check.skip>true</jacoco.check.skip>
+  </properties>
 
   <dependencies>
     <dependency>

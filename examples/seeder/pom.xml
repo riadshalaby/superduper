@@ -4,12 +4,17 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.0</version>
+    <version>0.6.1</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>example-seeder</artifactId>
+  <name>SUPERDUPER Example Seeder</name>
+  <description>Example utility application that seeds Kafka topics for SUPERDUPER demos and tests.</description>
 
   <properties>
+    <central.skipPublishing>true</central.skipPublishing>
+    <jacoco.check.skip>true</jacoco.check.skip>
+    <maven.deploy.skip>true</maven.deploy.skip>
     <sonar.skip>true</sonar.skip>
   </properties>
 

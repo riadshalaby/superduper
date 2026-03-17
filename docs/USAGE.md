@@ -88,6 +88,13 @@ Operational behavior:
 - metrics and logs include the topic dimension for worker and maintenance observations
 - dedicated-table mode should point Liquibase at `db.changelog-infra.yaml`, then include the per-topic table changelogs instead of `db.changelog-master.yaml`
 
+Schema split:
+
+- shared mode keeps the standard `messages` table plus `container_heartbeats` and `shedlock`
+- dedicated mode creates only `container_heartbeats`, `shedlock`, and the configured per-topic tables such as `orders_messages` and `invoices_messages`
+
+For end-to-end shared and dedicated multi-topic runs, see [docs/EXAMPLES.md#multi-topic-examples](EXAMPLES.md#multi-topic-examples).
+
 ### Shared vs. Dedicated Table Comparison
 
 | Concern | Shared Table | Dedicated Table |

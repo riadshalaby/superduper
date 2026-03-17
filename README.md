@@ -235,65 +235,11 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
 
 ## Project Documentation
 
-## Multi-Topic Configuration
-
-Single-topic mode still works with `superduper.kafka.topic`. Multi-topic mode uses `superduper.topics` and maps each Kafka topic to a handler, optional per-topic overrides, and an optional dedicated table.
-
-```yaml
-superduper:
-  consumer:
-    type: spring
-  topics:
-    orders:
-      kafka-topic: orders.events
-      handler: ordersMessageHandler
-      batch-size: 200
-      max-retries: 5
-    invoices:
-      kafka-topic: invoices.events
-      handler: invoicesMessageHandler
-      table: invoices_messages
-```
-
-In multi-topic mode:
-
-- the `messages.topic` column stores the Kafka topic name
-- workers claim and fetch per topic
-- backlog, cleanup, reclaim, and redrive operations route to the correct shared or dedicated table
-- observability always carries the topic dimension for worker and maintenance signals
-
-Schema split:
-
-- shared mode keeps the standard `messages` table plus `container_heartbeats` and `shedlock`
-- dedicated mode creates only `container_heartbeats`, `shedlock`, and the configured per-topic tables such as `orders_messages` and `invoices_messages`
-
-Container quickstart:
-
-```bash
-./examples/run-multitopic-modes.sh start --mode shared
-./examples/run-multitopic-modes.sh start --mode dedicated --count 2 --seeder-count 1000
-./examples/run-multitopic-modes.sh stop
-./examples/run-multitopic-modes.sh down --volumes
-```
-
-> See [docs/USAGE.md](docs/USAGE.md) for integration guide and configuration reference.
+> See [docs/USAGE.md#multi-topic-configuration](docs/USAGE.md#multi-topic-configuration) for the multi-topic configuration model and shared-vs-dedicated table guidance.
 >
-> See [docs/EXAMPLES.md](docs/EXAMPLES.md) for running examples locally.
+> See [docs/EXAMPLES.md#multi-topic-examples](docs/EXAMPLES.md#multi-topic-examples) for the shared and dedicated multi-topic examples plus container quickstart commands.
 >
 > See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map and internal architecture.
-
----
-
-## Integration Tests (Testcontainers)
-
-- **Consumer-only E2E** (Kafka + Postgres): verifies Kafka→DB insert.
-- **Combined E2E** (Consumer + Worker): verifies **ordered** processing across keys with multi-step claim/process cycles.
-- **Worker ITs**: Heartbeat upsert and orphan reclaim reset.
-
-Run all:
-```bash
-mvn -T 1C test
-```
 
 ---
 
@@ -314,7 +260,7 @@ See [docs/EXAMPLES.md#multi-topic-examples](docs/EXAMPLES.md#multi-topic-example
 
 ## License
 
-MIT (or choose your own).
+Released under the [MIT License](LICENSE).
 
 ---
 
