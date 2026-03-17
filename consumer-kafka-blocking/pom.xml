@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.2</version>
+    <version>0.6.3-SNAPSHOT</version>
   </parent>
   <artifactId>superduper-consumer-kafka-blocking</artifactId>
   <name>SUPERDUPER Consumer Kafka Blocking</name>
