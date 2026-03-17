@@ -175,6 +175,8 @@ jobs:
       contents: write
     outputs:
       is_release: ${{ steps.release-metadata.outputs.is_release }}
+      create_tag: ${{ steps.release-metadata.outputs.create_tag }}
+      should_run_release: ${{ steps.release-metadata.outputs.should_run_release }}
       version: ${{ steps.release-metadata.outputs.version }}
 
     steps:
@@ -192,28 +194,47 @@ jobs:
 
       - name: Determine release metadata
         id: release-metadata
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
           if [[ "$version" == *-SNAPSHOT ]]; then
             echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+            echo "should_run_release=false" >> "$GITHUB_OUTPUT"
             echo "Version $version is a snapshot; skipping tag creation."
             exit 0
           fi
 
+          echo "is_release=true" >> "$GITHUB_OUTPUT"
           tag="v$version"
+          release_exists=false
+          if gh release view "$tag" >/dev/null 2>&1; then
+            release_exists=true
+          fi
+
           if git ls-remote --tags origin "refs/tags/$tag" | grep -q "refs/tags/$tag$"; then
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-            echo "Tag $tag already exists on origin; skipping tag creation."
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+
+            if [[ "$release_exists" == "true" ]]; then
+              echo "should_run_release=false" >> "$GITHUB_OUTPUT"
+              echo "Release version $version already has tag $tag and a GitHub Release; skipping release job."
+              exit 0
+            fi
+
+            echo "should_run_release=true" >> "$GITHUB_OUTPUT"
+            echo "Release version $version already has tag $tag but no GitHub Release; allowing release retry."
             exit 0
           fi
 
-          echo "is_release=true" >> "$GITHUB_OUTPUT"
-          echo "Release version $version detected; creating $tag."
+          echo "create_tag=true" >> "$GITHUB_OUTPUT"
+          echo "should_run_release=true" >> "$GITHUB_OUTPUT"
+          echo "Release version $version detected; creating $tag and running release job."
 
       - name: Create and push release tag
-        if: ${{ steps.release-metadata.outputs.is_release == 'true' }}
+        if: ${{ steps.release-metadata.outputs.create_tag == 'true' }}
         run: |
           version="${{ steps.release-metadata.outputs.version }}"
           tag="v$version"
@@ -234,7 +255,7 @@ jobs:
     needs:
       - build
       - tag-version
-    if: ${{ needs.build.result == 'success' && needs.tag-version.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.tag-version.outputs.is_release == 'true' }}
+    if: ${{ needs.build.result == 'success' && needs.tag-version.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.tag-version.outputs.should_run_release == 'true' }}
     permissions:
       contents: write
     env:
@@ -269,6 +290,12 @@ jobs:
           test -n "$MAVEN_GPG_KEY"
           test -n "$MAVEN_GPG_PASSPHRASE"
 
+      - name: Download JaCoCo reports
+        uses: actions/download-artifact@v4
+        with:
+          name: jacoco-reports-${{ github.run_id }}
+          path: .
+
       - name: Publish to Maven Central
         run: mvn -B -Prelease -DskipTests deploy
 
@@ -278,6 +305,10 @@ jobs:
         run: |
           version="${{ needs.tag-version.outputs.version }}"
           tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub Release $tag already exists; skipping creation."
+            exit 0
+          fi
           gh release create "$tag" \
             --title "$tag" \
             --generate-notes \
