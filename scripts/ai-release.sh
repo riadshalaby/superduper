@@ -291,12 +291,10 @@ $commit_list
   - sonar analysis status (non-blocking)
   - tag-version release tag creation
   - release Maven Central publish
-
-## Release Checklist
-- [x] version bumped with mvn versions:set
-- [ ] GitHub Actions CI checks are green
-- [ ] user will merge this PR into main
-- [ ] unified ci.yml on main will run build -> tag-version -> release after merge
+- after merge, ci.yml on main will automatically:
+  - create the release tag
+  - publish to Maven Central
+  - create the GitHub Release with generated notes
 EOF
 )"
 
@@ -360,18 +358,10 @@ finalize_release() {
   [[ "$current_version" == "$release" ]] || die "main version is $current_version, expected $release. Ensure PR was merged."
 
   local tag="v$release"
-  if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
-    echo "Tag $tag already exists locally."
-  else
-    git tag "$tag"
+  if ! git ls-remote --tags origin "refs/tags/$tag" | grep -q "refs/tags/$tag"; then
+    die "Tag $tag not found on origin. Wait for CI on main to complete tag-version and release jobs, then re-run finalize."
   fi
-
-  if git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
-    echo "Tag $tag already exists on origin."
-  else
-    # Unified CI on main also creates release tags; keep the manual push as a safety backstop during finalize.
-    git push origin "$tag"
-  fi
+  echo "Verified tag $tag exists on origin (created by CI)."
 
   if [[ -z "$next_version" ]]; then
     local suggested

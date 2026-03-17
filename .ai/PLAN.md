@@ -1,8 +1,8 @@
-# Plan — 0.6.2-SNAPSHOT
+# Plan — 0.6.3-SNAPSHOT
 
 Status: **active**
 
-Goal: unify the CI pipeline so Sonar runs non-blocking on `main`, the release flow lives inside `ci.yml`, and strict execution order prevents accidental releases.
+Goal: make the release trigger deterministic by establishing CI as the sole tag creator, removing tag creation from `finalize`, and adding automatic GitHub Release notes generation.
 
 ---
 
@@ -10,156 +10,196 @@ Goal: unify the CI pipeline so Sonar runs non-blocking on `main`, the release fl
 
 | Task ID | Scope | Dependencies | Estimated Size |
 |---------|-------|-------------|----------------|
-| T-001 | Unified CI Pipeline Consolidation | none | medium |
+| T-001 | Release Trigger Consistency + Release Notes | none | medium |
 
 ---
 
-## T-001 — Unified CI Pipeline Consolidation
+## T-001 — Release Trigger Consistency + Release Notes
 
 ### Scope
-Consolidate the release workflow into `ci.yml`, make Sonar non-blocking on `main`, and enforce strict job execution order with safety gates. Delete `release.yml` after migration.
+Remove the conflict between manual tagging in `finalize` and automatic tagging in CI. Make CI the single authoritative path for tag creation and publishing. Add automatic GitHub Release creation with release notes generated from commit messages.
 
 ### Current State
 
-**`ci.yml`** has two jobs:
-- `build` — runs on all pushes and PRs: checkout, Java 25, spotless, compile, test, JaCoCo verify, artifact upload.
-- `sonar` — runs on `main` push only, after `build` succeeds. Uses `sonar.qualitygate.wait=true` which **fails the job when the quality gate is red**.
+**Two competing tag creators:**
+1. `ci.yml` `tag-version` job — on `main` push, if version is non-snapshot and tag doesn't exist, creates and pushes `v<version>` tag. `release` job then publishes to Maven Central.
+2. `ai-release.sh finalize` — after user confirms merge, also tries to push `v<version>` tag (with "already exists" skip logic).
 
-**`release.yml`** has two jobs (triggered on `v*` tag push):
-- `verify-main-ci` — queries the GitHub API to verify a successful CI run exists for the tagged commit on `main`.
-- `publish` — after `verify-main-ci` succeeds: sets up Java with Maven Central credentials, verifies secrets, runs `mvn -B -Prelease -DskipTests deploy`.
+**Race condition:**
+- If `finalize` runs before CI completes → manual tag push beats CI → CI sees tag exists → sets `is_release=false` → `release` job **skipped** → Maven Central publish **doesn't happen**.
+- If CI runs first → `finalize` sees tag exists → skips → but the user doesn't know whether CI already published or not.
 
-### Problems Being Solved
+**No GitHub Release:**
+- No `gh release create` step exists anywhere.
+- No release notes are generated from commits or PR descriptions.
 
-1. **Sonar blocks the pipeline.** `sonar.qualitygate.wait=true` means a red quality gate fails the `sonar` job and marks the workflow as failed. The intent is visibility, not blocking.
-2. **Release logic is duplicated across two files.** The `release.yml` workflow independently re-checks out code, sets up Java, and verifies CI. This should be a job within `ci.yml` gated by the build job.
-3. **No enforced sequencing.** The current `release.yml` only verifies that *some* CI run passed for the tagged SHA. Moving release into `ci.yml` makes the dependency chain explicit via `needs`.
+### Target Release Flow
+
+```
+1. User runs: scripts/ai-release.sh prepare X.Y.Z
+   → bumps version, commits, pushes branch, opens PR to main
+
+2. User merges PR on GitHub
+
+3. CI runs on main push (automatic):
+   build → tag-version (creates v<X.Y.Z> tag) → release (publishes to Maven Central + creates GitHub Release with notes)
+
+4. User runs: scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]
+   → verifies tag exists on origin (created by CI)
+   → creates next dev branch, bumps to NEXT_VERSION-SNAPSHOT, resets cycle files
+```
 
 ### Implementation Steps
 
-#### 1. Make Sonar non-blocking in `ci.yml`
+#### 1. Remove tag creation from `finalize` in `ai-release.sh`
 
-In the `sonar` job:
-- Remove `-Dsonar.qualitygate.wait=true` from the `mvn sonar:sonar` command.
-- Add a separate step after `sonar:sonar` that checks the quality gate status via the SonarCloud API and logs the result.
-- This step should use `continue-on-error: true` so a red gate is visible in the logs but does not fail the workflow.
-- Add explicit log messaging: print a clear warning when the quality gate is red, and a success message when it's green.
+In `finalize_release()`, replace the tag creation and push logic (lines ~359–374) with a **read-only verification**:
 
-The resulting Sonar step sequence:
+```bash
+local tag="v$release"
+# CI on main is the authoritative tag creator. Verify the tag exists before proceeding.
+if ! git ls-remote --tags origin "refs/tags/$tag" | grep -q "refs/tags/$tag"; then
+  die "Tag $tag not found on origin. Wait for CI on main to complete tag-version and release jobs, then re-run finalize."
+fi
+echo "Verified tag $tag exists on origin (created by CI)."
+```
+
+Remove:
+- The local `git tag "$tag"` creation.
+- The `git push origin "$tag"` push.
+- The "safety backstop" comment.
+
+This ensures `finalize` never creates tags — it only verifies CI did its job.
+
+#### 2. Add GitHub Release creation to CI `release` job
+
+In `.github/workflows/ci.yml`, add a step to the `release` job after the Maven Central publish step:
+
 ```yaml
-- name: Sonar analysis
-  if: ${{ env.SONAR_TOKEN != '' }}
+- name: Create GitHub Release
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  run: mvn -B -DskipTests sonar:sonar
-
-- name: Check Sonar quality gate
-  if: ${{ env.SONAR_TOKEN != '' }}
-  continue-on-error: true
-  env:
-    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   run: |
-    # Query SonarCloud API for quality gate status
-    # Log result clearly: PASSED or FAILED (with link to dashboard)
-    # Exit 1 on failure so the step shows as orange/warning, but continue-on-error prevents job failure
+    version="${{ needs.tag-version.outputs.version }}"
+    tag="v$version"
+    gh release create "$tag" \
+      --title "v$version" \
+      --generate-notes \
+      --verify-tag
 ```
 
-#### 2. Add release jobs to `ci.yml`
+This uses `gh release create --generate-notes` which auto-generates release notes from:
+- Commit messages since the previous tag.
+- PR titles and descriptions merged since the previous release.
+- Formatted consistently by GitHub's built-in generator.
 
-Add two new jobs to `ci.yml`:
+The `--verify-tag` flag ensures the tag exists before creating the release.
 
-**Job: `tag-version`**
-- Runs only on `main` push events (not PRs, not tags, not other branches).
-- Condition: `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`
-- `needs: [build]` — only runs after a successful build.
-- Checks if the current commit's project version matches a release pattern (no `-SNAPSHOT` suffix).
-- If it is a release version, creates and pushes the `v<version>` tag.
-- If it is a snapshot version, skips tagging (no-op).
-- Outputs a flag (`is_release: true/false`) and the version string for downstream jobs.
+The `release` job needs `contents: write` permission (currently `contents: read`) to create the GitHub Release.
 
-**Job: `release`**
-- Runs only when `tag-version` outputs `is_release: true`.
-- Condition: `if: needs.tag-version.outputs.is_release == 'true'`
-- `needs: [build, tag-version]` — strict dependency chain.
-- Contains the publishing logic currently in `release.yml` → `publish` job:
-  - Setup Java with Maven Central server credentials.
-  - Verify release secrets are present (`MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_TOKEN`, `MAVEN_GPG_KEY`, `MAVEN_GPG_PASSPHRASE`).
-  - Run `mvn -B -Prelease -DskipTests deploy`.
-- Permissions: `contents: read` (tag was already pushed by `tag-version`).
+#### 3. Update `release` job permissions
 
-#### 3. Update `tag-version` job to handle tagging safely
-
-The `tag-version` job needs:
-- `permissions: contents: write` (to push the tag).
-- Extract version from `pom.xml` (use `mvn help:evaluate` or parse the XML).
-- Check if version ends with `-SNAPSHOT` → if so, output `is_release=false` and skip.
-- Check if tag `v<version>` already exists remotely → if so, output `is_release=false` and skip (idempotent).
-- Otherwise, create and push the tag.
-
-#### 4. Enforce safety conditions across all jobs
-
-Ensure no job can accidentally run outside its intended context:
-- `build` — runs on all pushes and PRs (unchanged).
-- `sonar` — runs only on `main` push after successful `build` (unchanged except non-blocking).
-- `tag-version` — runs only on `main` push after successful `build`. Never on PRs. Never on feature branches.
-- `release` — runs only when `tag-version` outputs `is_release: true`. Never directly triggered.
-
-Add explicit `if` conditions on every job to prevent accidental execution.
-
-#### 5. Delete `release.yml`
-
-After the new jobs in `ci.yml` are confirmed working:
-- Delete `.github/workflows/release.yml`.
-
-#### 6. Update `scripts/ai-release.sh`
-
-The `finalize_release()` function currently pushes a tag that triggers `release.yml`. With the new model:
-- Tagging on `main` is now handled by CI (`tag-version` job) when a non-snapshot version is merged.
-- `finalize_release()` should still push the tag manually as a safety measure (CI also handles it, making it idempotent).
-- Update the inline comment on the `git push origin "$tag"` line to note that CI also tags automatically, but the manual push ensures immediate release even if CI hasn't run yet.
-- Update the PR body template in `prepare_release()` to remove the reference to `release.yml` and instead reference the unified `ci.yml` release pipeline.
-
-#### 7. Update `CLAUDE.md`
-
-Update the `## CI Pipeline` section:
-- Note that all CI/CD logic lives in `ci.yml` (no separate release workflow).
-- Sonar runs on `main` as non-blocking (visible but does not fail the pipeline).
-- Release flow: `build` → `tag-version` → `release`, all within `ci.yml`.
-- `release.yml` was removed and must not be reintroduced.
-
-### Final `ci.yml` Job Structure
-
+Change the `release` job permissions from:
+```yaml
+permissions:
+  contents: read
 ```
-ci.yml
-├── build          (all pushes + PRs)
-│   └── spotless → compile → test → JaCoCo → upload artifacts
-├── sonar          (main push only, needs: build)
-│   └── sonar:sonar → check quality gate (non-blocking)
-├── tag-version    (main push only, needs: build)
-│   └── extract version → skip if snapshot → create+push tag
-└── release        (main push only, needs: build + tag-version, if is_release)
-    └── verify secrets → mvn -Prelease deploy
+to:
+```yaml
+permissions:
+  contents: write
 ```
+
+This is needed for `gh release create` to work.
+
+#### 4. Update `prepare_release()` PR body in `ai-release.sh`
+
+Update the PR body template to reflect the new deterministic flow:
+
+- Remove any language suggesting manual tagging.
+- Add a note that after merge, CI will automatically: create the release tag, publish to Maven Central, and create a GitHub Release with auto-generated notes.
+- Remove the `## Release Checklist` section entirely from the PR body. The checklist duplicates what CI already enforces and what the CI Status section documents.
+
+#### 5. Update `CLAUDE.md` Release Rules and CI Pipeline sections
+
+**CI Pipeline section** — update the release flow description:
+- CI on `main` is the sole creator of release tags and GitHub Releases.
+- `finalize` no longer pushes tags; it verifies CI created the tag and then handles post-release setup.
+
+**Release Rules section** — update the two-phase workflow description:
+- Phase 1 (prepare): unchanged.
+- Phase 2 (finalize): remove mention of "creates/pushes tag". Replace with: "Verifies CI has created and pushed the release tag, then creates branch `feature/vNEXT_VERSION`, bumps to next version, resets cycle files."
+- Add a new bullet: "CI automatically creates a GitHub Release with auto-generated release notes after publishing to Maven Central."
+
+**Release Safety section** — add:
+- "Never create release tags manually; CI on `main` is the sole tag creator."
+
+#### 6. Add `.github/release.yml` configuration (optional but recommended)
+
+Create `.github/release.yml` (not a workflow — this is GitHub's release notes configuration file) to customize how auto-generated notes are categorized:
+
+```yaml
+changelog:
+  categories:
+    - title: Features
+      labels:
+        - feat
+    - title: Bug Fixes
+      labels:
+        - fix
+    - title: Performance
+      labels:
+        - perf
+    - title: Other Changes
+      labels:
+        - "*"
+  exclude:
+    labels:
+      - skip-changelog
+```
+
+Note: Since this project uses Conventional Commits (not PR labels), the `--generate-notes` flag will use commit subjects directly. The categories above are label-based and will mostly fall through to "Other Changes" unless PR labels are adopted. This is acceptable — the auto-generated notes from commit messages are already useful and consistently formatted.
+
+If the implementer finds that `--generate-notes` output is insufficient without labels, an alternative is to build release notes from `git log` in the CI step:
+
+```bash
+# Fallback: generate notes from conventional commits
+previous_tag="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')"
+if [[ -n "$previous_tag" ]]; then
+  notes="$(git log --no-merges --format='- %s' "${previous_tag}..${tag}")"
+else
+  notes="$(git log --no-merges --format='- %s' "${tag}")"
+fi
+gh release create "$tag" --title "v$version" --notes "$notes" --verify-tag
+```
+
+The implementer should try `--generate-notes` first and only fall back if the output is unsatisfactory.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `scripts/ai-release.sh` | Remove tag creation from `finalize`; add tag verification; update PR body in `prepare` |
+| `.github/workflows/ci.yml` | Add GitHub Release step to `release` job; update `release` permissions to `contents: write` |
+| `.github/release.yml` | New file — release notes category configuration (optional) |
+| `CLAUDE.md` | Update CI Pipeline, Release Rules, and Release Safety sections |
 
 ### Acceptance Criteria
 
-1. **Sonar non-blocking**: Sonar analysis runs on `main` push. A red quality gate is logged clearly as a warning but does not fail the workflow. A green gate is logged as success.
-2. **Unified workflow**: `ci.yml` contains `build`, `sonar`, `tag-version`, and `release` jobs. No separate `release.yml` exists.
-3. **Strict execution order**: `tag-version` requires successful `build`. `release` requires successful `build` and `tag-version` with `is_release == true`. Neither `tag-version` nor `release` runs on PRs or non-main branches.
-4. **Tagging**: When a non-snapshot version is merged to `main`, CI automatically creates and pushes the version tag. Snapshot versions are skipped.
-5. **Publishing**: Release job publishes to Maven Central only when tagging succeeds. Secrets are verified before publish.
-6. **Idempotent tagging**: If the tag already exists (e.g., manual push from `finalize`), the `tag-version` job skips gracefully.
-7. **`ai-release.sh` updated**: PR body and comments reflect the unified pipeline. Manual tag push in `finalize` is preserved as a safety measure with updated documentation.
-8. **`CLAUDE.md` updated**: CI Pipeline section reflects the new unified model.
+1. **Single tag creator**: `ai-release.sh finalize` no longer creates or pushes tags. It verifies the tag exists on origin (created by CI) and fails with a clear message if the tag is missing.
+2. **CI creates GitHub Release**: After successful Maven Central publish, the `release` job creates a GitHub Release using `gh release create` with auto-generated notes from commit history.
+3. **Release notes quality**: Generated release notes include commit messages since the previous tag, formatted consistently. PR descriptions are included where available.
+4. **Deterministic flow**: The release sequence is always: merge PR → CI builds → CI tags → CI publishes → CI creates release → user runs `finalize` for next dev cycle. No alternative paths.
+5. **`finalize` resilience**: If the user runs `finalize` before CI has tagged, the script fails with: "Tag v<version> not found on origin. Wait for CI on main to complete tag-version and release jobs, then re-run finalize."
+6. **PR body updated**: `prepare` generates a PR body that clearly describes the automated post-merge flow.
+7. **Documentation updated**: `CLAUDE.md` reflects the new release model — CI is the sole tag creator, `finalize` is read-only on tags.
 
 ### Validation
 
-- Push to a non-main branch → only `build` runs.
-- Open a PR to `main` → only `build` runs.
-- Push a snapshot version to `main` → `build` + `sonar` + `tag-version` (skips tagging) run. No `release`.
-- Push a release version to `main` → `build` + `sonar` + `tag-version` (creates tag) + `release` (publishes) run.
-- Sonar quality gate red → warning logged, workflow still green.
+- Review `ai-release.sh` diff: no `git tag` or `git push origin "$tag"` in `finalize_release()`.
+- Review `ci.yml` diff: `release` job has `contents: write` and a `gh release create` step.
 - `mvn -q -DskipTests test-compile` passes locally.
+- Manually trace through the flow: merge → CI tags → CI publishes → CI creates release → `finalize` verifies and proceeds.
 
 ---
 
