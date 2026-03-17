@@ -12,7 +12,7 @@
 
   <organization>
     <name>RSWorld</name>
-    <url>https://github.com/riadshalaby</url>
+    <url>https://rsworld.eu</url>
   </organization>
 
   <licenses>
@@ -28,7 +28,7 @@
       <name>Riad Shalaby</name>
       <email>riad@rsworld.eu</email>
       <organization>RSWorld</organization>
-      <organizationUrl>https://github.com/riadshalaby</organizationUrl>
+      <organizationUrl>https://rsworld.eu</organizationUrl>
     </developer>
   </developers>
 
