@@ -269,6 +269,12 @@ jobs:
           test -n "$MAVEN_GPG_KEY"
           test -n "$MAVEN_GPG_PASSPHRASE"
 
+      - name: Download JaCoCo reports
+        uses: actions/download-artifact@v4
+        with:
+          name: jacoco-reports-${{ github.run_id }}
+          path: .
+
       - name: Publish to Maven Central
         run: mvn -B -Prelease -DskipTests deploy
 
