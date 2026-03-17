@@ -7,6 +7,8 @@
     <version>0.6.1</version>
   </parent>
   <artifactId>superduper-repository-r2dbc</artifactId>
+  <name>SUPERDUPER Repository R2DBC</name>
+  <description>R2DBC repository implementations for SUPERDUPER message ingest, claiming, and maintenance.</description>
 
   <dependencies>
     <dependency>

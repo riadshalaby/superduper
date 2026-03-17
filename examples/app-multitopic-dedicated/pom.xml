@@ -8,9 +8,13 @@
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>example-app-multitopic-dedicated</artifactId>
+  <name>SUPERDUPER Example App Multitopic Dedicated</name>
+  <description>Example Spring Boot application that maps SUPERDUPER topics to dedicated message tables.</description>
 
   <properties>
+    <central.skipPublishing>true</central.skipPublishing>
     <jacoco.check.skip>true</jacoco.check.skip>
+    <maven.deploy.skip>true</maven.deploy.skip>
     <sonar.skip>true</sonar.skip>
   </properties>
 

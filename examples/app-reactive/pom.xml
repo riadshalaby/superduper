@@ -8,9 +8,13 @@
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>example-app-reactive</artifactId>
+  <name>SUPERDUPER Example App Reactive</name>
+  <description>Example Spring Boot application that runs SUPERDUPER with reactive Kafka and R2DBC processing.</description>
 
   <properties>
+    <central.skipPublishing>true</central.skipPublishing>
     <jacoco.check.skip>true</jacoco.check.skip>
+    <maven.deploy.skip>true</maven.deploy.skip>
     <sonar.skip>true</sonar.skip>
   </properties>
 

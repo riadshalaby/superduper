@@ -7,6 +7,8 @@
     <version>0.6.1</version>
   </parent>
   <artifactId>superduper-starter-autoselect</artifactId>
+  <name>SUPERDUPER Starter Autoselect</name>
+  <description>Spring Boot starter that auto-selects the SUPERDUPER JDBC or reactive stack.</description>
 
   <dependencies>
     <dependency>

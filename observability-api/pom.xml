@@ -7,6 +7,8 @@
     <version>0.6.1</version>
   </parent>
   <artifactId>superduper-observability-api</artifactId>
+  <name>SUPERDUPER Observability API</name>
+  <description>Core observation contracts for SUPERDUPER consumers, workers, and maintenance services.</description>
 
   <dependencies>
     <dependency>

@@ -7,6 +7,8 @@
     <version>0.6.1</version>
   </parent>
   <artifactId>superduper-worker-blocking</artifactId>
+  <name>SUPERDUPER Worker Blocking</name>
+  <description>Blocking worker runtime for SUPERDUPER message claiming, processing, and recovery.</description>
 
   <dependencies>
     <dependency>

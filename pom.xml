@@ -5,6 +5,32 @@
   <artifactId>superduper-parent</artifactId>
   <version>0.6.1</version>
   <packaging>pom</packaging>
+  <name>SUPERDUPER</name>
+  <description>Resilient, ordered, database-backed Kafka consumption pattern with pluggable workers.</description>
+  <url>https://github.com/riadshalaby/superduper</url>
+  <inceptionYear>2026</inceptionYear>
+
+  <organization>
+    <name>RSWorld</name>
+    <url>https://github.com/riadshalaby</url>
+  </organization>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>http://www.opensource.org/licenses/mit-license.php</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>riadshalaby</id>
+      <name>Riad Shalaby</name>
+      <email>riad@rsworld.eu</email>
+      <organization>RSWorld</organization>
+      <organizationUrl>https://github.com/riadshalaby</organizationUrl>
+    </developer>
+  </developers>
 
   <modules>
     <module>observability-api</module>
@@ -27,6 +53,19 @@
     <module>examples/seeder</module>
   </modules>
 
+  <scm>
+    <connection>scm:git:git://github.com/riadshalaby/superduper.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/riadshalaby/superduper.git</developerConnection>
+    <url>https://github.com/riadshalaby/superduper</url>
+  </scm>
+
+  <distributionManagement>
+    <repository>
+      <id>central</id>
+      <url>https://central.sonatype.com/api/v1/publisher</url>
+    </repository>
+  </distributionManagement>
+
   <properties>
     <java.version>25</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -46,12 +85,17 @@
     <jacoco.module.minimum.line.coverage>0.70</jacoco.module.minimum.line.coverage>
     <postgresql.version>42.7.10</postgresql.version>
     <reactor-core.version>3.8.3</reactor-core.version>
+    <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
+    <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+    <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+    <central-publishing-maven-plugin.version>0.9.0</central-publishing-maven-plugin.version>
     <sonar-maven-plugin.version>5.5.0.6356</sonar-maven-plugin.version>
     <sonar.organization>rsworld</sonar.organization>
     <sonar.host.url>https://sonarcloud.io</sonar.host.url>
     <sonar.projectKey>rsworld_superduper</sonar.projectKey>
     <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
     <sonar.coverage.jacoco.xmlReportPaths>coverage-report/target/site/jacoco-aggregate/jacoco.xml,**/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+    <central.skipPublishing>false</central.skipPublishing>
   </properties>
 
   <dependencyManagement>
@@ -256,6 +300,26 @@
           <artifactId>sonar-maven-plugin</artifactId>
           <version>${sonar-maven-plugin.version}</version>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-source-plugin</artifactId>
+          <version>${maven-source-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>${maven-javadoc-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-gpg-plugin</artifactId>
+          <version>${maven-gpg-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.sonatype.central</groupId>
+          <artifactId>central-publishing-maven-plugin</artifactId>
+          <version>${central-publishing-maven-plugin.version}</version>
+        </plugin>
       </plugins>
     </pluginManagement>
 
@@ -338,4 +402,73 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <configuration>
+              <doclint>none</doclint>
+              <quiet>true</quiet>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <configuration>
+              <bestPractices>true</bestPractices>
+              <signer>bc</signer>
+              <keyEnvName>MAVEN_GPG_KEY</keyEnvName>
+              <passphraseEnvName>MAVEN_GPG_PASSPHRASE</passphraseEnvName>
+              <skip>${gpg.skip}</skip>
+            </configuration>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+              <checksums>required</checksums>
+              <skipPublishing>${central.skipPublishing}</skipPublishing>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

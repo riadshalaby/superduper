@@ -7,6 +7,8 @@
     <version>0.6.1</version>
   </parent>
   <artifactId>superduper-consumer-kafka-reactive</artifactId>
+  <name>SUPERDUPER Consumer Kafka Reactive</name>
+  <description>Reactive Spring Kafka consumer integration for persisting records into SUPERDUPER.</description>
 
   <dependencies>
     <dependency>
