@@ -21,8 +21,11 @@
 
 ## CI Pipeline
 - GitHub Actions CI runs on every push and on pull requests targeting `main`.
+- All CI/CD workflow logic lives in `.github/workflows/ci.yml`.
 - CI is the authoritative gate for formatting, compile, tests, and coverage artifacts.
-- Release tags matching `v*` trigger the publish workflow skeleton; publish steps are completed later.
+- Sonar runs on `main` after `build`; its quality gate is visible in logs but non-blocking.
+- Release flow is `build` -> `tag-version` -> `release` inside `ci.yml`, and only runs on `main` pushes.
+- `.github/workflows/release.yml` was removed and must not be reintroduced.
 - `scripts/build-all.sh` was removed and must not be reintroduced as a project build entrypoint.
 
 ## Language Rules
