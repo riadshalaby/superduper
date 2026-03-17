@@ -265,6 +265,8 @@ These examples use the blocking stack and start the same local infrastructure wi
 - `orders.events`
 - `invoices.events`
 
+For the configuration model behind these examples, see [docs/USAGE.md#multi-topic-configuration](USAGE.md#multi-topic-configuration).
+
 ### Shared-Table Mode (`app-multitopic-shared`)
 
 Run it:
