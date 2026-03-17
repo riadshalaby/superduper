@@ -281,19 +281,22 @@ $commit_list
 - [x] mvn -T 1C -q test
 
 ## CI Status
-- authoritative release gate: GitHub Actions CI on this branch/PR
-- required checks:
+- authoritative release gate: unified GitHub Actions CI in ci.yml
+- branch checks required before merge:
   - spotless formatting check
   - test-compile build verification
   - test suite execution
   - jacoco coverage report generation
-  - sonar analysis status (added in follow-up task T-002)
+- post-merge main checks in ci.yml:
+  - sonar analysis status (non-blocking)
+  - tag-version release tag creation
+  - release Maven Central publish
 
 ## Release Checklist
 - [x] version bumped with mvn versions:set
 - [ ] GitHub Actions CI checks are green
 - [ ] user will merge this PR into main
-- [ ] release tag v$release will be created from main after merge and will trigger the publish workflow
+- [ ] unified ci.yml on main will run build -> tag-version -> release after merge
 EOF
 )"
 
@@ -366,7 +369,7 @@ finalize_release() {
   if git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
     echo "Tag $tag already exists on origin."
   else
-    # Tag pushes trigger the release GitHub Actions workflow for publish steps.
+    # Unified CI on main also creates release tags; keep the manual push as a safety backstop during finalize.
     git push origin "$tag"
   fi
 

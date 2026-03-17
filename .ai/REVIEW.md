@@ -1,31 +1,41 @@
-# Review — T-005: Maven Central Preparation
+# Review — T-001: Unified CI Pipeline Consolidation
 
 - **Verdict:** PASS
 - **Reviewer:** claude
-- **Reviewed at (UTC):** 2026-03-17T08:50Z
-- **Commits reviewed:** 7a14e14 — `build: prepare Maven Central publishing`; 34b693e — `docs: apply MIT license and streamline README`; d0412ad — `build: correct RSWorld organization URL`
+- **Reviewed at (UTC):** 2026-03-17T13:10Z
+- **Commit reviewed:** `cd9d619` — `ci: unify release flow in the main workflow`
 
 ---
 
 ## Findings (ordered by severity)
 
-### INFO — `doclint: none` disables Javadoc linting in the release profile
+### INFO — Sonar quality gate poll window is capped at 60 seconds (12 × 5 s)
 
-**File:** `pom.xml` (maven-javadoc-plugin, `<doclint>none</doclint>`)
+**File:** `ci.yml` — "Check Sonar quality gate" step (the retry loop)
 
-Javadoc linting is disabled in the `release` profile. Given the thorough T-004 work the Javadoc is currently clean, but future additions won't be validated at build time. Maven Central does not require `doclint` to pass — it only requires a `-javadoc.jar` to be present — so this does not block publishing.
+The background CE task is polled up to 12 times with a 5-second sleep, giving a 60-second window before the step exits with a warning. For larger codebases Sonar analysis can exceed this. Because `continue-on-error: true` is set, a timeout produces an orange warning step and does not fail the workflow. This is intentional non-blocking behaviour and the plan does not specify a minimum poll window.
 
 **No action required.**
 
 ---
 
-### INFO — `schema-liquibase` has no deploy-skip and will be published to Central
+### INFO — `concurrency: cancel-in-progress: true` covers `tag-version` and `release`
 
-**File:** `schema-liquibase/pom.xml`
+**File:** `ci.yml` — top-level `concurrency` block
 
-`schema-liquibase` does not set `maven.deploy.skip` or `central.skipPublishing`, so it will be published as part of a release. The plan only specifies excluding example modules. Publishing `schema-liquibase` is the correct behaviour — it contains the Liquibase changelogs that library consumers need to bootstrap the database schema.
+The concurrency group is scoped to `github.ref`, so two rapid pushes to `main` would cancel the earlier run — potentially mid-`tag-version` or mid-`release`. In practice release merges happen infrequently and the `tag-version` job is idempotent (remote tag check), so a cancelled-then-re-run sequence is safe. This pattern pre-dates T-001 and the plan does not require a change.
 
-**No action required; intentional.**
+**No action required.**
+
+---
+
+### INFO — `release` job re-verifies POM version against `tag-version` output
+
+**File:** `ci.yml` — "Verify release version" step (lines 261–263)
+
+The release job re-evaluates the project version with `mvn help:evaluate` and asserts it matches `tag-version.outputs.version`. This is an extra correctness guard beyond the plan's specification, ensuring no drift between the tagged ref and the checked-out POM. A good defensive addition.
+
+**No action required.**
 
 ---
 
@@ -33,48 +43,44 @@ Javadoc linting is disabled in the `release` profile. Given the thorough T-004 w
 
 | Plan step | Expected | Actual | Status |
 |-----------|----------|--------|--------|
-| `<name>` in parent POM | `SUPERDUPER` | `SUPERDUPER` | PASS |
-| `<description>` in parent POM | Resilient, ordered, database-backed... | Matches plan | PASS |
-| `<url>` in parent POM | GitHub repo URL | `https://github.com/riadshalaby/superduper` | PASS |
-| `<inceptionYear>` | Present | `2026` | PASS |
-| `<licenses>` — MIT | Present | MIT block with OSI URL | PASS |
-| `<scm>` — connection, developerConnection, url | Present | All three present | PASS |
-| `<developers>` — id, name, email | Present | `riadshalaby` / Riad Shalaby / riad@rsworld.eu | PASS |
-| `<organization>` | Present | RSWorld / `https://rsworld.eu` | PASS |
-| Child module `<name>` + `<description>` | All 12 library modules | All 12 present and accurate | PASS |
-| `maven-source-plugin` in `release` profile | `jar-no-fork` | Present | PASS |
-| `maven-javadoc-plugin` in `release` profile | `jar` goal | Present | PASS |
-| `maven-gpg-plugin` in `release` profile | Present, CI-compatible | `signer: bc` with `MAVEN_GPG_KEY` / `MAVEN_GPG_PASSPHRASE` env vars | PASS |
-| `gpg.skip` override for dry-run | Present | `<skip>${gpg.skip}</skip>` | PASS |
-| `central-publishing-maven-plugin` in `release` profile | Central Portal plugin | `0.9.0`, `autoPublish: true`, `waitUntil: published` | PASS |
-| `<distributionManagement>` | Points to Central | `https://central.sonatype.com/api/v1/publisher` | PASS |
-| Example modules excluded from deploy | `maven.deploy.skip=true` + `central.skipPublishing=true` | Set in all 5 example POMs | PASS |
-| `coverage-report` excluded from deploy | Same | `maven.deploy.skip=true` + `central.skipPublishing=true` | PASS |
-| `release.yml` — GPG secrets wired | `MAVEN_GPG_KEY`, `MAVEN_GPG_PASSPHRASE` | Present as env vars | PASS |
-| `release.yml` — Central credentials wired | `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_TOKEN` | Present as env vars; `server-id: central` in setup-java | PASS |
-| `release.yml` — publish command | `mvn -Prelease -DskipTests deploy` | `mvn -B -Prelease -DskipTests deploy` | PASS |
-| `release.yml` — secrets guard step | Present | `test -n "$VAR"` for all 4 secrets | PASS |
-| Dry-run `mvn -Prelease -DskipTests -Dgpg.skip=true verify` | PASS | PASS; source + Javadoc JARs verified in target | PASS |
-| `LICENSE` file | MIT | Full MIT text, copyright 2026 Riad Shalaby | PASS |
-| `docs/RELEASE.md` | Release workflow documented | Present; covers flow, secrets, local dry-run | PASS |
+| **Step 1** — `-Dsonar.qualitygate.wait=true` removed | Removed from `mvn sonar:sonar` invocation | Absent from line 118 | PASS |
+| **Step 1** — Separate quality gate check step | Post-analysis step with `continue-on-error: true` | Present (lines 120–167), `continue-on-error: true` | PASS |
+| **Step 1** — Clear warning on red gate | `::warning::` annotation + dashboard link | Line 165: `::warning::Sonar quality gate FAILED...` | PASS |
+| **Step 1** — Clear success message on green gate | Print PASSED + dashboard link | Line 161: `Sonar quality gate PASSED: $dashboard_url` | PASS |
+| **Step 1** — `SONAR_TOKEN` guard on both Sonar steps | `if: env.SONAR_TOKEN != ''` | Present on lines 115 and 121 | PASS |
+| **Step 2** — `tag-version` job added | `needs: [build]`; main-push only; outputs `is_release`, `version` | Present (lines 169–230) | PASS |
+| **Step 2** — `release` job added | `needs: [build, tag-version]`; main-push only; `is_release == true` | Present (lines 232–273) | PASS |
+| **Step 3** — `tag-version`: `permissions: contents: write` | Required to push tags | Set on lines 174–175 | PASS |
+| **Step 3** — Version extracted via `mvn help:evaluate` | `mvn -q -DforceStdout help:evaluate -Dexpression=project.version` | Line 196 | PASS |
+| **Step 3** — Snapshot skip | `if [[ "$version" == *-SNAPSHOT ]]` → `is_release=false` | Lines 199–203 | PASS |
+| **Step 3** — Remote tag existence check (idempotent) | `git ls-remote --tags origin` | Lines 206–209 | PASS |
+| **Step 4** — `build` on all pushes + PRs (unchanged) | `if: event_name == push or pull_request` | Line 17 | PASS |
+| **Step 4** — `sonar` on main push only (unchanged) | `event_name == push && ref == refs/heads/main` | Line 85 | PASS |
+| **Step 4** — `tag-version` restricted to main push | `event_name == push && ref == refs/heads/main` | Line 173 | PASS |
+| **Step 4** — `release` restricted to main push + `is_release == true` | Full condition including both `result == success` checks | Line 237 | PASS |
+| **Step 5** — `release.yml` deleted | File must not exist | Glob returns only `ci.yml` | PASS |
+| **Step 6** — `ai-release.sh` PR body updated | References unified `ci.yml`; no `release.yml` mention | Lines 283–299: "unified GitHub Actions CI in ci.yml" | PASS |
+| **Step 6** — `finalize` manual tag push preserved as safety backstop | Comment updated to note CI also tags | Line 372 comment | PASS |
+| **Step 7** — `CLAUDE.md` CI Pipeline section updated | Unified model; Sonar non-blocking; release flow; `release.yml` banned | Lines 24–28 | PASS |
+| **Acceptance 5** — Secrets verified before publish | `test -n` for all 4 secrets | Lines 265–270 | PASS |
+| **Acceptance 5** — Publish command | `mvn -B -Prelease -DskipTests deploy` | Line 273 | PASS |
+| **Acceptance 5** — `setup-java` Central credentials wired | `server-id: central`, `server-username/password` env var names | Lines 255–258 | PASS |
 
 ---
 
 ## Quality Assessment
 
-**POM metadata:** All Maven Central required fields are present and correctly formatted. The `<scm>` block includes both `connection` (anonymous git) and `developerConnection` (SSH), which is the standard Maven Central pattern.
+**Sonar non-blocking design:** The two-step pattern — run `sonar:sonar` without `qualitygate.wait`, then poll the CE task API independently with `continue-on-error: true` — is the correct approach. It separates analysis submission from quality gate checking, letting CI remain green while still surfacing gate failures as visible orange steps and `::warning::` annotations in the Actions UI.
 
-**GPG configuration:** Using `signer: bc` (Bouncy Castle) with key and passphrase read from environment variables is the modern, pinentry-free approach for CI — superior to the plan's `--pinentry-mode loopback` suggestion. `bestPractices: true` enables additional safety checks.
+**`tag-version` idempotency:** Two independent checks prevent duplicate tag creation: (1) `git ls-remote --tags origin` in the metadata step sets `is_release=false` if the tag exists on the remote, and (2) `git rev-parse --verify --quiet` in the push step guards against local duplicates. The `git push origin "$tag"` therefore handles the case where a manual `finalize` already pushed the tag, failing gracefully.
 
-**Central plugin configuration:** `autoPublish: true` combined with `waitUntil: published` means the CI step will block until Maven Central confirms full publication, making the release workflow self-contained. `checksums: required` enforces checksum validation. Solid configuration.
+**`release` condition:** `needs.build.result == 'success' && needs.tag-version.result == 'success' && ... && needs.tag-version.outputs.is_release == 'true'` covers all required guards: successful build, successful tagging step, main-push context, and explicit release flag. Snapshot pushes to main will have `tag-version` exit with `is_release=false`, causing `release` to be skipped.
 
-**Secrets guard step:** The explicit `test -n "$VAR"` checks for all four secrets before running `deploy` provide a clear, fast failure if secrets are not configured — avoids a confusing mid-publish failure.
+**`ai-release.sh` updates:** The PR body now accurately describes the post-merge pipeline ("tag-version release tag creation", "release Maven Central publish") without any reference to the deleted `release.yml`. The `finalize` comment is clear that the manual tag push is a safety backstop, not the primary tagging mechanism.
 
-**Deploy exclusion:** Both `maven.deploy.skip` and `central.skipPublishing` are set on excluded modules. Belt-and-suspenders: the first prevents the traditional deploy mechanism, the second prevents the Central plugin from picking up the artifact even if the profile is active.
+**`CLAUDE.md`:** Concise and accurate — all CI/CD in one file, Sonar non-blocking, release flow noted, `release.yml` prohibited.
 
-**`docs/RELEASE.md`:** Concise four-step description covering build, sign, publish, and verify phases plus required secrets and local dry-run commands.
-
-**`LICENSE`:** Standard MIT text, correct copyright holder and year.
+**`ROADMAP.md`:** Reflects the three v0.6.2 priorities that this commit fully addresses.
 
 ---
 
@@ -86,4 +92,4 @@ None. All acceptance criteria are satisfied.
 
 ## Summary
 
-All Maven Central prerequisites are in place: required POM metadata on parent and all 12 library modules, a `release` profile with source/Javadoc JARs, Bouncy Castle GPG signing, and the Central Portal publishing plugin. Examples and `coverage-report` are doubly excluded from deploy. The release workflow is complete end-to-end with a secrets guard and a CI gate. A `LICENSE` file and `docs/RELEASE.md` complete the deliverables. Verdict **PASS**.
+The unified CI pipeline is correctly implemented. `ci.yml` now contains all four jobs (`build`, `sonar`, `tag-version`, `release`) with strict `needs`-based sequencing. Sonar is non-blocking with explicit gate-status logging. `tag-version` is idempotent and skips snapshots. `release` is gated on successful tagging with a pre-publish secrets check. `release.yml` is deleted. `ai-release.sh` and `CLAUDE.md` are updated to match the new model. Verdict **PASS**.

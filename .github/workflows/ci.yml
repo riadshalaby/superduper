@@ -14,7 +14,10 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -80,6 +83,8 @@ jobs:
     needs:
       - build
     if: ${{ needs.build.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -102,8 +107,167 @@ jobs:
           name: build-outputs-${{ github.run_id }}
           path: .
 
+      - name: Skip Sonar when token is missing
+        if: ${{ env.SONAR_TOKEN == '' }}
+        run: echo "SONAR_TOKEN is not configured; skipping Sonar analysis on main."
+
       - name: Sonar analysis
         if: ${{ env.SONAR_TOKEN != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mvn -B -DskipTests sonar:sonar -Dsonar.qualitygate.wait=true
+        run: mvn -B -DskipTests sonar:sonar
+
+      - name: Check Sonar quality gate
+        if: ${{ env.SONAR_TOKEN != '' }}
+        continue-on-error: true
+        run: |
+          task_file="$(find . -path '*/target/sonar/report-task.txt' | head -n1)"
+          if [[ -z "$task_file" ]]; then
+            echo "::warning::Could not find Sonar report-task.txt; skipping quality gate lookup."
+            exit 1
+          fi
+
+          ce_task_url="$(grep '^ceTaskUrl=' "$task_file" | cut -d= -f2-)"
+          dashboard_url="$(grep '^dashboardUrl=' "$task_file" | cut -d= -f2-)"
+          analysis_id=""
+
+          for attempt in $(seq 1 12); do
+            response="$(curl -fsS -u "$SONAR_TOKEN:" "$ce_task_url")"
+            task_status="$(printf '%s' "$response" | jq -r '.task.status // "UNKNOWN"')"
+            analysis_id="$(printf '%s' "$response" | jq -r '.task.analysisId // empty')"
+
+            if [[ "$task_status" == "SUCCESS" && -n "$analysis_id" ]]; then
+              break
+            fi
+
+            if [[ "$task_status" == "FAILED" || "$task_status" == "CANCELED" ]]; then
+              echo "::warning::Sonar background task finished with status '$task_status'. See $dashboard_url"
+              printf '%s\n' "$response"
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          if [[ -z "$analysis_id" ]]; then
+            echo "::warning::Sonar quality gate status was not ready in time. See $dashboard_url"
+            exit 1
+          fi
+
+          gate_response="$(curl -fsS -u "$SONAR_TOKEN:" "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysis_id")"
+          gate_status="$(printf '%s' "$gate_response" | jq -r '.projectStatus.status // "UNKNOWN"')"
+
+          if [[ "$gate_status" == "OK" ]]; then
+            echo "Sonar quality gate PASSED: $dashboard_url"
+            exit 0
+          fi
+
+          echo "::warning::Sonar quality gate FAILED with status '$gate_status'. See $dashboard_url"
+          printf '%s\n' "$gate_response"
+          exit 1
+
+  tag-version:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    if: ${{ needs.build.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: write
+    outputs:
+      is_release: ${{ steps.release-metadata.outputs.is_release }}
+      version: ${{ steps.release-metadata.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Determine release metadata
+        id: release-metadata
+        run: |
+          version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if [[ "$version" == *-SNAPSHOT ]]; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Version $version is a snapshot; skipping tag creation."
+            exit 0
+          fi
+
+          tag="v$version"
+          if git ls-remote --tags origin "refs/tags/$tag" | grep -q "refs/tags/$tag$"; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag already exists on origin; skipping tag creation."
+            exit 0
+          fi
+
+          echo "is_release=true" >> "$GITHUB_OUTPUT"
+          echo "Release version $version detected; creating $tag."
+
+      - name: Create and push release tag
+        if: ${{ steps.release-metadata.outputs.is_release == 'true' }}
+        run: |
+          version="${{ steps.release-metadata.outputs.version }}"
+          tag="v$version"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists locally."
+          else
+            git tag "$tag"
+          fi
+
+          git push origin "$tag"
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - tag-version
+    if: ${{ needs.build.result == 'success' && needs.tag-version.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.tag-version.outputs.is_release == 'true' }}
+    permissions:
+      contents: read
+    env:
+      MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+      MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+      MAVEN_GPG_KEY: ${{ secrets.MAVEN_GPG_KEY }}
+      MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_TOKEN
+
+      - name: Verify release version
+        run: |
+          version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1)"
+          test "$version" = "${{ needs.tag-version.outputs.version }}"
+
+      - name: Verify release secrets are present
+        run: |
+          test -n "$MAVEN_CENTRAL_USERNAME"
+          test -n "$MAVEN_CENTRAL_TOKEN"
+          test -n "$MAVEN_GPG_KEY"
+          test -n "$MAVEN_GPG_PASSPHRASE"
+
+      - name: Publish to Maven Central
+        run: mvn -B -Prelease -DskipTests deploy

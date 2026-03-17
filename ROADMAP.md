@@ -1,58 +1,38 @@
 # ROADMAP
 
-Goal: make `v0.6.1` release-ready with measurable code quality, sufficient test coverage, documented public interfaces, and a prepared Maven Central publishing pipeline.
+Goal: deliver `0.6.2-SNAPSHOT` with a unified CI pipeline where Sonar runs on `main` without blocking merges, and release runs from `ci.yml` only after successful build and tag on `main`.
 
-## Priority 1: Code Quality with Sonar
+## Priority 1: Sonar on Main (Non-Blocking Quality Gate)
 
-Objective: establish static analysis and enforceable quality gates with Sonar.
+Objective: execute Sonar analysis on `main` while preventing quality gate failures from breaking the pipeline.
 
-- Integrate Sonar analysis into the standard build (local + CI).
-- Enable relevant Sonar rules for bugs, vulnerabilities, and code smells.
-- Define quality gates and enforce them as merge prerequisites.
-- Prioritize and fix existing critical findings.
+- Run Sonar only on `main` after core build/test steps.
+- Keep Sonar execution visible in CI output and artifacts.
+- Configure quality gate handling as non-blocking (`continue-on-error` or equivalent guarded step logic).
+- Add explicit log messaging when quality gate is red so failures are visible but do not fail the workflow.
 
-## Priority 2: Test Coverage at Least 80%
+## Priority 2: Merge Release Workflow into `ci.yml`
 
-Objective: reach and maintain reliable test coverage of at least 80%.
+Objective: consolidate release automation into `ci.yml` and remove standalone release workflow duplication.
 
-- Enable consistent coverage measurement in the build.
-- Add missing tests in core modules until at least 80% is reached.
-- Configure the coverage threshold as a build gate.
-- Publish coverage reports as CI artifacts.
+- Move logic from `release.yml` into a dedicated release job in `ci.yml`.
+- Ensure release job runs only on `main`.
+- Ensure release job is gated by successful main build job completion.
+- Keep existing release semantics intact (version/tag handling and release steps).
+- Decommission `release.yml` after parity is confirmed.
 
-## Priority 3: Public Interface Documentation (English)
+## Priority 3: Strict Execution Order and Safety Gates
 
-Objective: provide meaningful English JavaDoc for all public methods in interface types.
+Objective: enforce correct release sequencing and avoid accidental release execution.
 
-- Inventory all `public` methods in interfaces.
-- Add clear, meaningful English JavaDoc for each method.
-- Review comments for consistency and usefulness.
-- Add documentation checks to the review process.
+- Enforce dependency chain: `build/test` -> `tag version` -> `release`.
+- Run release only when version tagging is successful.
+- Block release job on pull requests and non-main branches.
+- Add workflow-level conditions and job `needs` checks for deterministic behavior.
 
-## Priority 4: Maven Central Preparation
+## Done Criteria
 
-Objective: prepare the technical and organizational prerequisites to publish the library cleanly to Maven Central.
-
-- Finalize group ID, artifact ID, and versioning approach.
-- Complete POM metadata (name, description, license, SCM, developers).
-- Prepare and test signing and publishing configuration.
-- Document the release workflow: build, sign, publish, verify.
-- Run a dry run and close remaining blockers before final publish.
-
-## Priority 5: CI Pipeline with GitHub Actions (GitHub-Hosted Runners)
-
-Objective: establish an automated CI pipeline on GitHub-hosted runners for build, test, and quality checks.
-
-- Add a GitHub Actions workflow for `push` and `pull_request`.
-- Run at least: compile, tests, coverage report generation, and Sonar analysis.
-- Configure workflow caching for Maven dependencies to reduce CI runtime.
-- Publish test and coverage artifacts for troubleshooting.
-- Define the CI workflow as the default quality gate before release preparation.
-
-## Done Criteria for v0.6.1
-
-- Sonar runs in CI and quality gates are active.
-- Test coverage is at least 80%.
-- All public interface methods have meaningful English JavaDoc.
-- Maven Central publishing is technically prepared and validated via dry run.
-- GitHub Actions CI runs successfully on GitHub-hosted runners for `push` and `pull_request`.
+- Sonar runs on `main` and reports quality gate status without failing the pipeline.
+- `ci.yml` contains the full release flow previously handled by `release.yml`.
+- Release runs only on `main` and only after successful build and successful version tagging.
+- Standalone `release.yml` is removed or disabled after migration validation.
