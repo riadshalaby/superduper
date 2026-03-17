@@ -26,6 +26,7 @@
 - Sonar runs on `main` after `build`; its quality gate is visible in logs but non-blocking.
 - Release flow is `build` -> `tag-version` -> `release` inside `ci.yml`, and only runs on `main` pushes.
 - CI on `main` is the sole creator of release tags and GitHub Releases.
+- If a `main` release push creates the tag but fails before creating the GitHub Release, a later `main` push with the same non-snapshot version may retry the `release` job.
 - `finalize` no longer pushes tags; it verifies that CI created the release tag before starting the next development cycle.
 - `.github/workflows/release.yml` was removed and must not be reintroduced.
 - `scripts/build-all.sh` was removed and must not be reintroduced as a project build entrypoint.
