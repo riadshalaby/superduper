@@ -266,8 +266,8 @@ prepare_release() {
   pr_body="$(cat <<EOF
 ## Summary
 - release v$release
-- source branch: \`$branch\`
-- base branch: \`main\`
+- source branch: $branch
+- base branch: main
 - commits in PR: $commit_count
 
 ## Scope by Commit Type
@@ -283,11 +283,11 @@ $commit_list
 ## CI Status
 - authoritative release gate: GitHub Actions CI on this branch/PR
 - required checks:
-  - `spotless` formatting check
-  - `test-compile` build verification
-  - `test` suite execution
-  - `jacoco` coverage report generation
-  - `sonar` analysis status (added in follow-up task T-002)
+  - spotless formatting check
+  - test-compile build verification
+  - test suite execution
+  - jacoco coverage report generation
+  - sonar analysis status (added in follow-up task T-002)
 
 ## Release Checklist
 - [x] version bumped with mvn versions:set
