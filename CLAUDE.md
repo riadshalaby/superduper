@@ -25,6 +25,8 @@
 - CI is the authoritative gate for formatting, compile, tests, and coverage artifacts.
 - Sonar runs on `main` after `build`; its quality gate is visible in logs but non-blocking.
 - Release flow is `build` -> `tag-version` -> `release` inside `ci.yml`, and only runs on `main` pushes.
+- CI on `main` is the sole creator of release tags and GitHub Releases.
+- `finalize` no longer pushes tags; it verifies that CI created the release tag before starting the next development cycle.
 - `.github/workflows/release.yml` was removed and must not be reintroduced.
 - `scripts/build-all.sh` was removed and must not be reintroduced as a project build entrypoint.
 
@@ -129,7 +131,9 @@ Build and maintain the library described in `README.md`:
      - Ask the user what the next version will be.
      - `scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]`
      - Automatically stashes and restores unrelated worktree changes when needed.
-     - Switches to `main`, verifies merged release version, creates/pushes tag `vX.Y.Z`, prompts for `NEXT_VERSION` when omitted, creates branch `feature/vNEXT_VERSION`, bumps to next version, resets cycle files from templates, updates `ROADMAP.md`, and commits `chore: start vNEXT_VERSION`.
+     - Switches to `main`, verifies merged release version and that CI has created/pushed tag `vX.Y.Z`, prompts for `NEXT_VERSION` when omitted, creates branch `feature/vNEXT_VERSION`, bumps to next version, resets cycle files from templates, updates `ROADMAP.md`, and commits `chore: start vNEXT_VERSION`.
+  3. CI post-merge release actions on `main`:
+     - CI creates the release tag, publishes to Maven Central, and creates a GitHub Release with generated release notes.
 - PR policy:
   - A PR to `main` is mandatory for release.
   - The agent opens or updates the PR; the user reviews and merges it on GitHub.
@@ -138,6 +142,7 @@ Build and maintain the library described in `README.md`:
 ## Release Safety
 - Never force-push `main`.
 - Never bypass PR checks.
+- Never create release tags manually; CI on `main` is the sole tag creator.
 - Never tag from a feature branch.
 - Never amend published release commits or tags unless explicitly requested.
 - Do not run release operations without explicit user approval.

@@ -236,7 +236,7 @@ jobs:
       - tag-version
     if: ${{ needs.build.result == 'success' && needs.tag-version.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.tag-version.outputs.is_release == 'true' }}
     permissions:
-      contents: read
+      contents: write
     env:
       MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
       MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
@@ -271,3 +271,14 @@ jobs:
 
       - name: Publish to Maven Central
         run: mvn -B -Prelease -DskipTests deploy
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.tag-version.outputs.version }}"
+          tag="v$version"
+          gh release create "$tag" \
+            --title "$tag" \
+            --generate-notes \
+            --verify-tag
