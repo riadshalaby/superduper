@@ -66,8 +66,9 @@ class ReactiveMaintenanceSchedulingTest {
                     if (!inFlight.compareAndSet(false, true)) {
                         overlapDetected.set(true);
                     }
-                    return Mono.delay(Duration.ofMillis(40)).then();
+                    return Mono.delay(Duration.ofMillis(40)).then(Mono.<Void>fromRunnable(() -> inFlight.set(false)));
                 })
-                .doFinally(signalType -> inFlight.set(false));
+                .doOnError(error -> inFlight.set(false))
+                .doOnCancel(() -> inFlight.set(false));
     }
 }
