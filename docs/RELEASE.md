@@ -6,7 +6,9 @@ SUPERDUPER publishes releases from the unified CI workflow in `.github/workflows
 
 1. Prepare
    - Run `scripts/ai-release.sh prepare X.Y.Z` on the release branch.
+   - Use `scripts/ai-release.sh prepare X.Y.Z --skip-central` for internal-only or test releases that should create the release tag and GitHub Release without publishing to Maven Central.
    - Review and merge the generated PR to `main`.
+   - When `--skip-central` is used, the release PR shows `central.skipPublishing=true` in the parent `pom.xml` diff and notes the skipped publish in the PR body.
 
 2. Build and tag
    - Wait for the `CI` workflow on `main` to complete successfully.
@@ -19,10 +21,12 @@ SUPERDUPER publishes releases from the unified CI workflow in `.github/workflows
    - CI runs `mvn -B -Prelease -DskipTests deploy`.
    - The Sonatype Central Portal publish step uses the `central` server credentials from `MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_TOKEN`.
    - Example applications and the internal `coverage-report` module are excluded from publishing.
+   - If the release commit sets `central.skipPublishing=true`, the Central publishing plugin skips the Maven Central upload while the tag and GitHub Release steps still run normally.
 
 4. Finalize
    - After CI succeeds and the release tag exists on origin, run `scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]`.
    - The finalize step verifies the CI-created tag, creates the next development branch, bumps the next snapshot version, and resets the cycle files.
+   - Because finalize resets the POM for the next cycle, any `central.skipPublishing=true` release commit does not carry over to subsequent versions.
 
 ## GitHub Release Notes Generation
 

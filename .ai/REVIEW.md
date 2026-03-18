@@ -2,7 +2,7 @@
 
 Status: **complete**
 
-Review Round: **1**
+Review Round: **2**
 
 Reviewed: 2026-03-18
 
@@ -35,7 +35,7 @@ All eight acceptance criteria from `.ai/PLAN.md` are satisfied. No issues found.
 - The CI step fetches `draft_tag` before calling the script. When composed notes are produced and a draft also exists, the implementation edits the draft with `--notes "$notes"` rather than creating a new release. This is a deliberate improvement over the plan sketch — it avoids creating a release when a draft for the same cycle already exists, preventing a potential conflict.
 - The plan's algorithmic sketch used `declare -A CATEGORY_HEADINGS`; the implementation replaces this with the `category_for_labels()` function. The function is cleaner and equivalent. Not a deviation.
 - Output section ordering (Breaking Changes first, then Features, Bug Fixes, Performance, Documentation, Other Changes) is consistent with standard changelog convention.
-- **Suggestion (non-blocking):** The `perl` dependency (line 190) can be replaced by `sed 's/<!--[^>]*-->//g'`, removing the `require_cmd perl` guard. GitHub PR template comments are always single-line, so `sed` handles all real-world inputs and keeps the script self-contained with tools it already uses.
+- ~~**Suggestion (non-blocking):** The `perl` dependency (line 190) can be replaced by `sed 's/<!--[^>]*-->//g'`, removing the `require_cmd perl` guard.~~ **Resolved in commit `d1ab8bd`** — `require_cmd perl` removed; `perl -0pe` replaced with `sed 's/<!--[^>]*-->//g'`. Script now depends only on `gh`, `jq`, `awk`, and `sed`.
 
 ## Open Questions
 

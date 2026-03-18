@@ -8,11 +8,12 @@ cd "$REPO_ROOT"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/ai-release.sh prepare <X.Y.Z>
+  scripts/ai-release.sh prepare <X.Y.Z> [--skip-central]
   scripts/ai-release.sh finalize <X.Y.Z> [NEXT_VERSION] [--branch <branch-name>] [--archive]
 
 Examples:
   scripts/ai-release.sh prepare 0.5.0
+  scripts/ai-release.sh prepare 0.5.0 --skip-central
   scripts/ai-release.sh finalize 0.5.0
   scripts/ai-release.sh finalize 0.5.0 0.6.0 --branch feature/v0.6.0 --archive
 EOF
@@ -137,6 +138,12 @@ render_template() {
   fi
 }
 
+set_central_skip_publishing() {
+  local value="$1"
+  sed -i.bak "s|<central.skipPublishing>.*</central.skipPublishing>|<central.skipPublishing>$value</central.skipPublishing>|" pom.xml
+  rm -f pom.xml.bak
+}
+
 default_next_version_from_release() {
   local release="$1"
   local major minor patch
@@ -217,7 +224,20 @@ find_existing_pr_number() {
 prepare_release() {
   local release="$1"
   shift
-  [[ $# -eq 0 ]] || die "Unknown option for prepare: $1"
+
+  local skip_central="false"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-central)
+        skip_central="true"
+        ;;
+      *)
+        die "Unknown option for prepare: $1"
+        ;;
+    esac
+    shift
+  done
+
   auto_stash_worktree ".ai/REVIEW.md" ".ai/TASKS.md"
 
   local branch
@@ -225,6 +245,10 @@ prepare_release() {
   [[ "$branch" != "main" ]] || die "Run prepare on a feature branch, not main."
 
   mvn versions:set -DnewVersion="$release" -DgenerateBackupPoms=false
+  if [[ "$skip_central" == "true" ]]; then
+    set_central_skip_publishing "true"
+    echo "Maven Central publishing will be skipped for this release."
+  fi
   # Keep a local pre-flight sanity check before the authoritative GitHub Actions gates run.
   mvn -q -DskipTests test-compile
   mvn -T 1C -q test
@@ -262,6 +286,14 @@ prepare_release() {
   commit_list="$(build_commit_list_markdown "$range")"
 
   local pr_title="chore: release v$release"
+  local central_publish_status="enabled"
+  local central_publish_flow="- release Maven Central publish"
+  local central_publish_automation="- publish to Maven Central"
+  if [[ "$skip_central" == "true" ]]; then
+    central_publish_status="skipped"
+    central_publish_flow="- release Maven Central publish skipped via \`--skip-central\` (\`central.skipPublishing=true\`)"
+    central_publish_automation="- skip Maven Central publish (\`central.skipPublishing=true\` in the release commit)"
+  fi
   local pr_body
   pr_body="$(cat <<EOF
 ## Summary
@@ -269,6 +301,7 @@ prepare_release() {
 - source branch: $branch
 - base branch: main
 - commits in PR: $commit_count
+- Maven Central publish: $central_publish_status
 
 ## Scope by Commit Type
 $commit_type_breakdown
@@ -290,10 +323,10 @@ $commit_list
 - post-merge main checks in ci.yml:
   - sonar analysis status (non-blocking)
   - tag-version release tag creation
-  - release Maven Central publish
+  $central_publish_flow
 - after merge, ci.yml on main will automatically:
   - create the release tag
-  - publish to Maven Central
+  $central_publish_automation
   - create the GitHub Release with generated notes
 EOF
 )"
