@@ -432,6 +432,7 @@ finalize_release() {
   git checkout -b "$branch_name"
 
   mvn versions:set -DnewVersion="$next_version" -DgenerateBackupPoms=false
+  set_central_skip_publishing "false"
 
   render_template ".ai/PLAN.template.md" ".ai/PLAN.md" "$next_version"
   render_template ".ai/REVIEW.template.md" ".ai/REVIEW.md" "$next_version"
