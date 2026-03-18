@@ -30,8 +30,10 @@ SUPERDUPER publishes releases from the unified CI workflow in `.github/workflows
 - PRs should carry one of the release labels used by the drafter configuration: `feat`, `feature`, `enhancement`, `fix`, `bugfix`, `bug`, `perf`, `performance`, `docs`, `documentation`, `breaking`, or `breaking-change`.
 - Noise labels `chore`, `test`, `ci`, `refactor`, and `skip-changelog` are excluded from the curated draft release notes.
 - `.github/PULL_REQUEST_TEMPLATE.md` prompts contributors to add the matching label and provide a user-facing release note summary when the change should appear in release notes.
+- `scripts/compose-release-notes.sh` extracts the content from each merged PR's `## Release Notes` section, removes HTML comments, groups entries by the same release labels, and omits PRs whose section is empty.
+- The primary release body now comes from the PR `## Release Notes` sections instead of PR titles.
 - Before cutting a release, review the draft release on GitHub to confirm the categories, summaries, and breaking-change notes are accurate.
-- When the release tag is created on `main`, the CI `release` job publishes the draft release. If no draft exists, CI falls back to `gh release create --generate-notes`.
+- When the release tag is created on `main`, the CI `release` job uses a three-tier fallback chain: composed notes from `scripts/compose-release-notes.sh`, then the existing release-drafter draft, then `gh release create --generate-notes`.
 
 ## Required GitHub Secrets
 
