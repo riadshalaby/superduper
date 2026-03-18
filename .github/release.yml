@@ -3,15 +3,29 @@ changelog:
     - title: Features
       labels:
         - feat
+        - feature
+        - enhancement
     - title: Bug Fixes
       labels:
         - fix
+        - bugfix
+        - bug
     - title: Performance
       labels:
         - perf
-    - title: Other Changes
+        - performance
+    - title: Documentation
       labels:
-        - "*"
+        - docs
+        - documentation
+    - title: Breaking Changes
+      labels:
+        - breaking
+        - breaking-change
   exclude:
     labels:
       - skip-changelog
+      - chore
+      - test
+      - ci
+      - refactor

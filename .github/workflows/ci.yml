@@ -315,6 +315,18 @@ jobs:
             echo "GitHub Release $tag already exists; skipping creation."
             exit 0
           fi
+
+          draft_tag="$(gh release list --json tagName,isDraft --jq '.[] | select(.isDraft==true) | .tagName' | head -n1)"
+
+          if [[ -n "$draft_tag" ]]; then
+            gh release edit "$draft_tag" \
+              --tag "$tag" \
+              --title "$tag" \
+              --draft=false \
+              --verify-tag
+            exit 0
+          fi
+
           gh release create "$tag" \
             --title "$tag" \
             --generate-notes \

@@ -1,0 +1,59 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: '🚀 Features'
+    labels:
+      - feat
+      - feature
+      - enhancement
+  - title: '🐛 Bug Fixes'
+    labels:
+      - fix
+      - bugfix
+      - bug
+  - title: '⚡ Performance'
+    labels:
+      - perf
+      - performance
+  - title: '📖 Documentation'
+    labels:
+      - docs
+      - documentation
+  - title: '💥 Breaking Changes'
+    labels:
+      - breaking
+      - breaking-change
+exclude-labels:
+  - skip-changelog
+  - chore
+  - test
+  - ci
+  - refactor
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+change-title-escapes: '\<*_&'
+version-resolver:
+  major:
+    labels:
+      - breaking
+      - breaking-change
+  minor:
+    labels:
+      - feat
+      - feature
+      - enhancement
+  patch:
+    labels:
+      - fix
+      - bugfix
+      - bug
+      - perf
+      - performance
+  default: patch
+template: |
+  ## Changes
+
+  $CHANGES
+
+  ## Contributors
+
+  $CONTRIBUTORS

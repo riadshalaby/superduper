@@ -15,5 +15,5 @@ Status values:
 
 | Task ID | Scope | Planner Agent | Implementer Agent | Reviewer Agent | Status | Acceptance Criteria | Evidence | Next Role |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-001 | Exclude test sources from Sonar analysis | claude | codex | claude | ready_for_review | sonar.exclusions in parent POM; docs updated; build passes; SonarCloud confirms no test files in prod analysis | `mvn -q spotless:apply`; `mvn -q -DskipTests test-compile`; `mvn -T 1C -q test` | review |
-| T-002 | Structured release notes via release-drafter | claude | codex | claude | ready_for_implement | release-drafter workflow + config; aligned release.yml; PR template with labels; CI publishes draft; docs updated; build passes | n/a | implement |
+| T-001 | Exclude test sources from Sonar analysis | claude | codex | claude | done | sonar.exclusions in parent POM; docs updated; build passes; SonarCloud confirms no test files in prod analysis | `mvn -q spotless:apply`; `mvn -q -DskipTests test-compile`; `mvn -T 1C -q test` | — |
+| T-002 | Structured release notes via release-drafter | claude | codex | claude | ready_for_review | release-drafter workflow + config; aligned release.yml; PR template with labels; CI publishes draft; docs updated; build passes | `mvn -q spotless:apply`; `mvn -q -DskipTests test-compile`; `mvn -T 1C -q test` | review |
