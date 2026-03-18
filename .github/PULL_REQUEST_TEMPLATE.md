@@ -18,7 +18,7 @@
 
 ## Release Notes
 
-<!-- User-facing summary for release notes. Leave blank for chore/test/ci/refactor. -->
+<!-- User-facing summary for release notes. `scripts/ai-pr.sh sync` can generate this section from the PR commit messages. Leave blank for chore/test/ci/refactor. -->
 
 ## Breaking Changes
 

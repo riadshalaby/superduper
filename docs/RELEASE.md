@@ -31,10 +31,11 @@ SUPERDUPER publishes releases from the unified CI workflow in `.github/workflows
 ## GitHub Release Notes Generation
 
 - This section documents how GitHub Release note content is generated during the release process. It is not the release notes content itself.
+- Feature PRs should be created or refreshed with `scripts/ai-pr.sh sync`, which generates the PR `## Release Notes` section from the commit subjects in the branch.
 - `.github/workflows/release-drafter.yml` keeps a draft release updated on `main` pushes and PR activity using `.github/release-drafter.yml`.
 - PRs should carry one of the release labels used by the drafter configuration: `feat`, `feature`, `enhancement`, `fix`, `bugfix`, `bug`, `perf`, `performance`, `docs`, `documentation`, `breaking`, or `breaking-change`.
 - Noise labels `chore`, `test`, `ci`, `refactor`, and `skip-changelog` are excluded from the curated draft release notes.
-- `.github/PULL_REQUEST_TEMPLATE.md` prompts contributors to add the matching label and provide a user-facing release note summary when the change should appear in release notes.
+- `.github/PULL_REQUEST_TEMPLATE.md` matches the body shape produced by `scripts/ai-pr.sh sync` and still serves as the manual fallback when a PR body needs editing by hand.
 - `scripts/compose-release-notes.sh` extracts the content from each merged PR's `## Release Notes` section, removes HTML comments, groups entries by the same release labels, and omits PRs whose section is empty.
 - The primary release body now comes from the PR `## Release Notes` sections instead of PR titles.
 - Before cutting a release, review the draft release on GitHub to confirm the categories, summaries, and breaking-change notes are accurate.
