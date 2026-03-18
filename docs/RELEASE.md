@@ -24,8 +24,9 @@ SUPERDUPER publishes releases from the unified CI workflow in `.github/workflows
    - After CI succeeds and the release tag exists on origin, run `scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]`.
    - The finalize step verifies the CI-created tag, creates the next development branch, bumps the next snapshot version, and resets the cycle files.
 
-## Release Notes
+## GitHub Release Notes Generation
 
+- This section documents how GitHub Release note content is generated during the release process. It is not the release notes content itself.
 - `.github/workflows/release-drafter.yml` keeps a draft release updated on `main` pushes and PR activity using `.github/release-drafter.yml`.
 - PRs should carry one of the release labels used by the drafter configuration: `feat`, `feature`, `enhancement`, `fix`, `bugfix`, `bug`, `perf`, `performance`, `docs`, `documentation`, `breaking`, or `breaking-change`.
 - Noise labels `chore`, `test`, `ci`, `refactor`, and `skip-changelog` are excluded from the curated draft release notes.
