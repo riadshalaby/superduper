@@ -140,3 +140,10 @@ Practical difference:
 - Shared-table topics use the default repositories with `topic = :topic` predicates.
 - Dedicated-table topics use repositories created by `RepositoryFactory` / `TopicRepositoryFactory`.
 - Maintenance operations are topic-aware too: queue health, reclaim, cleanup, and redrive all route through the same topic registry instead of assuming the shared `messages` table.
+
+## Sonar Configuration
+
+- The parent `pom.xml` sets `sonar.exclusions=**/src/test/**` so SonarCloud does not analyze test sources as production code for issues, duplication, or code smells.
+- Coverage reporting is still enabled through `sonar.coverage.jacoco.xmlReportPaths`, so excluding test sources from production analysis does not remove JaCoCo coverage data from the dashboard.
+- Example applications are excluded from Sonar entirely with `sonar.skip=true` in their module POMs because they are runnable demos rather than library modules.
+- After the next merge to `main`, verify the exclusion in SonarCloud under Project Settings -> General -> Analysis Scope -> Source File Exclusions and confirm `src/test` files no longer appear in production code analysis.

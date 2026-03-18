@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>net.rsworld</groupId>
   <artifactId>superduper-parent</artifactId>
-  <version>0.6.3</version>
+  <version>0.6.4</version>
   <packaging>pom</packaging>
   <name>SUPERDUPER</name>
   <description>Resilient, ordered, database-backed Kafka consumption pattern with pluggable workers.</description>
@@ -95,7 +95,8 @@
     <sonar.projectKey>rsworld_superduper</sonar.projectKey>
     <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
     <sonar.coverage.jacoco.xmlReportPaths>coverage-report/target/site/jacoco-aggregate/jacoco.xml,**/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
-    <central.skipPublishing>false</central.skipPublishing>
+    <sonar.exclusions>**/src/test/**</sonar.exclusions>
+    <central.skipPublishing>true</central.skipPublishing>
   </properties>
 
   <dependencyManagement>

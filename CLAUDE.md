@@ -138,6 +138,8 @@ Build and maintain the library described in `README.md`:
 - PR policy:
   - A PR to `main` is mandatory for release.
   - The agent opens or updates the PR; the user reviews and merges it on GitHub.
+  - For feature PRs, the agent must open or refresh the PR body with `scripts/ai-pr.sh sync`.
+  - `scripts/ai-pr.sh sync` generates the `Release Notes` section from the commit messages included in that PR branch and writes the full PR body.
   - `finalize` must not run before user merge confirmation.
 
 ## Release Safety
