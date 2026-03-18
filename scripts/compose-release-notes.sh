@@ -129,7 +129,6 @@ main() {
 
   require_cmd gh
   require_cmd jq
-  require_cmd perl
 
   local current_tag="$1"
   local previous_tag
@@ -187,7 +186,7 @@ main() {
     [[ -n "$category" ]] || continue
 
     notes="$(extract_release_notes "$body")"
-    notes="$(printf '%s' "$notes" | perl -0pe 's/<!--.*?-->//gs')"
+    notes="$(printf '%s\n' "$notes" | sed 's/<!--[^>]*-->//g')"
     notes="$(printf '%s\n' "$notes" | trim_blank_lines)"
 
     [[ -n "$notes" ]] || continue
