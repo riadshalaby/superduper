@@ -1,233 +1,158 @@
-# Plan — 0.6.5-SNAPSHOT
+cre# Plan — Development Cycle Bootstrap
 
 Status: **approved**
 
-Goal: adopt release-please to automate release PR creation, CHANGELOG generation, version bumps, tagging, and GitHub Releases from Conventional Commits. Remove all custom release scripting and label-based release note infrastructure.
+Goal: create `scripts/ai-start-cycle.sh` to automate the repeatable steps of starting a new development cycle (branch creation, cycle file reset) and update all related documentation and templates.
 
-Architectural decision: release-please is integrated into `ci.yml` (Option B — single workflow).
+## Context
+
+The old `ai-release.sh finalize` handled post-release cycle transitions (branch, version bump, file reset). With release-please owning versioning, the version bump is gone but the cycle bookkeeping remains manual. This plan fills that gap with a lightweight script.
 
 ## Scope
 
-Replace the custom two-phase release pipeline (`ai-release.sh prepare/finalize`, `compose-release-notes.sh`, label-based notes, `central.skipPublishing`) with `googleapis/release-please-action@v4` integrated into `ci.yml`.
+1. New `scripts/ai-start-cycle.sh` script for bootstrapping a development cycle.
+2. Remove `{{VERSION}}` placeholders from `.ai/` and `ROADMAP` templates (release-please owns versions).
+3. Rewrite `docs/RELEASE.md` to reflect the release-please model.
+4. Update `CLAUDE.md` to document the new script and remove stale version-management references.
 
 ## Acceptance Criteria
 
-1. `release-please-config.json` and `.release-please-manifest.json` exist and are valid.
-2. `CHANGELOG.md` exists with a bootstrap entry.
-3. `ci.yml` contains a `release-please` job (on `main` push) and a `publish` job gated on `release_created == 'true'`.
-4. `ci.yml` no longer contains `tag-version` or `release` jobs.
-5. `scripts/ai-release.sh` and `scripts/compose-release-notes.sh` are deleted.
-6. `scripts/ai-pr.sh sync` no longer generates "Release Notes", "Type of Change", or "Scope by Commit Type" sections.
-7. `.github/PULL_REQUEST_TEMPLATE.md` no longer contains "Type of Change" or "Release Notes" sections.
-8. `.github/release-drafter.yml` and `.github/release.yml` are deleted.
-9. `central.skipPublishing` property and its usage are removed from `pom.xml`.
-10. `CLAUDE.md` reflects the new release model (release-please, no manual tags, no finalize step).
-11. `mvn -q -DskipTests test-compile` passes.
-12. `mvn -T 1C -q test` passes.
+1. `scripts/ai-start-cycle.sh feature/my-scope` creates a branch from latest `main`, resets cycle files, commits, and pushes.
+2. The script validates branch names against allowed prefixes: `feature/`, `fix/`, `chore/`.
+3. The script does NOT perform any version bump or pom.xml modification.
+4. Templates no longer contain `{{VERSION}}` placeholders.
+5. `docs/RELEASE.md` accurately describes the release-please flow and the new cycle bootstrap.
+6. `CLAUDE.md` documents `ai-start-cycle.sh` and has no stale `mvn versions:set` or `finalize` references.
+7. `mvn -q -DskipTests test-compile` passes.
+8. `mvn -T 1C -q test` passes.
 
 ## Implementation Phases
 
-### Phase 1 — Configuration & Bootstrap (T-001, T-010)
+### Phase 1 — Update Templates (T-012)
 
-**T-001: Add release-please configuration**
+Remove `{{VERSION}}` from all templates. release-please owns versions; cycle files no longer carry a version label.
 
-Create `release-please-config.json` in the repository root:
+**`.ai/PLAN.template.md`:**
+- `# Plan — {{VERSION}}` → `# Plan`
+- `Goal: define and implement the scope for \`{{VERSION}}\`.` → `Goal: implement the scope defined in \`ROADMAP.md\`.`
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "maven",
-  "packages": {
-    ".": {
-      "changelog-path": "CHANGELOG.md",
-      "changelog-sections": [
-        { "type": "feat", "section": "Features" },
-        { "type": "fix", "section": "Bug Fixes" },
-        { "type": "perf", "section": "Performance" },
-        { "type": "docs", "section": "Documentation" }
-      ],
-      "extra-files": []
-    }
-  },
-  "bump-minor-pre-major": true,
-  "bump-patch-for-minor-pre-major": true
-}
+**`.ai/REVIEW.template.md`:**
+- `# Review — {{VERSION}}` → `# Review`
+
+**`ROADMAP.template.md`:**
+- `Goal: define and deliver the \`{{VERSION}}\` scope.` → `Goal: define and deliver the scope for this cycle.`
+
+**`.ai/TASKS.template.md`** and **`.ai/HANDOFF.template.md`:** no `{{VERSION}}` — unchanged.
+
+### Phase 2 — Create Bootstrap Script (T-011)
+
+Create `scripts/ai-start-cycle.sh` (executable, `#!/usr/bin/env bash`, `set -euo pipefail`).
+
+**Usage:**
+```
+scripts/ai-start-cycle.sh <branch-name>
 ```
 
-- `release-type: maven` ensures release-please updates all `pom.xml` versions.
-- `changelog-sections` maps Conventional Commit types to CHANGELOG headings; types not listed (`chore`, `test`, `ci`, `build`, `refactor`, `revert`) are excluded from CHANGELOG.
-- `bump-minor-pre-major` / `bump-patch-for-minor-pre-major`: while version is `0.x`, breaking changes bump minor (not major) and features bump patch (not minor).
-- No `include-component-in-tag` needed — single-component repo.
+**Branch name validation:**
+- Must start with `feature/`, `fix/`, or `chore/`.
+- Must have at least one character after the prefix (e.g., `feature/` alone is rejected).
+- Reject names containing spaces or characters invalid in git branch names.
+- Print usage and exit 1 on invalid input.
 
-Create `.release-please-manifest.json` in the repository root:
+**Steps the script performs:**
+1. Resolve `REPO_ROOT` (same pattern as other scripts in `scripts/`).
+2. Validate branch name argument.
+3. `git checkout main && git pull --ff-only origin main` — ensure latest main.
+4. `git checkout -b <branch-name>` — create the new branch.
+5. Copy templates to cycle files:
+   - `cp .ai/PLAN.template.md .ai/PLAN.md`
+   - `cp .ai/REVIEW.template.md .ai/REVIEW.md`
+   - `cp .ai/TASKS.template.md .ai/TASKS.md`
+   - `cp ROADMAP.template.md ROADMAP.md`
+6. Remove `.ai/HANDOFF.md` if it exists (`rm -f .ai/HANDOFF.md`).
+7. `git add .ai/PLAN.md .ai/REVIEW.md .ai/TASKS.md ROADMAP.md` — stage reset files. Also `git rm --cached .ai/HANDOFF.md` if it was tracked.
+8. `git commit -m "chore: start cycle $(basename <branch-name>)"` — commit the reset.
+9. `git push -u origin <branch-name>` — push the new branch with tracking.
 
-```json
-{
-  ".": "0.6.4"
-}
-```
+**Error handling:**
+- If `main` checkout fails, abort with message.
+- If branch already exists locally or on remote, abort with message.
+- If `git pull --ff-only` fails (diverged), abort with message.
 
-This tells release-please the last released version so it can compute the next version from Conventional Commits since that point.
+**No version logic:** the script must not read, write, or modify any `pom.xml`.
 
-**T-010: Bootstrap CHANGELOG.md**
+### Phase 3 — Rewrite Release Documentation (T-013)
 
-Create `CHANGELOG.md` in the repository root:
+Rewrite `docs/RELEASE.md` to replace the stale prepare/finalize documentation.
 
-```markdown
-# Changelog
+**New structure:**
 
-All notable changes to this project will be documented in this file.
+1. **Overview** — one-paragraph summary: release-please automates releases from Conventional Commits; `ai-start-cycle.sh` bootstraps new development cycles.
 
-This changelog is automatically generated by
-[release-please](https://github.com/googleapis/release-please)
-from [Conventional Commits](https://www.conventionalcommits.org/).
+2. **Release Flow** (replaces old "Flow" section):
+   - Feature work happens on branches (`feature/`, `fix/`, `chore/`) and merges to `main` via PR.
+   - release-please on `main` detects releasable commits and creates/updates a Release PR with version bumps and CHANGELOG entries.
+   - Merging the Release PR triggers: tag creation, GitHub Release, Maven Central publish (via `publish` job in `ci.yml`).
 
-For releases prior to automated changelog generation, see
-[GitHub Releases](https://github.com/rsworld/superduper/releases).
-```
+3. **Starting a New Development Cycle** (replaces old "Finalize" section):
+   - Run `scripts/ai-start-cycle.sh <branch-name>`.
+   - Describe what the script does (branch, reset, commit, push).
+   - After running: write `ROADMAP.md`, then start the plan/implement/review workflow.
 
-### Phase 2 — CI Pipeline Overhaul (T-002, T-003)
+4. **Required GitHub Secrets** — keep as-is (MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_TOKEN, MAVEN_GPG_KEY, MAVEN_GPG_PASSPHRASE).
 
-**T-002 + T-003: Add release-please job, remove tag-version/release, add publish**
+5. **Local Dry Run** — keep the existing `mvn -Prelease -DskipTests verify` section as-is.
 
-Modify `.github/workflows/ci.yml`:
+**Remove entirely:**
+- Old "Prepare" section (references `ai-release.sh prepare`).
+- Old "Build and tag" section (references `tag-version` job).
+- Old "Finalize" section (references `ai-release.sh finalize`).
+- Old "GitHub Release Notes Generation" section — rewrite as part of "Release Flow" above. Keep the note that feature PRs use `ai-pr.sh sync`.
+- All references to `central.skipPublishing`, `--skip-central`, `compose-release-notes.sh`.
 
-1. **Add `release-please` job** (replaces `tag-version`):
-   - Runs on `main` push only, after successful `build`.
-   - Uses `googleapis/release-please-action@v4` with `config-file` and `manifest-file` pointing to the files from T-001.
-   - Outputs: `release_created`, `tag_name`.
-   - Permissions: `contents: write`, `pull-requests: write`.
+### Phase 4 — Update CLAUDE.md (T-014)
 
-2. **Add `publish` job** (replaces `release`):
-   - Runs only when `release-please` output `release_created == 'true'`.
-   - Needs: `build`, `release-please`.
-   - Sets up Java 25 with `server-id: central`.
-   - Downloads build artifacts.
-   - Verifies release secrets (MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_TOKEN, MAVEN_GPG_KEY, MAVEN_GPG_PASSPHRASE).
-   - Runs `mvn -B -Prelease -DskipTests deploy`.
-   - No custom release note generation — release-please creates the GitHub Release with notes from CHANGELOG.
-   - No tag creation — release-please creates the tag.
-   - No draft release handling — release-please manages the release lifecycle.
+**"Session Workflow":**
+- Remove the `mvn versions:set` bullet entirely. release-please owns version management; there is no manual version bump step.
 
-3. **Remove `tag-version` job** entirely (lines 169–251 of current ci.yml).
+**"AI Operating Mode":**
+- Add `scripts/ai-start-cycle.sh <branch-name>` as the cycle bootstrap command, listed alongside the existing convenience wrappers.
 
-4. **Remove `release` job** entirely (lines 253–353 of current ci.yml).
+**"Mixed Team Manual Workflow":**
+- Add a note that `scripts/ai-start-cycle.sh` is the starting point for a new cycle, before `ai-plan.sh`.
 
-5. **`build` and `sonar` jobs remain unchanged.**
-
-### Phase 3 — Remove Obsolete Infrastructure (T-004, T-007, T-008)
-
-**T-004: Delete custom release scripts**
-
-- Delete `scripts/ai-release.sh`.
-- Delete `scripts/compose-release-notes.sh`.
-
-**T-007: Remove label-based release configs**
-
-- Delete `.github/release-drafter.yml`.
-- Delete `.github/release.yml`.
-
-**T-008: Remove `central.skipPublishing` mechanism**
-
-In `pom.xml`:
-- Remove `<central.skipPublishing>false</central.skipPublishing>` property (line 99).
-- Remove `<skipPublishing>${central.skipPublishing}</skipPublishing>` from the central-publishing-maven-plugin configuration in the `release` profile (line 468).
-- Keep the plugin itself and all other configuration (`publishingServerId`, `autoPublish`, `waitUntil`, `checksums`).
-
-### Phase 4 — Simplify PR Tooling (T-005, T-006)
-
-**T-005: Simplify `scripts/ai-pr.sh sync`**
-
-Modify the `sync` subcommand to remove these sections from the generated PR body:
-- **Remove** "Release Notes" section (the `build_release_notes()` function output and its `## Release Notes` heading).
-- **Remove** "Type of Change" checkbox section (the `build_type_of_change()` function output and its `## Type of Change` heading).
-- **Remove** "Scope by Commit Type" section (the `build_scope_by_type()` function output and its `## Scope by Commit Type` heading).
-
-**Keep** these sections:
-- Summary (branch info, commit count).
-- Breaking Changes (from `!` commits).
-- Included Commits (full commit list).
-- Test Plan.
-
-Clean up any helper functions that become dead code after these removals.
-
-**T-006: Simplify PR template**
-
-Update `.github/PULL_REQUEST_TEMPLATE.md`:
-- **Remove** the "Type of Change" checklist section.
-- **Remove** the "Release Notes" section and its HTML comment about label-based workflow.
-- **Keep**: Summary, Breaking Changes, Test Plan.
-
-### Phase 5 — Update Project Documentation (T-009)
-
-**T-009: Update `CLAUDE.md`**
-
-Update the following sections:
-
-1. **"Session Workflow"** — remove `mvn versions:set` instructions for releases (keep for development version management).
-
-2. **"CI Pipeline"** — rewrite to describe the new flow:
-   - `build` runs on all pushes/PRs.
-   - `sonar` runs on `main` after `build`.
-   - `release-please` runs on `main` after `build`; creates/updates a Release PR with version bumps and CHANGELOG.
-   - `publish` runs only when the Release PR is merged (`release_created == 'true'`); publishes to Maven Central.
-   - release-please creates the tag and GitHub Release automatically.
-
-3. **"Release Rules"** — replace entirely:
-   - Conventional Commits on `main` are the source of truth.
-   - release-please maintains a Release PR (version bump + CHANGELOG update).
-   - Merging the Release PR triggers: tag creation, GitHub Release, Maven Central publish.
-   - No manual version bumps, no `ai-release.sh`, no `compose-release-notes.sh`.
-
-4. **"Release Safety"** — replace entirely:
-   - Never force-push `main`.
-   - Never bypass PR checks.
-   - Never create release tags manually — release-please is the sole tag creator.
-   - Never amend published release commits or tags.
-   - Feature PRs merged to `main` do not trigger publish — only merging the Release PR does.
-
-5. **"PR policy"** — update:
-   - Release PRs are managed by release-please (auto-created, auto-updated).
-   - Feature PRs use `scripts/ai-pr.sh sync`.
-
-6. **"AI Operating Mode"** — remove references to `scripts/ai-release.sh`.
-
-7. **"Mixed Team Manual Workflow"** — remove two-phase prepare/finalize references.
-
-Also update the AI workflow templates that reference release scripts:
-
-8. Check `scripts/ai-pr.sh` references in CLAUDE.md and ensure they still make sense after T-005 changes.
+**Verify no stale references remain** to:
+- `mvn versions:set`
+- `ai-release.sh`
+- `compose-release-notes.sh`
+- `finalize`
+- `{{VERSION}}`
 
 ## Task Dependency Graph
 
 ```
-T-001 ──┐
-        ├──> T-002/T-003 ──> T-004 ──> T-008
-T-010 ──┘                 ──> T-007
-                                        ──> T-009
-T-005 (independent)
-T-006 (independent)
+T-012 ──> T-011 ──> T-013
+                ──> T-014
 ```
 
-- Phase 1 (T-001, T-010): no dependencies.
-- Phase 2 (T-002/T-003): depends on Phase 1 (config files must exist for CI to reference them).
-- Phase 3 (T-004, T-007, T-008): depends on Phase 2 (old jobs must be removed before deleting scripts they reference).
-- Phase 4 (T-005, T-006): independent — can run in any order.
-- Phase 5 (T-009): last — documents the final state.
+- T-012 (templates): first, because T-011's `cp` must copy the updated templates.
+- T-011 (script): depends on T-012.
+- T-013 (docs/RELEASE.md): depends on T-011 (documents the script).
+- T-014 (CLAUDE.md): depends on T-011 (references the script).
+- T-013 and T-014 are independent of each other.
 
 ## Implementation Notes
 
-- All tasks are implemented on the current branch `feature/v0.6.5-SNAPSHOT`.
+- All tasks are implemented on the current branch.
 - Each task should be a separate Conventional Commit.
-- After all tasks: `mvn -q -DskipTests test-compile` and `mvn -T 1C -q test` must pass (only pom.xml changes affect compilation; script/config changes don't).
-- The `release` profile in `pom.xml` must remain functional for Maven Central publish.
+- The script itself is pure bash/git — no Maven changes, so `test-compile` and `test` should pass trivially.
+- Make the script executable: `chmod +x scripts/ai-start-cycle.sh`.
 
 ## Validation
 
 - `mvn -q -DskipTests test-compile`
 - `mvn -T 1C -q test`
-- Verify `release-please-config.json` is valid JSON.
-- Verify `.release-please-manifest.json` is valid JSON.
-- Verify `ci.yml` is valid YAML (no `tag-version` or `release` jobs, has `release-please` and `publish` jobs).
-- Verify deleted files no longer exist: `ai-release.sh`, `compose-release-notes.sh`, `release-drafter.yml`, `.github/release.yml`.
-- Verify `pom.xml` has no `central.skipPublishing` references.
+- `bash -n scripts/ai-start-cycle.sh` (syntax check)
+- Verify no `{{VERSION}}` remains in templates.
+- Verify `docs/RELEASE.md` has no references to `ai-release.sh`, `tag-version`, `compose-release-notes.sh`, or `central.skipPublishing`.
+- Verify `CLAUDE.md` has no `mvn versions:set` or `finalize` references.

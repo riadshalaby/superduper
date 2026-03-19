@@ -1,6 +1,6 @@
 # ROADMAP
 
-Goal: define and deliver the `{{VERSION}}` scope.
+Goal: define and deliver the scope for this cycle.
 
 ## Priority 1
 

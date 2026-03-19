@@ -1,8 +1,8 @@
-# Plan — {{VERSION}}
+# Plan
 
 Status: **draft**
 
-Goal: define and implement the scope for `{{VERSION}}`.
+Goal: implement the scope defined in `ROADMAP.md`.
 
 ## Scope
 - Replace with concrete feature scope.
