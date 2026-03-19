@@ -37,50 +37,6 @@ determine_pr_base_ref() {
   fi
 }
 
-build_commit_type_breakdown_markdown() {
-  local range="$1"
-  git log --no-merges --format='%s' "$range" | awk '
-BEGIN {
-  order_count = 10
-  order[1] = "feat"
-  order[2] = "fix"
-  order[3] = "perf"
-  order[4] = "refactor"
-  order[5] = "docs"
-  order[6] = "test"
-  order[7] = "build"
-  order[8] = "ci"
-  order[9] = "chore"
-  order[10] = "revert"
-}
-{
-  subject = $0
-  type = "other"
-  if (subject ~ /^[a-z]+(\([^)]+\))?(!)?: /) {
-    type = subject
-    sub(/[^a-z].*/, "", type)
-  }
-  counts[type]++
-  total++
-}
-END {
-  if (total == 0) {
-    print "- no commits detected in range"
-    exit
-  }
-  for (i = 1; i <= order_count; i++) {
-    t = order[i]
-    if (counts[t] > 0) {
-      printf "- %s: %d\n", t, counts[t]
-    }
-  }
-  if (counts["other"] > 0) {
-    printf "- other: %d\n", counts["other"]
-  }
-}
-'
-}
-
 build_commit_list_markdown() {
   local range="$1"
   local commits
@@ -90,91 +46,6 @@ build_commit_list_markdown() {
   else
     echo "$commits"
   fi
-}
-
-build_release_notes_markdown() {
-  local range="$1"
-  git log --reverse --no-merges --format='%s' "$range" | awk '
-function normalize(subject,   note, first, rest) {
-  note = subject
-  if (note ~ /^[a-z]+(\([^)]+\))?(!)?: /) {
-    sub(/^[a-z]+(\([^)]+\))?(!)?: /, "", note)
-  }
-  sub(/[[:space:]]+$/, "", note)
-  if (note == "") {
-    return ""
-  }
-  first = substr(note, 1, 1)
-  rest = substr(note, 2)
-  if (first ~ /[a-z]/) {
-    note = toupper(first) rest
-  }
-  return note
-}
-{
-  note = normalize($0)
-  if (note == "" || seen[note]++) {
-    next
-  }
-  printf "- %s\n", note
-  total++
-}
-END {
-  if (total == 0) {
-    print "- No release-note bullets could be derived from the commit subjects."
-  }
-}
-'
-}
-
-build_type_of_change_markdown() {
-  local range="$1"
-  git log --no-merges --format='%s' "$range" | awk '
-function mark(enabled) {
-  return enabled ? "x" : " "
-}
-{
-  subject = $0
-  if (subject ~ /^feat(\([^)]+\))?(!)?: /) {
-    seen["feat"] = 1
-  }
-  if (subject ~ /^fix(\([^)]+\))?(!)?: /) {
-    seen["fix"] = 1
-  }
-  if (subject ~ /^perf(\([^)]+\))?(!)?: /) {
-    seen["perf"] = 1
-  }
-  if (subject ~ /^docs(\([^)]+\))?(!)?: /) {
-    seen["docs"] = 1
-  }
-  if (subject ~ /^[a-z]+(\([^)]+\))?!: /) {
-    seen["breaking"] = 1
-  }
-  if (subject ~ /^chore(\([^)]+\))?(!)?: /) {
-    seen["chore"] = 1
-  }
-  if (subject ~ /^test(\([^)]+\))?(!)?: /) {
-    seen["test"] = 1
-  }
-  if (subject ~ /^ci(\([^)]+\))?(!)?: /) {
-    seen["ci"] = 1
-  }
-  if (subject ~ /^refactor(\([^)]+\))?(!)?: /) {
-    seen["refactor"] = 1
-  }
-}
-END {
-  printf "- [%s] `feat` - New feature\n", mark(seen["feat"])
-  printf "- [%s] `fix` - Bug fix\n", mark(seen["fix"])
-  printf "- [%s] `perf` - Performance improvement\n", mark(seen["perf"])
-  printf "- [%s] `docs` - Documentation only\n", mark(seen["docs"])
-  printf "- [%s] `breaking` - Breaking change\n", mark(seen["breaking"])
-  printf "- [%s] `chore` - Maintenance (excluded from release notes)\n", mark(seen["chore"])
-  printf "- [%s] `test` - Test only (excluded from release notes)\n", mark(seen["test"])
-  printf "- [%s] `ci` - CI/CD only (excluded from release notes)\n", mark(seen["ci"])
-  printf "- [%s] `refactor` - Refactor without user impact (excluded from release notes)\n", mark(seen["refactor"])
-}
-'
 }
 
 build_breaking_changes_markdown() {
@@ -277,14 +148,8 @@ sync_pr() {
 
   local pr_title
   pr_title="$(existing_or_default_title "$existing_pr_number" "$explicit_title")"
-  local commit_type_breakdown
-  commit_type_breakdown="$(build_commit_type_breakdown_markdown "$range")"
   local commit_list
   commit_list="$(build_commit_list_markdown "$range")"
-  local release_notes
-  release_notes="$(build_release_notes_markdown "$range")"
-  local type_of_change
-  type_of_change="$(build_type_of_change_markdown "$range")"
   local breaking_changes
   breaking_changes="$(build_breaking_changes_markdown "$range")"
 
@@ -296,27 +161,13 @@ sync_pr() {
 - base branch: $base_branch
 - commits in PR: $commit_count
 
-## Type of Change
+## Breaking Changes
 
-$type_of_change
-
-## Release Notes
-
-<!-- Generated from the commit subjects in this PR branch. Refine if needed before merge. -->
-
-$release_notes
+$breaking_changes
 
 ## Included Commits
 
 $commit_list
-
-## Scope by Commit Type
-
-$commit_type_breakdown
-
-## Breaking Changes
-
-$breaking_changes
 
 ## Test Plan
 
