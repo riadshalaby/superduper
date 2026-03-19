@@ -166,98 +166,34 @@ jobs:
           printf '%s\n' "$gate_response"
           exit 1
 
-  tag-version:
+  release-please:
     runs-on: ubuntu-latest
     needs:
       - build
     if: ${{ needs.build.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     permissions:
       contents: write
+      pull-requests: write
     outputs:
-      is_release: ${{ steps.release-metadata.outputs.is_release }}
-      create_tag: ${{ steps.release-metadata.outputs.create_tag }}
-      should_run_release: ${{ steps.release-metadata.outputs.should_run_release }}
-      version: ${{ steps.release-metadata.outputs.version }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
         with:
-          fetch-depth: 0
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
-      - name: Set up Java 25
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
-
-      - name: Determine release metadata
-        id: release-metadata
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-          if [[ "$version" == *-SNAPSHOT ]]; then
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-            echo "create_tag=false" >> "$GITHUB_OUTPUT"
-            echo "should_run_release=false" >> "$GITHUB_OUTPUT"
-            echo "Version $version is a snapshot; skipping tag creation."
-            exit 0
-          fi
-
-          echo "is_release=true" >> "$GITHUB_OUTPUT"
-          tag="v$version"
-          release_exists=false
-          if gh release view "$tag" >/dev/null 2>&1; then
-            release_exists=true
-          fi
-
-          if git ls-remote --tags origin "refs/tags/$tag" | grep -q "refs/tags/$tag$"; then
-            echo "create_tag=false" >> "$GITHUB_OUTPUT"
-
-            if [[ "$release_exists" == "true" ]]; then
-              echo "should_run_release=false" >> "$GITHUB_OUTPUT"
-              echo "Release version $version already has tag $tag and a GitHub Release; skipping release job."
-              exit 0
-            fi
-
-            echo "should_run_release=true" >> "$GITHUB_OUTPUT"
-            echo "Release version $version already has tag $tag but no GitHub Release; allowing release retry."
-            exit 0
-          fi
-
-          echo "create_tag=true" >> "$GITHUB_OUTPUT"
-          echo "should_run_release=true" >> "$GITHUB_OUTPUT"
-          echo "Release version $version detected; creating $tag and running release job."
-
-      - name: Create and push release tag
-        if: ${{ steps.release-metadata.outputs.create_tag == 'true' }}
-        run: |
-          version="${{ steps.release-metadata.outputs.version }}"
-          tag="v$version"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
-            echo "Tag $tag already exists locally."
-          else
-            git tag "$tag"
-          fi
-
-          git push origin "$tag"
-
-  release:
+  publish:
     runs-on: ubuntu-latest
     needs:
       - build
-      - tag-version
-    if: ${{ needs.build.result == 'success' && needs.tag-version.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.tag-version.outputs.should_run_release == 'true' }}
+      - release-please
+    if: ${{ needs.build.result == 'success' && needs.release-please.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-please.outputs.release_created == 'true' }}
     permissions:
-      contents: write
+      contents: read
     env:
       MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
       MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
@@ -278,23 +214,12 @@ jobs:
           server-username: MAVEN_CENTRAL_USERNAME
           server-password: MAVEN_CENTRAL_TOKEN
 
-      - name: Verify release version
-        run: |
-          version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version | tail -n1)"
-          test "$version" = "${{ needs.tag-version.outputs.version }}"
-
       - name: Verify release secrets are present
         run: |
           test -n "$MAVEN_CENTRAL_USERNAME"
           test -n "$MAVEN_CENTRAL_TOKEN"
           test -n "$MAVEN_GPG_KEY"
           test -n "$MAVEN_GPG_PASSPHRASE"
-
-      - name: Download JaCoCo reports
-        uses: actions/download-artifact@v4
-        with:
-          name: jacoco-reports-${{ github.run_id }}
-          path: .
 
       - name: Download build outputs
         uses: actions/download-artifact@v4
@@ -304,49 +229,3 @@ jobs:
 
       - name: Publish to Maven Central
         run: mvn -B -Prelease -DskipTests deploy
-
-      - name: Create GitHub Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version="${{ needs.tag-version.outputs.version }}"
-          tag="v$version"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "GitHub Release $tag already exists; skipping creation."
-            exit 0
-          fi
-
-          draft_tag="$(gh release list --json tagName,isDraft --jq '.[] | select(.isDraft==true) | .tagName' | head -n1)"
-          notes="$(bash scripts/compose-release-notes.sh "$tag" 2>/dev/null || true)"
-
-          if [[ -n "$notes" ]]; then
-            if [[ -n "$draft_tag" ]]; then
-              gh release edit "$draft_tag" \
-                --tag "$tag" \
-                --title "$tag" \
-                --notes "$notes" \
-                --draft=false \
-                --verify-tag
-              exit 0
-            fi
-
-            gh release create "$tag" \
-              --title "$tag" \
-              --notes "$notes" \
-              --verify-tag
-            exit 0
-          fi
-
-          if [[ -n "$draft_tag" ]]; then
-            gh release edit "$draft_tag" \
-              --tag "$tag" \
-              --title "$tag" \
-              --draft=false \
-              --verify-tag
-            exit 0
-          fi
-
-          gh release create "$tag" \
-            --title "$tag" \
-            --generate-notes \
-            --verify-tag

@@ -1,40 +1,57 @@
-# Review — T-004: Skip Maven Central for selected versions
+# Review — T-010: Bootstrap CHANGELOG.md
 
-Status: **complete**
+Reviewer: claude
+Date: 2026-03-19T14:30Z
+Commit: `38fc456` — `docs(release): add changelog bootstrap`
 
-Review Round: **2**
+## Verdict: PASS
 
-Reviewed: 2026-03-18
+## Checklist
 
----
+| # | Acceptance Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | `CHANGELOG.md` exists | PASS | File present at repo root, 10 lines. |
+| 2 | Contains bootstrap note pointing to prior GitHub Releases | PASS | Line 9–10: `For releases prior to automated changelog generation, see [GitHub Releases](https://github.com/rsworld/superduper/releases).` |
+| 3 | Content matches plan specification | PASS | Exact match: heading, description, release-please link, Conventional Commits link, prior releases link. |
+| 4 | `mvn -q spotless:apply` passes | PASS | Reported by implementer; Markdown file does not affect Spotless. |
+| 5 | `mvn -q -DskipTests test-compile` passes | PASS | Reported by implementer; Markdown file does not affect compilation. |
+| 6 | `mvn -T 1C -q test` passes | PASS | Reported by implementer; Markdown file does not affect tests. |
 
-## Verdict
+## Plan Compliance
 
-`PASS`
+- File content is character-for-character identical to the plan specification in Phase 1 — T-010.
+- Links are correct: `release-please` → GitHub repo, `Conventional Commits` → conventionalcommits.org, `GitHub Releases` → project releases page.
 
----
+## Commit Review
+
+- Commit: `38fc456` — `docs(release): add changelog bootstrap`
+- Conventional Commit format: yes (`docs` type with `release` scope).
+- Files in commit: `CHANGELOG.md` (+10 new file), `.ai/TASKS.md` (+1/−1).
+- Clean, minimal commit.
 
 ## Findings
 
-### Round 1 blocker — resolved in commit `f67160d`
-
-`finalize_release()` did not reset `central.skipPublishing`, causing the `true` value to leak into the next development cycle. Fixed by adding `set_central_skip_publishing "false"` immediately after `mvn versions:set` in `finalize_release()`. The reset is included in the next-cycle commit before `git add -A`. `docs/RELEASE.md` claim is now accurate.
-
----
-
-### Criteria
-
-| # | Acceptance Criterion | Result |
-|---|---|---|
-| 1 | `ai-release.sh prepare` accepts `--skip-central` | ✅ Parsed in `prepare_release()` arg loop; usage string updated |
-| 2 | `central.skipPublishing` set to `true` in POM before release commit | ✅ `set_central_skip_publishing "true"` called after `mvn versions:set`, before `git add -A` |
-| 3 | Without flag, behavior unchanged | ✅ `skip_central` defaults to `"false"`; `set_central_skip_publishing` not called |
-| 4 | Skip visible in release PR diff | ✅ POM change in release commit, included in `git add -A` before commit |
-| 5 | No CI workflow changes | ✅ No changes to `ci.yml`; existing plugin reads `${central.skipPublishing}` |
-| 6 | `docs/RELEASE.md` documents the flag | ✅ Four doc bullets added covering: flag usage, PR diff visibility, CI behaviour, finalize reset — finalize reset now accurate after fix |
-| 7 | PR body indicates whether Central is skipped | ✅ `central_publish_status` (enabled/skipped), `central_publish_flow`, and `central_publish_automation` variables surface the state in three PR body sections |
-| 8 | Build passes | ✅ Per handoff: bash -n, spotless, test-compile, full test suite all green |
+No findings. Implementation matches plan specification exactly.
 
 ## Required Fixes
 
-None — blocker resolved in commit `f67160d`.
+None.
+
+---
+
+## Full Plan Summary — All Tasks Complete
+
+| Task | Scope | Verdict |
+|---|---|---|
+| T-001 | Add release-please configuration | PASS |
+| T-002 | Add release-please GitHub Action in ci.yml | PASS |
+| T-003 | Restructure CI pipeline | PASS |
+| T-004 | Remove custom release scripts | PASS |
+| T-005 | Simplify `scripts/ai-pr.sh sync` | PASS |
+| T-006 | Simplify PR template | PASS |
+| T-007 | Remove label-based release configs | PASS |
+| T-008 | Remove `central.skipPublishing` mechanism | PASS |
+| T-009 | Update `CLAUDE.md` | PASS |
+| T-010 | Bootstrap CHANGELOG.md | PASS |
+
+All 10 tasks pass. All 12 acceptance criteria from the plan are satisfied. The release-please migration is complete.

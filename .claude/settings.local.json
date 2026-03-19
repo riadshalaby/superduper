@@ -19,7 +19,13 @@
       "Bash(grep:*)",
       "Bash(jq:*)",
       "Bash(git:*)",
-      "Bash(bash scripts/*:*)"
+      "Bash(bash scripts/*:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(python3:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(pip install:*)",
+      "Bash(ruby:*)"
     ]
   }
 }

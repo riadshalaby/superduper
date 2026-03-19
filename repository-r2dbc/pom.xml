@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.4</version>
+    <version>0.6.5-SNAPSHOT</version>
   </parent>
   <artifactId>superduper-repository-r2dbc</artifactId>
   <name>SUPERDUPER Repository R2DBC</name>
