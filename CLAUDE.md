@@ -7,8 +7,7 @@
 - Keep entries concise and timestamped in UTC.
 - Run formatting after every code change:
   - `mvn -q spotless:apply`
-- Use Maven version bumps for release and post-release transitions:
-  - `mvn versions:set -DnewVersion=X.Y.Z -DgenerateBackupPoms=false`
+- Use Maven version bumps only for development version management when explicitly needed:
   - `mvn versions:set -DnewVersion=NEXT_VERSION -DgenerateBackupPoms=false`
 - Stage newly created files explicitly:
   - `git add <new-file>`
@@ -23,11 +22,11 @@
 - GitHub Actions CI runs on every push and on pull requests targeting `main`.
 - All CI/CD workflow logic lives in `.github/workflows/ci.yml`.
 - CI is the authoritative gate for formatting, compile, tests, and coverage artifacts.
-- Sonar runs on `main` after `build`; its quality gate is visible in logs but non-blocking.
-- Release flow is `build` -> `tag-version` -> `release` inside `ci.yml`, and only runs on `main` pushes.
-- CI on `main` is the sole creator of release tags and GitHub Releases.
-- If a `main` release push creates the tag but fails before creating the GitHub Release, a later `main` push with the same non-snapshot version may retry the `release` job.
-- `finalize` no longer pushes tags; it verifies that CI created the release tag before starting the next development cycle.
+- `build` runs on all pushes and pull requests.
+- `sonar` runs on `main` after `build`; its quality gate is visible in logs but non-blocking.
+- `release-please` runs on `main` after `build`; it maintains the Release PR with version bumps and `CHANGELOG.md` updates.
+- `publish` runs only when `release-please` reports `release_created == 'true'`, which happens when the Release PR is merged into `main`.
+- release-please creates the release tag and GitHub Release automatically.
 - `.github/workflows/release.yml` was removed and must not be reintroduced.
 - `scripts/build-all.sh` was removed and must not be reintroduced as a project build entrypoint.
 
@@ -123,32 +122,24 @@ Build and maintain the library described in `README.md`:
 ## Release Rules
 - Release execution role: `implement`.
 - Release actions require explicit user command in-session.
-- Two-phase release workflow:
-  1. Prepare release on feature branch:
-     - `scripts/ai-release.sh prepare X.Y.Z`
-     - Automatically stashes and restores unrelated worktree changes when needed.
-     - Performs version bump to `X.Y.Z`, runs required validations, commits `chore(release): vX.Y.Z`, pushes the branch, and opens/updates a PR to `main`.
-  2. Finalize release after user confirms PR merge:
-     - Ask the user what the next version will be.
-     - `scripts/ai-release.sh finalize X.Y.Z [NEXT_VERSION]`
-     - Automatically stashes and restores unrelated worktree changes when needed.
-     - Switches to `main`, verifies merged release version and that CI has created/pushed tag `vX.Y.Z`, prompts for `NEXT_VERSION` when omitted, creates branch `feature/vNEXT_VERSION`, bumps to next version, resets cycle files from templates, updates `ROADMAP.md`, and commits `chore: start vNEXT_VERSION`.
-  3. CI post-merge release actions on `main`:
-     - CI creates the release tag, publishes to Maven Central, and creates a GitHub Release with generated release notes.
-- PR policy:
-  - A PR to `main` is mandatory for release.
-  - The agent opens or updates the PR; the user reviews and merges it on GitHub.
-  - For feature PRs, the agent must open or refresh the PR body with `scripts/ai-pr.sh sync`.
-  - `scripts/ai-pr.sh sync` generates the `Release Notes` section from the commit messages included in that PR branch and writes the full PR body.
-  - `finalize` must not run before user merge confirmation.
+- Conventional Commits merged to `main` are the source of truth for release automation.
+- release-please maintains a Release PR with the version bump and `CHANGELOG.md` updates.
+- Merging the Release PR triggers the automated release path on `main`: tag creation, GitHub Release creation, and Maven Central publishing.
+- Do not perform manual release version bumps in the repository for normal releases.
+- `scripts/ai-release.sh` and `scripts/compose-release-notes.sh` must not be reintroduced.
+
+## PR Policy
+- Release PRs are managed by release-please and are auto-created and auto-updated on `main`.
+- Feature PRs still use `scripts/ai-pr.sh sync`.
+- `scripts/ai-pr.sh sync` writes the Summary, Breaking Changes, Included Commits, and Test Plan sections for feature PRs.
+- A PR to `main` remains mandatory for user-reviewed changes.
 
 ## Release Safety
 - Never force-push `main`.
 - Never bypass PR checks.
-- Never create release tags manually; CI on `main` is the sole tag creator.
-- Never tag from a feature branch.
+- Never create release tags manually; release-please is the sole tag creator.
 - Never amend published release commits or tags unless explicitly requested.
-- Do not run release operations without explicit user approval.
+- Feature PRs merged to `main` do not publish by themselves; only merging the Release PR triggers publish.
 
 ## Git Rules
 - Work in the current branch.
