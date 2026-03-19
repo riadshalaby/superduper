@@ -7,8 +7,6 @@
 - Keep entries concise and timestamped in UTC.
 - Run formatting after every code change:
   - `mvn -q spotless:apply`
-- Use Maven version bumps only for development version management when explicitly needed:
-  - `mvn versions:set -DnewVersion=NEXT_VERSION -DgenerateBackupPoms=false`
 - Stage newly created files explicitly:
   - `git add <new-file>`
 - Commit behavior by role:
@@ -94,6 +92,8 @@ Build and maintain the library described in `README.md`:
 
 ## AI Operating Mode
 - Mode is selected by the launcher prompt/context:
+  - Cycle bootstrap:
+    - `scripts/ai-start-cycle.sh <branch-name>`
   - Generic launcher: `scripts/ai-launch.sh <role> <agent> [agent-options...]`
     - roles: `plan`, `implement`, `review`
     - agents: `claude`, `codex`
@@ -108,6 +108,7 @@ Build and maintain the library described in `README.md`:
 
 ## Mixed Team Manual Workflow
 - No role autostarts another role.
+- Start a new development cycle with `scripts/ai-start-cycle.sh <branch-name>` before running `ai-plan.sh`.
 - Every role waits in `WAIT_FOR_USER_START` state until you explicitly tell it to begin.
 - Agent choice is manual per run (`claude` or `codex`) and can vary by role and task.
 - Handoff log policy:

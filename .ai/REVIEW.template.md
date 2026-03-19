@@ -1,4 +1,4 @@
-# Review — {{VERSION}}
+# Review
 
 Status: **pending**
 
