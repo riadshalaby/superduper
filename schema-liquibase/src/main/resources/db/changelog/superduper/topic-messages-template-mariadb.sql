@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS ${table.name} (
   topic VARCHAR(255) NOT NULL DEFAULT 'default',
   message_id VARCHAR(36) UNIQUE NOT NULL,
   message_key VARCHAR(36) NOT NULL,
-  content TEXT,
+  content LONGTEXT,
   status VARCHAR(32) NOT NULL,
   retry_count INT DEFAULT 0,
   container_id VARCHAR(255),
