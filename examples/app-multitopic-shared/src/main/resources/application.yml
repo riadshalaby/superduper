@@ -38,6 +38,9 @@ superduper:
     invoices:
       kafka-topic: invoices.events
       handler: invoicesMessageHandler
+  outbox:
+    notifications:
+      handler: notificationsMessageHandler
   worker:
     max-retries: 3
     claim-interval-ms: 2000
