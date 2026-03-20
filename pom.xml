@@ -44,6 +44,7 @@
     <module>consumer-kafka-blocking</module>
     <module>consumer-kafka-reactive</module>
     <module>outbox-blocking</module>
+    <module>outbox-reactive</module>
     <module>starter-autoselect</module>
     <module>coverage-report</module>
     <module>schema-liquibase</module>
@@ -154,6 +155,11 @@
       <dependency>
         <groupId>net.rsworld</groupId>
         <artifactId>superduper-outbox-blocking</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.rsworld</groupId>
+        <artifactId>superduper-outbox-reactive</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
