@@ -6,24 +6,26 @@
 
 ### Maven coordinates
 
+Use the stable `1.0.0` artifacts for the first general-availability release line.
+
 ```xml
 <dependency>
   <groupId>net.rsworld</groupId>
   <artifactId>superduper-starter-autoselect</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 </dependency>
 
 <!-- Select one consumer module -->
 <dependency>
   <groupId>net.rsworld</groupId>
   <artifactId>superduper-consumer-kafka-blocking</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 </dependency>
 
 <dependency>
   <groupId>net.rsworld</groupId>
   <artifactId>superduper-consumer-kafka-reactive</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 </dependency>
 ```
 

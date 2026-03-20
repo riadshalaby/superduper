@@ -7,3 +7,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/multitopic-dedicated/invoices-messages.yaml
       relativeToChangelogFile: false
+  - include:
+      file: db/changelog/multitopic-dedicated/outbox-notifications.yaml
+      relativeToChangelogFile: false

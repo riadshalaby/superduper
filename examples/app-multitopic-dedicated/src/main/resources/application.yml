@@ -40,6 +40,10 @@ superduper:
       kafka-topic: invoices.events
       handler: invoicesMessageHandler
       table: invoices_messages
+  outbox:
+    notifications:
+      handler: notificationsMessageHandler
+      table: outbox_notifications
   worker:
     max-retries: 3
     claim-interval-ms: 2000

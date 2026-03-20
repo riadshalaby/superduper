@@ -62,6 +62,16 @@
     </dependency>
     <dependency>
       <groupId>net.rsworld</groupId>
+      <artifactId>superduper-outbox-blocking</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>net.rsworld</groupId>
+      <artifactId>superduper-outbox-reactive</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>net.rsworld</groupId>
       <artifactId>superduper-consumer-kafka-blocking</artifactId>
       <version>${project.version}</version>
     </dependency>

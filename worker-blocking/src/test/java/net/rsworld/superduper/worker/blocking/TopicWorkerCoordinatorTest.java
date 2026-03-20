@@ -37,11 +37,21 @@ class TopicWorkerCoordinatorTest {
 
     private static TopicConfigView topicConfig(
             String name, String kafkaTopic, String handlerBeanName, String claimLockName) {
-        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, "");
+        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, "", null);
     }
 
     private static TopicConfigView topicConfig(
             String name, String kafkaTopic, String handlerBeanName, String claimLockName, String table) {
+        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, table, null);
+    }
+
+    private static TopicConfigView topicConfig(
+            String name,
+            String kafkaTopic,
+            String handlerBeanName,
+            String claimLockName,
+            String table,
+            String topicColumnValue) {
         return new TopicConfigView() {
             @Override
             public String name() {
@@ -76,6 +86,11 @@ class TopicWorkerCoordinatorTest {
             @Override
             public String claimLockName() {
                 return claimLockName;
+            }
+
+            @Override
+            public String topicColumnValue() {
+                return topicColumnValue == null ? kafkaTopic : topicColumnValue;
             }
         };
     }
@@ -191,6 +206,42 @@ class TopicWorkerCoordinatorTest {
         ArgumentCaptor<String> topicCaptor = ArgumentCaptor.forClass(String.class);
         verify(messageRepository).claimBatch(anyString(), anyInt(), anyInt(), topicCaptor.capture());
         assertThat(topicCaptor.getValue()).isEqualTo("orders-kafka-topic");
+    }
+
+    @Test
+    void topicWorkerInstance_usesTopicColumnValueWhenConfigured() {
+        TopicConfigView config = topicConfig(
+                "orders", "orders-kafka-topic", "ordersHandler", "superduper-claim-orders", "", "orders-column-value");
+
+        WorkerMessageRepository messageRepository = mock(WorkerMessageRepository.class);
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+        MessageHandler handler = mock(MessageHandler.class);
+        PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
+
+        when(messageRepository.claimBatch(anyString(), anyInt(), anyInt(), anyString()))
+                .thenReturn(0L);
+        doAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(0);
+                    task.run();
+                    return null;
+                })
+                .when(lockExec)
+                .executeWithLock(any(Runnable.class), any());
+
+        TopicWorkerInstance instance = new TopicWorkerInstance(
+                config,
+                messageRepository,
+                txm,
+                lockExec,
+                handler,
+                NoopSuperduperObserver.INSTANCE,
+                "test-worker",
+                15000,
+                2000);
+
+        instance.claimAndProcess();
+
+        verify(messageRepository).claimBatch(anyString(), anyInt(), anyInt(), eq("orders-column-value"));
     }
 
     @Test

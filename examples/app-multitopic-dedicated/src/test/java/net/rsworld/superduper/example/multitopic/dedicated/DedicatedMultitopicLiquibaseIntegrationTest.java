@@ -46,6 +46,7 @@ class DedicatedMultitopicLiquibaseIntegrationTest {
         assertThat(tableExists("shedlock")).isTrue();
         assertThat(tableExists("orders_messages")).isTrue();
         assertThat(tableExists("invoices_messages")).isTrue();
+        assertThat(tableExists("outbox_notifications")).isTrue();
         assertThat(tableExists("messages")).isFalse();
     }
 

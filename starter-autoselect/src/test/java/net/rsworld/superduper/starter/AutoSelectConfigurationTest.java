@@ -1,6 +1,7 @@
 package net.rsworld.superduper.starter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -13,8 +14,12 @@ import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 import net.rsworld.superduper.observability.metrics.MetricsSuperduperObserver;
+import net.rsworld.superduper.outbox.blocking.OutboxService;
+import net.rsworld.superduper.outbox.reactive.ReactiveOutboxService;
 import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.DefaultConsumerMetadataResolver;
+import net.rsworld.superduper.repository.api.MessageIngestRepository;
+import net.rsworld.superduper.repository.api.ReactiveMessageIngestRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
@@ -38,6 +43,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.transaction.PlatformTransactionManager;
+import reactor.core.publisher.Mono;
 
 class AutoSelectConfigurationTest {
     private static final String SCHEDULE_DELAY_PROPERTY = "3600000";
@@ -95,6 +101,63 @@ class AutoSelectConfigurationTest {
                         ReactiveWorkerMaintenanceRepository.class,
                         () -> mock(ReactiveWorkerMaintenanceRepository.class))
                 .withBean(
+                        ReactiveMessageHandler.class,
+                        () -> row -> reactor.core.publisher.Mono.just(
+                                net.rsworld.superduper.worker.reactive.ProcessingResult.SUCCESS));
+    }
+
+    private static ApplicationContextRunner jdbcOutboxContextRunner() {
+        return new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AutoSelectConfiguration.class))
+                .withPropertyValues(
+                        "superduper.consumer.type=spring",
+                        "superduper.worker.claim-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
+                        "superduper.worker.heartbeat-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
+                        "superduper.worker.orphan-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY)
+                .withBean(LockProvider.class, () -> mock(LockProvider.class))
+                .withBean(PlatformTransactionManager.class, () -> mock(PlatformTransactionManager.class))
+                .withBean(WorkerMessageRepository.class, () -> {
+                    WorkerMessageRepository repository = mock(WorkerMessageRepository.class);
+                    when(repository.countByStatus()).thenReturn(Map.of());
+                    when(repository.countByStatus(anyString())).thenReturn(Map.of());
+                    return repository;
+                })
+                .withBean(WorkerMaintenanceRepository.class, () -> mock(WorkerMaintenanceRepository.class))
+                .withBean(
+                        "sharedOutboxHandler",
+                        MessageHandler.class,
+                        () -> row -> net.rsworld.superduper.worker.blocking.ProcessingResult.SUCCESS)
+                .withBean(
+                        "dedicatedOutboxHandler",
+                        MessageHandler.class,
+                        () -> row -> net.rsworld.superduper.worker.blocking.ProcessingResult.SUCCESS);
+    }
+
+    private static ApplicationContextRunner reactiveOutboxContextRunner() {
+        return new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AutoSelectConfiguration.class))
+                .withPropertyValues(
+                        "superduper.consumer.type=reactor",
+                        "superduper.worker.claim-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
+                        "superduper.worker.heartbeat-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY,
+                        "superduper.worker.orphan-initial-delay-ms=" + SCHEDULE_DELAY_PROPERTY)
+                .withBean(LockProvider.class, () -> mock(LockProvider.class))
+                .withBean(ReactiveWorkerMessageRepository.class, () -> {
+                    ReactiveWorkerMessageRepository repository = mock(ReactiveWorkerMessageRepository.class);
+                    when(repository.countByStatus()).thenReturn(reactor.core.publisher.Mono.just(Map.of()));
+                    when(repository.countByStatus(anyString())).thenReturn(reactor.core.publisher.Mono.just(Map.of()));
+                    return repository;
+                })
+                .withBean(
+                        ReactiveWorkerMaintenanceRepository.class,
+                        () -> mock(ReactiveWorkerMaintenanceRepository.class))
+                .withBean(
+                        "sharedOutboxHandler",
+                        ReactiveMessageHandler.class,
+                        () -> row -> reactor.core.publisher.Mono.just(
+                                net.rsworld.superduper.worker.reactive.ProcessingResult.SUCCESS))
+                .withBean(
+                        "dedicatedOutboxHandler",
                         ReactiveMessageHandler.class,
                         () -> row -> reactor.core.publisher.Mono.just(
                                 net.rsworld.superduper.worker.reactive.ProcessingResult.SUCCESS));
@@ -285,5 +348,194 @@ class AutoSelectConfigurationTest {
         SuperduperObserver observer = cfg.superduperObserver(properties, meterRegistry);
 
         assertThat(observer).isSameAs(NoopSuperduperObserver.INSTANCE);
+    }
+
+    @Test
+    void topicRegistryMergesOutboxesWithoutSubscribingKafkaToOutboxNames() {
+        AutoSelectConfiguration cfg = new AutoSelectConfiguration();
+        TopicProperties topicProperties = new TopicProperties();
+        TopicProperties.TopicConfig topicConfig = new TopicProperties.TopicConfig();
+        topicConfig.setKafkaTopic("orders.events");
+        topicConfig.setHandler("ordersHandler");
+        topicProperties.setTopics(Map.of("orders", topicConfig));
+
+        OutboxProperties outboxProperties = new OutboxProperties();
+        OutboxProperties.OutboxConfig sharedOutbox = new OutboxProperties.OutboxConfig();
+        sharedOutbox.setHandler("sharedOutboxHandler");
+        OutboxProperties.OutboxConfig dedicatedOutbox = new OutboxProperties.OutboxConfig();
+        dedicatedOutbox.setHandler("dedicatedOutboxHandler");
+        dedicatedOutbox.setBatchSize(25);
+        dedicatedOutbox.setMaxRetries(8);
+        dedicatedOutbox.setTable("outbox_messages");
+        outboxProperties.setOutbox(Map.of("shared-outbox", sharedOutbox, "dedicated-outbox", dedicatedOutbox));
+
+        TopicRegistry topicRegistry = cfg.topicRegistry(
+                topicProperties,
+                outboxProperties,
+                workerProperties(),
+                "",
+                "spring",
+                Map.of("ordersHandler", row -> net.rsworld.superduper.worker.blocking.ProcessingResult.SUCCESS),
+                Map.of());
+
+        assertThat(topicRegistry.kafkaTopics()).containsExactly("orders.events");
+        assertThat(topicRegistry.topics())
+                .extracting(TopicRegistry.ResolvedTopicConfig::name)
+                .containsExactlyInAnyOrder("orders", "shared-outbox", "dedicated-outbox");
+        assertThat(topicRegistry.topics())
+                .filteredOn(topic -> topic.name().equals("shared-outbox"))
+                .singleElement()
+                .satisfies(topic -> {
+                    assertThat(topic.kafkaTopic()).isEmpty();
+                    assertThat(topic.handlerBeanName()).isEqualTo("sharedOutboxHandler");
+                    assertThat(topic.batchSize()).isEqualTo(workerProperties().getBatchSize());
+                    assertThat(topic.maxRetries()).isEqualTo(workerProperties().getMaxRetries());
+                    assertThat(topic.claimLockName()).isEqualTo("superduper-claim-shared-outbox");
+                });
+        assertThat(topicRegistry.topics())
+                .filteredOn(topic -> topic.name().equals("dedicated-outbox"))
+                .singleElement()
+                .satisfies(topic -> {
+                    assertThat(topic.kafkaTopic()).isEmpty();
+                    assertThat(topic.handlerBeanName()).isEqualTo("dedicatedOutboxHandler");
+                    assertThat(topic.batchSize()).isEqualTo(25);
+                    assertThat(topic.maxRetries()).isEqualTo(8);
+                    assertThat(topic.table()).isEqualTo("outbox_messages");
+                    assertThat(topic.claimLockName()).isEqualTo("superduper-claim-dedicated-outbox");
+                });
+    }
+
+    @Test
+    void topicRegistryAllowsOutboxOnlyConfiguration() {
+        AutoSelectConfiguration cfg = new AutoSelectConfiguration();
+        OutboxProperties outboxProperties = new OutboxProperties();
+        OutboxProperties.OutboxConfig outboxConfig = new OutboxProperties.OutboxConfig();
+        outboxConfig.setHandler("ordersOutboxHandler");
+        outboxProperties.setOutbox(Map.of("orders-outbox", outboxConfig));
+
+        TopicRegistry topicRegistry = cfg.topicRegistry(
+                new TopicProperties(), outboxProperties, workerProperties(), "", "spring", Map.of(), Map.of());
+
+        assertThat(topicRegistry.kafkaTopics()).isEmpty();
+        assertThat(topicRegistry.topics()).singleElement().satisfies(topic -> assertThat(topic.name())
+                .isEqualTo("orders-outbox"));
+    }
+
+    @Test
+    void topicRegistryRequiresOutboxHandler() {
+        AutoSelectConfiguration cfg = new AutoSelectConfiguration();
+        OutboxProperties outboxProperties = new OutboxProperties();
+        outboxProperties.setOutbox(Map.of("orders-outbox", new OutboxProperties.OutboxConfig()));
+
+        assertThatThrownBy(() -> cfg.topicRegistry(
+                        new TopicProperties(), outboxProperties, workerProperties(), "", "spring", Map.of(), Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("superduper.outbox.orders-outbox.handler must be set");
+    }
+
+    @Test
+    void createsBlockingOutboxServiceOnlyWhenOutboxesConfigured() {
+        MessageIngestRepository sharedRepository = mock(MessageIngestRepository.class);
+        MessageIngestRepository dedicatedRepository = mock(MessageIngestRepository.class);
+        RepositoryFactory repositoryFactory = mock(RepositoryFactory.class);
+        when(repositoryFactory.createIngestRepository("dedicated_outbox_messages"))
+                .thenReturn(dedicatedRepository);
+
+        jdbcOutboxContextRunner()
+                .withPropertyValues(
+                        "superduper.outbox.shared-outbox.handler=sharedOutboxHandler",
+                        "superduper.outbox.dedicated-outbox.handler=dedicatedOutboxHandler",
+                        "superduper.outbox.dedicated-outbox.table=dedicated_outbox_messages")
+                .withBean(MessageIngestRepository.class, () -> sharedRepository)
+                .withBean(RepositoryFactory.class, () -> repositoryFactory)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(OutboxService.class);
+                    OutboxService outboxService = context.getBean(OutboxService.class);
+
+                    outboxService.send("shared-outbox", "shared-key", "{\"event\":\"shared\"}");
+                    outboxService.send("dedicated-outbox", "dedicated-key", "{\"event\":\"dedicated\"}");
+
+                    verify(sharedRepository)
+                            .upsertReadyMessage(
+                                    eq("shared-outbox"),
+                                    anyString(),
+                                    eq("shared-key"),
+                                    eq("{\"event\":\"shared\"}"),
+                                    any(),
+                                    isNull(),
+                                    isNull());
+                    verify(dedicatedRepository)
+                            .upsertReadyMessage(
+                                    eq("dedicated-outbox"),
+                                    anyString(),
+                                    eq("dedicated-key"),
+                                    eq("{\"event\":\"dedicated\"}"),
+                                    any(),
+                                    isNull(),
+                                    isNull());
+                    verify(repositoryFactory).createIngestRepository("dedicated_outbox_messages");
+                });
+
+        jdbcContextRunner()
+                .withBean(MessageIngestRepository.class, () -> mock(MessageIngestRepository.class))
+                .run(context -> assertThat(context).doesNotHaveBean(OutboxService.class));
+    }
+
+    @Test
+    void createsReactiveOutboxServiceOnlyWhenOutboxesConfigured() {
+        ReactiveMessageIngestRepository sharedRepository = mock(ReactiveMessageIngestRepository.class);
+        ReactiveMessageIngestRepository dedicatedRepository = mock(ReactiveMessageIngestRepository.class);
+        RepositoryFactory repositoryFactory = mock(RepositoryFactory.class);
+        when(sharedRepository.upsertReadyMessage(
+                        anyString(), anyString(), anyString(), anyString(), any(), any(), any()))
+                .thenReturn(Mono.empty());
+        when(dedicatedRepository.upsertReadyMessage(
+                        anyString(), anyString(), anyString(), anyString(), any(), any(), any()))
+                .thenReturn(Mono.empty());
+        when(repositoryFactory.createReactiveIngestRepository("dedicated_outbox_messages"))
+                .thenReturn(dedicatedRepository);
+
+        reactiveOutboxContextRunner()
+                .withPropertyValues(
+                        "superduper.outbox.shared-outbox.handler=sharedOutboxHandler",
+                        "superduper.outbox.dedicated-outbox.handler=dedicatedOutboxHandler",
+                        "superduper.outbox.dedicated-outbox.table=dedicated_outbox_messages")
+                .withBean(ReactiveMessageIngestRepository.class, () -> sharedRepository)
+                .withBean(RepositoryFactory.class, () -> repositoryFactory)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ReactiveOutboxService.class);
+                    ReactiveOutboxService outboxService = context.getBean(ReactiveOutboxService.class);
+
+                    outboxService
+                            .send("shared-outbox", "shared-key", "{\"event\":\"shared\"}")
+                            .block();
+                    outboxService
+                            .send("dedicated-outbox", "dedicated-key", "{\"event\":\"dedicated\"}")
+                            .block();
+
+                    verify(sharedRepository)
+                            .upsertReadyMessage(
+                                    eq("shared-outbox"),
+                                    anyString(),
+                                    eq("shared-key"),
+                                    eq("{\"event\":\"shared\"}"),
+                                    any(),
+                                    isNull(),
+                                    isNull());
+                    verify(dedicatedRepository)
+                            .upsertReadyMessage(
+                                    eq("dedicated-outbox"),
+                                    anyString(),
+                                    eq("dedicated-key"),
+                                    eq("{\"event\":\"dedicated\"}"),
+                                    any(),
+                                    isNull(),
+                                    isNull());
+                    verify(repositoryFactory).createReactiveIngestRepository("dedicated_outbox_messages");
+                });
+
+        reactiveContextRunner()
+                .withBean(ReactiveMessageIngestRepository.class, () -> mock(ReactiveMessageIngestRepository.class))
+                .run(context -> assertThat(context).doesNotHaveBean(ReactiveOutboxService.class));
     }
 }

@@ -45,6 +45,14 @@
       <artifactId>superduper-worker-reactive</artifactId>
     </dependency>
     <dependency>
+      <groupId>net.rsworld</groupId>
+      <artifactId>superduper-outbox-blocking</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>net.rsworld</groupId>
+      <artifactId>superduper-outbox-reactive</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-jdbc</artifactId>
     </dependency>

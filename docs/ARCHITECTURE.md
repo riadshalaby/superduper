@@ -16,6 +16,8 @@ This document is optimized for fast repo navigation by humans and agents.
 | `worker-reactive` | `superduper-worker-reactive` | Scheduled reactive worker loop, heartbeat, reclaim, cleanup, redrive, and per-topic coordination | `SuperDuperWorkerReactiveService`, `ReactiveTopicWorkerCoordinator`, `ReactiveTopicWorkerInstance`, `ReactiveHeartbeatService`, `ReactiveOrphanReclaimer`, `ReactiveCleanupService`, `ReactiveRedriveService`, `ReactiveQueueHealthService`, `ReactiveMessageHandler`, `ProcessingResult` |
 | `consumer-kafka-blocking` | `superduper-consumer-kafka-blocking` | Spring Kafka consumer that persists records through JDBC repositories | `KafkaConsumerService`, `KafkaConsumerAutoConfiguration` |
 | `consumer-kafka-reactive` | `superduper-consumer-kafka-reactive` | Spring Kafka consumer that persists records through R2DBC repositories | `KafkaReactiveR2dbcConsumerService`, `KafkaReactiveR2dbcAutoConfiguration` |
+| `outbox-blocking` | `superduper-outbox-blocking` | Blocking transactional outbox service for writing READY rows inside application transactions | `OutboxService`, `JdbcOutboxService` |
+| `outbox-reactive` | `superduper-outbox-reactive` | Reactive transactional outbox service for writing READY rows inside reactive transactions | `ReactiveOutboxService`, `R2dbcOutboxService` |
 | `starter-autoselect` | `superduper-starter-autoselect` | Auto-selects worker stack and observer backend from properties and resolves topic-aware worker topology | `AutoSelectConfiguration`, `WorkerProperties`, `ObservabilityProperties`, `TopicProperties`, `TopicRegistry`, `RepositoryFactory` |
 | `schema-liquibase` | `superduper-schema-liquibase` | Database schema and index changelogs | `db.changelog-infra.yaml`, `db.changelog-master.yaml`, `001-init-infra-postgres.sql`, `001-init-infra-mariadb.sql`, `topic-messages-template-postgres.sql`, `topic-messages-template-mariadb.sql` |
 | `examples/app-blocking` | `example-app-blocking` | Runnable JDBC example application | `BlockingExampleApplication`, `ExampleBlockingSeeder`, `ExampleBlockingMessageHandler` |
@@ -36,6 +38,8 @@ graph TD
   WR[worker-reactive]
   CKB[consumer-kafka-blocking]
   CKR[consumer-kafka-reactive]
+  OB[outbox-blocking]
+  OR[outbox-reactive]
   SA[starter-autoselect]
   SL[schema-liquibase]
   EAB[examples/app-blocking]
@@ -59,6 +63,12 @@ graph TD
   CKR --> OA
   CKR --> RR
   CKR --> WR
+  OB --> RA
+  OB --> OA
+  OB --> RJ
+  OR --> RA
+  OR --> OA
+  OR --> RR
   SA --> OA
   SA --> OL
   SA --> OM
@@ -67,6 +77,8 @@ graph TD
   SA --> RR
   SA --> WB
   SA --> WR
+  SA --> OB
+  SA --> OR
   EAB --> SL
   EAB --> SA
   EAB --> CKB
@@ -91,12 +103,22 @@ graph TD
 8. Heartbeat services upsert `container_heartbeats` for active workers.
 9. Cleanup, orphan reclaim, queue-health, and redrive services iterate the topic registry and route to the correct shared or dedicated repository instance.
 
+## Outbox Data Flow
+
+1. Application code injects `OutboxService` or `ReactiveOutboxService` and calls `send(outboxName, messageKey, content)` inside its own business transaction.
+2. The outbox service writes a `READY` row through `MessageIngestRepository` / `ReactiveMessageIngestRepository`, using the configured outbox name as the logical topic column value.
+3. `starter-autoselect` merges `superduper.outbox.*` entries into `TopicRegistry` with blank `kafkaTopic` values, so workers see the outbox while Kafka listeners ignore it.
+4. Shared-table outboxes reuse the default `messages` repositories; dedicated-table outboxes use `RepositoryFactory` to create per-table ingest and worker repositories.
+5. Once persisted, outbox rows follow the same claim, retry, heartbeat, reclaim, cleanup, and redrive lifecycle as Kafka-ingested rows.
+
 ## Extension Points
 
 ### Business handlers
 
 - `worker-blocking`: implement `MessageHandler`
 - `worker-reactive`: implement `ReactiveMessageHandler`
+- `outbox-blocking`: inject `OutboxService`
+- `outbox-reactive`: inject `ReactiveOutboxService`
 
 ### Repository ports
 
@@ -137,6 +159,7 @@ Practical difference:
 
 - `messages.topic` stores the Kafka topic name, with `"default"` reserved for the backward-compatible single-topic path.
 - `TopicRegistry` resolves handler bean name, batch size, max retries, optional dedicated table, and per-topic claim lock name.
+- Outbox entries are also represented in `TopicRegistry`; they use blank `kafkaTopic` values so workers can process them without adding them to Kafka subscriptions.
 - Shared-table topics use the default repositories with `topic = :topic` predicates.
 - Dedicated-table topics use repositories created by `RepositoryFactory` / `TopicRepositoryFactory`.
 - Maintenance operations are topic-aware too: queue health, reclaim, cleanup, and redrive all route through the same topic registry instead of assuming the shared `messages` table.

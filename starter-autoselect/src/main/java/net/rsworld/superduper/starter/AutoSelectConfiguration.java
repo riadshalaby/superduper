@@ -3,6 +3,7 @@ package net.rsworld.superduper.starter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.r2dbc.spi.ConnectionFactory;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -15,8 +16,14 @@ import net.rsworld.superduper.observability.api.NoopSuperduperObserver;
 import net.rsworld.superduper.observability.api.SuperduperObserver;
 import net.rsworld.superduper.observability.logging.LoggingSuperduperObserver;
 import net.rsworld.superduper.observability.metrics.MetricsSuperduperObserver;
+import net.rsworld.superduper.outbox.blocking.JdbcOutboxService;
+import net.rsworld.superduper.outbox.blocking.OutboxService;
+import net.rsworld.superduper.outbox.reactive.R2dbcOutboxService;
+import net.rsworld.superduper.outbox.reactive.ReactiveOutboxService;
 import net.rsworld.superduper.repository.api.ConsumerMetadataResolver;
 import net.rsworld.superduper.repository.api.DefaultConsumerMetadataResolver;
+import net.rsworld.superduper.repository.api.MessageIngestRepository;
+import net.rsworld.superduper.repository.api.ReactiveMessageIngestRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMaintenanceRepository;
 import net.rsworld.superduper.repository.api.ReactiveWorkerMessageRepository;
 import net.rsworld.superduper.repository.api.WorkerMaintenanceRepository;
@@ -43,7 +50,13 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Condition;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
+import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -51,7 +64,12 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 @AutoConfiguration
 @EnableScheduling
-@EnableConfigurationProperties({ObservabilityProperties.class, TopicProperties.class, WorkerProperties.class})
+@EnableConfigurationProperties({
+    ObservabilityProperties.class,
+    TopicProperties.class,
+    OutboxProperties.class,
+    WorkerProperties.class
+})
 public class AutoSelectConfiguration {
 
     @Bean
@@ -118,47 +136,33 @@ public class AutoSelectConfiguration {
     @ConditionalOnMissingBean
     public TopicRegistry topicRegistry(
             TopicProperties topicProperties,
+            OutboxProperties outboxProperties,
             WorkerProperties workerProperties,
             @Value("${superduper.kafka.topic:}") String legacyTopic,
             @Value("${superduper.consumer.type:spring}") String consumerType,
             Map<String, MessageHandler> blockingHandlers,
             Map<String, ReactiveMessageHandler> reactiveHandlers) {
+        List<TopicRegistry.ResolvedTopicConfig> topics = new ArrayList<>();
         if (!topicProperties.getTopics().isEmpty()) {
-            List<TopicRegistry.ResolvedTopicConfig> topics = new ArrayList<>();
-            for (Map.Entry<String, TopicProperties.TopicConfig> entry :
-                    topicProperties.getTopics().entrySet()) {
-                TopicProperties.TopicConfig config = entry.getValue();
-                if (config.getKafkaTopic() == null || config.getKafkaTopic().isBlank()) {
-                    throw new IllegalArgumentException(
-                            "superduper.topics." + entry.getKey() + ".kafkaTopic must be set");
-                }
-                if (config.getHandler() == null || config.getHandler().isBlank()) {
-                    throw new IllegalArgumentException("superduper.topics." + entry.getKey() + ".handler must be set");
-                }
-                topics.add(new TopicRegistry.ResolvedTopicConfig(
-                        entry.getKey(),
-                        config.getKafkaTopic(),
-                        config.getHandler(),
-                        config.getBatchSize() > 0 ? config.getBatchSize() : workerProperties.getBatchSize(),
-                        config.getMaxRetries() > 0 ? config.getMaxRetries() : workerProperties.getMaxRetries(),
-                        config.getTable(),
-                        "superduper-claim-" + entry.getKey()));
-            }
-            return new TopicRegistry(topics);
+            topics.addAll(resolveConfiguredTopics(topicProperties, workerProperties));
+        } else if (legacyTopic != null && !legacyTopic.isBlank()) {
+            String handlerBeanName = resolveLegacyHandlerBeanName(consumerType, blockingHandlers, reactiveHandlers);
+            topics.add(new TopicRegistry.ResolvedTopicConfig(
+                    "default",
+                    legacyTopic,
+                    handlerBeanName,
+                    workerProperties.getBatchSize(),
+                    workerProperties.getMaxRetries(),
+                    "",
+                    "superduper-claim-default"));
         }
-        if (legacyTopic == null || legacyTopic.isBlank()) {
+
+        topics.addAll(resolveConfiguredOutboxes(outboxProperties, workerProperties));
+        if (topics.isEmpty()) {
             throw new IllegalArgumentException(
-                    "No topic configured. Set superduper.kafka.topic or define superduper.topics.");
+                    "No topic configured. Set superduper.kafka.topic, define superduper.topics, or configure superduper.outbox.");
         }
-        String handlerBeanName = resolveLegacyHandlerBeanName(consumerType, blockingHandlers, reactiveHandlers);
-        return new TopicRegistry(List.of(new TopicRegistry.ResolvedTopicConfig(
-                "default",
-                legacyTopic,
-                handlerBeanName,
-                workerProperties.getBatchSize(),
-                workerProperties.getMaxRetries(),
-                "",
-                "superduper-claim-default")));
+        return new TopicRegistry(topics);
     }
 
     private String resolveLegacyHandlerBeanName(
@@ -171,6 +175,51 @@ public class AutoSelectConfiguration {
                     "Single-topic mode requires exactly one handler bean. Found " + handlers.keySet());
         }
         return handlers.keySet().iterator().next();
+    }
+
+    private List<TopicRegistry.ResolvedTopicConfig> resolveConfiguredTopics(
+            TopicProperties topicProperties, WorkerProperties workerProperties) {
+        List<TopicRegistry.ResolvedTopicConfig> topics = new ArrayList<>();
+        for (Map.Entry<String, TopicProperties.TopicConfig> entry :
+                topicProperties.getTopics().entrySet()) {
+            TopicProperties.TopicConfig config = entry.getValue();
+            if (config.getKafkaTopic() == null || config.getKafkaTopic().isBlank()) {
+                throw new IllegalArgumentException("superduper.topics." + entry.getKey() + ".kafkaTopic must be set");
+            }
+            if (config.getHandler() == null || config.getHandler().isBlank()) {
+                throw new IllegalArgumentException("superduper.topics." + entry.getKey() + ".handler must be set");
+            }
+            topics.add(new TopicRegistry.ResolvedTopicConfig(
+                    entry.getKey(),
+                    config.getKafkaTopic(),
+                    config.getHandler(),
+                    config.getBatchSize() > 0 ? config.getBatchSize() : workerProperties.getBatchSize(),
+                    config.getMaxRetries() > 0 ? config.getMaxRetries() : workerProperties.getMaxRetries(),
+                    config.getTable(),
+                    "superduper-claim-" + entry.getKey()));
+        }
+        return topics;
+    }
+
+    private List<TopicRegistry.ResolvedTopicConfig> resolveConfiguredOutboxes(
+            OutboxProperties outboxProperties, WorkerProperties workerProperties) {
+        List<TopicRegistry.ResolvedTopicConfig> outboxes = new ArrayList<>();
+        for (Map.Entry<String, OutboxProperties.OutboxConfig> entry :
+                outboxProperties.getOutbox().entrySet()) {
+            OutboxProperties.OutboxConfig config = entry.getValue();
+            if (config.getHandler() == null || config.getHandler().isBlank()) {
+                throw new IllegalArgumentException("superduper.outbox." + entry.getKey() + ".handler must be set");
+            }
+            outboxes.add(new TopicRegistry.ResolvedTopicConfig(
+                    entry.getKey(),
+                    "",
+                    config.getHandler(),
+                    config.getBatchSize() > 0 ? config.getBatchSize() : workerProperties.getBatchSize(),
+                    config.getMaxRetries() > 0 ? config.getMaxRetries() : workerProperties.getMaxRetries(),
+                    config.getTable(),
+                    "superduper-claim-" + entry.getKey()));
+        }
+        return outboxes;
     }
 
     @Bean
@@ -192,6 +241,67 @@ public class AutoSelectConfiguration {
                 r2dbcTablePropertiesProvider,
                 jdbcDialectProvider,
                 r2dbcDialectProvider);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "spring", matchIfMissing = true)
+    @ConditionalOnMissingBean
+    @Conditional(OutboxConfiguredCondition.class)
+    public OutboxService jdbcOutboxService(
+            OutboxProperties outboxProperties,
+            MessageIngestRepository messageIngestRepository,
+            RepositoryFactory repositoryFactory,
+            SuperduperObserver observer) {
+        return new JdbcOutboxService(
+                resolveOutboxRepositories(outboxProperties, messageIngestRepository, repositoryFactory), observer);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "superduper.consumer.type", havingValue = "reactor")
+    @ConditionalOnMissingBean
+    @Conditional(OutboxConfiguredCondition.class)
+    public ReactiveOutboxService reactiveOutboxService(
+            OutboxProperties outboxProperties,
+            ReactiveMessageIngestRepository messageIngestRepository,
+            RepositoryFactory repositoryFactory,
+            SuperduperObserver observer) {
+        return new R2dbcOutboxService(
+                resolveReactiveOutboxRepositories(outboxProperties, messageIngestRepository, repositoryFactory),
+                observer);
+    }
+
+    private Map<String, MessageIngestRepository> resolveOutboxRepositories(
+            OutboxProperties outboxProperties,
+            MessageIngestRepository sharedRepository,
+            RepositoryFactory repositoryFactory) {
+        Map<String, MessageIngestRepository> repositories = new LinkedHashMap<>();
+        for (Map.Entry<String, OutboxProperties.OutboxConfig> entry :
+                outboxProperties.getOutbox().entrySet()) {
+            String table = entry.getValue().getTable();
+            repositories.put(
+                    entry.getKey(),
+                    table == null || table.isBlank()
+                            ? sharedRepository
+                            : repositoryFactory.createIngestRepository(table));
+        }
+        return repositories;
+    }
+
+    private Map<String, ReactiveMessageIngestRepository> resolveReactiveOutboxRepositories(
+            OutboxProperties outboxProperties,
+            ReactiveMessageIngestRepository sharedRepository,
+            RepositoryFactory repositoryFactory) {
+        Map<String, ReactiveMessageIngestRepository> repositories = new LinkedHashMap<>();
+        for (Map.Entry<String, OutboxProperties.OutboxConfig> entry :
+                outboxProperties.getOutbox().entrySet()) {
+            String table = entry.getValue().getTable();
+            repositories.put(
+                    entry.getKey(),
+                    table == null || table.isBlank()
+                            ? sharedRepository
+                            : repositoryFactory.createReactiveIngestRepository(table));
+        }
+        return repositories;
     }
 
     @Bean
@@ -484,5 +594,15 @@ public class AutoSelectConfiguration {
                 retention.getProcessedRetentionDays(),
                 retention.getStoppedRetentionDays(),
                 retention.getHeartbeatRetentionDays());
+    }
+
+    static final class OutboxConfiguredCondition implements Condition {
+        @Override
+        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            Map<String, OutboxProperties.OutboxConfig> outboxes = Binder.get(context.getEnvironment())
+                    .bind("superduper.outbox", Bindable.mapOf(String.class, OutboxProperties.OutboxConfig.class))
+                    .orElse(Map.of());
+            return !outboxes.isEmpty();
+        }
     }
 }

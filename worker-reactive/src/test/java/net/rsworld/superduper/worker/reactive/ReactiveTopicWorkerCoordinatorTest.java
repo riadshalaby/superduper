@@ -1,5 +1,6 @@
 package net.rsworld.superduper.worker.reactive;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -32,11 +33,21 @@ class ReactiveTopicWorkerCoordinatorTest {
 
     private static TopicConfigView topicConfig(
             String name, String kafkaTopic, String handlerBeanName, String claimLockName) {
-        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, "");
+        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, "", null);
     }
 
     private static TopicConfigView topicConfig(
             String name, String kafkaTopic, String handlerBeanName, String claimLockName, String table) {
+        return topicConfig(name, kafkaTopic, handlerBeanName, claimLockName, table, null);
+    }
+
+    private static TopicConfigView topicConfig(
+            String name,
+            String kafkaTopic,
+            String handlerBeanName,
+            String claimLockName,
+            String table,
+            String topicColumnValue) {
         return new TopicConfigView() {
             @Override
             public String name() {
@@ -71,6 +82,11 @@ class ReactiveTopicWorkerCoordinatorTest {
             @Override
             public String claimLockName() {
                 return claimLockName;
+            }
+
+            @Override
+            public String topicColumnValue() {
+                return topicColumnValue == null ? kafkaTopic : topicColumnValue;
             }
         };
     }
@@ -146,6 +162,41 @@ class ReactiveTopicWorkerCoordinatorTest {
 
         verify(taskScheduler, times(2))
                 .scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class));
+    }
+
+    @Test
+    void topicWorkerInstance_usesTopicColumnValueWhenConfigured() {
+        TopicConfigView config = topicConfig(
+                "orders", "orders-kafka-topic", "handlerA", "superduper-claim-orders", "", "orders-column-value");
+        ReactiveWorkerMessageRepository messageRepository = mock(ReactiveWorkerMessageRepository.class);
+        LockingTaskExecutor lockExec = mock(LockingTaskExecutor.class);
+        ReactiveMessageHandler handler = mock(ReactiveMessageHandler.class);
+
+        when(messageRepository.claimBatch(anyString(), anyInt(), anyInt(), anyString()))
+                .thenReturn(Mono.just(0L));
+        org.mockito.Mockito.doAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(0);
+                    task.run();
+                    return null;
+                })
+                .when(lockExec)
+                .executeWithLock(any(Runnable.class), any());
+
+        ReactiveTopicWorkerInstance instance = new ReactiveTopicWorkerInstance(
+                config,
+                messageRepository,
+                lockExec,
+                handler,
+                NoopSuperduperObserver.INSTANCE,
+                "test-worker",
+                15000,
+                2000);
+
+        instance.claimAndProcess();
+
+        ArgumentCaptor<String> topicCaptor = ArgumentCaptor.forClass(String.class);
+        verify(messageRepository).claimBatch(anyString(), anyInt(), anyInt(), topicCaptor.capture());
+        assertThat(topicCaptor.getValue()).isEqualTo("orders-column-value");
     }
 
     @Test

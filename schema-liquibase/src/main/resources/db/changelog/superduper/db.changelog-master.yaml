@@ -21,3 +21,11 @@ databaseChangeLog:
         - sqlFile:
             path: db/changelog/superduper/topic-messages-template-mariadb.sql
             relativeToChangelogFile: false
+  - changeSet:
+      id: 005-mariadb-content-longtext
+      author: superduper
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/005-mariadb-content-longtext.sql
+            relativeToChangelogFile: false

@@ -26,6 +26,23 @@ class TopicRegistryTest {
     }
 
     @Test
+    void filtersBlankKafkaTopicsAndFallsBackToLogicalTopicName() {
+        TopicRegistry.ResolvedTopicConfig outboxA =
+                new TopicRegistry.ResolvedTopicConfig("orders-outbox", "", "ordersHandler", 10, 5, "", "lock-a");
+        TopicRegistry.ResolvedTopicConfig kafkaTopic = new TopicRegistry.ResolvedTopicConfig(
+                "orders", "orders.events", "ordersHandler", 10, 5, "", "lock-orders");
+        TopicRegistry.ResolvedTopicConfig outboxB =
+                new TopicRegistry.ResolvedTopicConfig("billing-outbox", "", "billingHandler", 10, 5, "", "lock-b");
+
+        TopicRegistry registry = new TopicRegistry(List.of(outboxA, kafkaTopic, outboxB));
+
+        assertThat(registry.topics()).containsExactly(outboxA, kafkaTopic, outboxB);
+        assertThat(registry.kafkaTopics()).containsExactly("orders.events");
+        assertThat(outboxA.topicColumnValue()).isEqualTo("orders-outbox");
+        assertThat(kafkaTopic.topicColumnValue()).isEqualTo("orders.events");
+    }
+
+    @Test
     void rejectsDuplicateKafkaTopics() {
         TopicRegistry.ResolvedTopicConfig first =
                 new TopicRegistry.ResolvedTopicConfig("orders", "shared.events", "a", 10, 5, "", "lock-a");

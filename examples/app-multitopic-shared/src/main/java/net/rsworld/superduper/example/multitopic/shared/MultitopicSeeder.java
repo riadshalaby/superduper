@@ -3,6 +3,7 @@ package net.rsworld.superduper.example.multitopic.shared;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -40,6 +41,7 @@ class MultitopicSeeder {
     private final long readinessTimeoutSeconds;
     private final SeedProgress progress;
     private final TopicRegistry topicRegistry;
+    private final OutboxSeedService outboxSeedService;
     private final ObjectProvider<TopicWorkerCoordinator> workerProvider;
     private final ObjectProvider<KafkaListenerEndpointRegistry> listenerRegistryProvider;
 
@@ -51,6 +53,7 @@ class MultitopicSeeder {
             @Value("${superduper.example.seed.readiness-timeout-seconds:30}") long readinessTimeoutSeconds,
             SeedProgress progress,
             TopicRegistry topicRegistry,
+            OutboxSeedService outboxSeedService,
             ObjectProvider<TopicWorkerCoordinator> workerProvider,
             ObjectProvider<KafkaListenerEndpointRegistry> listenerRegistryProvider) {
         this.bootstrapServers = bootstrapServers;
@@ -60,6 +63,7 @@ class MultitopicSeeder {
         this.readinessTimeoutSeconds = readinessTimeoutSeconds;
         this.progress = progress;
         this.topicRegistry = topicRegistry;
+        this.outboxSeedService = outboxSeedService;
         this.workerProvider = workerProvider;
         this.listenerRegistryProvider = listenerRegistryProvider;
     }
@@ -69,14 +73,18 @@ class MultitopicSeeder {
         ensureWorkerAvailable();
         waitForConsumerReadiness();
         String runToken = UUID.randomUUID().toString();
-        int expected = topicRegistry.kafkaTopics().size() * count;
+        List<? extends TopicConfigView> configuredTopics = topicRegistry.topics();
+        int expected = configuredTopics.size() * count;
         progress.startRun(expected, runToken);
         log.info(
                 "[Seeder] Initialized seed runToken={} expected={} topics={}.",
                 runToken,
                 expected,
-                topicRegistry.kafkaTopics());
-        publishSeedMessages(runToken);
+                configuredTopics.stream().map(TopicConfigView::name).toList());
+        Map<String, Integer> kafkaPublished = publishKafkaSeedMessages(configuredTopics, runToken);
+        Map<String, Integer> outboxPublished = outboxSeedService.seedNotifications(count, keyCount, runToken);
+        log.info(
+                "[Seeder] Published Kafka seed messages={}; outbox seed messages={}.", kafkaPublished, outboxPublished);
         waitForHandlerCompletion();
     }
 
@@ -129,7 +137,9 @@ class MultitopicSeeder {
                 "Timed out waiting for Kafka listener container readiness and partition assignment.");
     }
 
-    private void publishSeedMessages(String runToken) throws InterruptedException, ExecutionException {
+    private Map<String, Integer> publishKafkaSeedMessages(
+            List<? extends TopicConfigView> configuredTopics, String runToken)
+            throws InterruptedException, ExecutionException {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
@@ -141,14 +151,17 @@ class MultitopicSeeder {
         AtomicInteger sequence = new AtomicInteger();
         long startedAt = System.nanoTime();
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
-            for (TopicConfigView topic : topicRegistry.topics()) {
+            for (TopicConfigView topic : configuredTopics) {
+                if (topic.kafkaTopic() == null || topic.kafkaTopic().isBlank()) {
+                    continue;
+                }
                 for (int i = 1; i <= count; i++) {
                     int ordinal = sequence.incrementAndGet();
                     producer.send(new ProducerRecord<>(
                                     topic.kafkaTopic(), keyFor(topic.name(), i), contentFor(ordinal, runToken)))
                             .get();
                 }
-                publishedByTopic.put(topic.kafkaTopic(), count);
+                publishedByTopic.put(topic.name(), count);
             }
             producer.flush();
         }
@@ -160,6 +173,7 @@ class MultitopicSeeder {
                 publishedByTopic,
                 millis,
                 keyCount);
+        return publishedByTopic;
     }
 
     private void waitForHandlerCompletion() throws InterruptedException {
@@ -192,6 +206,7 @@ class MultitopicSeeder {
         return switch (topicName) {
             case "orders" -> "order-" + (index % keyCount);
             case "invoices" -> "invoice-" + (index % keyCount);
+            case "notifications" -> "notification-" + (index % keyCount);
             default -> topicName + "-" + (index % keyCount);
         };
     }

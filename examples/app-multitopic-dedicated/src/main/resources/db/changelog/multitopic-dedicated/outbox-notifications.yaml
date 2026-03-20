@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - property:
+      name: table.name
+      value: outbox_notifications
+      global: false
+  - changeSet:
+      id: multitopic-003-outbox-notifications-postgres
+      author: superduper-example
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/topic-messages-template-postgres.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: multitopic-003-outbox-notifications-mariadb
+      author: superduper-example
+      dbms: mariadb
+      changes:
+        - sqlFile:
+            path: db/changelog/superduper/topic-messages-template-mariadb.sql
+            relativeToChangelogFile: false

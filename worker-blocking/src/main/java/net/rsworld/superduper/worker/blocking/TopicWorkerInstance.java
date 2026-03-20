@@ -44,7 +44,7 @@ public class TopicWorkerInstance {
                 lockAtMostForMs,
                 lockAtLeastForMs,
                 workerId,
-                topicConfig.kafkaTopic());
+                topicConfig.topicColumnValue());
     }
 
     public void claimAndProcess() {

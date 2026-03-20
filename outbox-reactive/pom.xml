@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>net.rsworld</groupId>
+    <artifactId>superduper-parent</artifactId>
+    <version>0.6.5-SNAPSHOT</version>
+  </parent>
+  <artifactId>superduper-outbox-reactive</artifactId>
+  <name>SUPERDUPER Outbox Reactive</name>
+  <description>Reactive outbox service for inserting SUPERDUPER messages inside application transactions.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>net.rsworld</groupId>
+      <artifactId>superduper-repository-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>net.rsworld</groupId>
+      <artifactId>superduper-observability-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>net.rsworld</groupId>
+      <artifactId>superduper-repository-r2dbc</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-r2dbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>r2dbc-postgresql</artifactId>
+      <version>${r2dbc-postgres.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,10 +1,17 @@
 
 # SUPERDUPER — Secure, Uninterrupted Processing of Events with Robust Delivery and Ultra Persistent Error Recovery
 
-> A **resilient**, **ordered**, and **database-backed** Kafka consumption pattern with pluggable workers (JDBC or Reactive),
-> strict per-key ordering, failure retries, heartbeats, and orphan recovery.
+> A **resilient**, **ordered**, and **database-backed** Kafka consumption and transactional outbox pattern with pluggable workers
+> (JDBC or Reactive), strict per-key ordering, failure retries, heartbeats, and orphan recovery.
 >
 > Group: `net.rsworld` · Modules: `superduper-*`
+
+[![Release line](https://img.shields.io/badge/release-1.0.0-1f6feb?style=for-the-badge)](release-please-config.json)
+[![Status](https://img.shields.io/badge/status-stable-2ea043?style=for-the-badge)](docs/USAGE.md)
+[![Release Please](https://img.shields.io/badge/release--please-managed-8250df?style=for-the-badge&logo=githubactions&logoColor=white)](docs/RELEASE.md)
+[![Sonar Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=rsworld_superduper&metric=alert_status)](https://sonarcloud.io/project/overview?id=rsworld_superduper)
+[![Sonar Coverage](https://sonarcloud.io/api/project_badges/measure?project=rsworld_superduper&metric=coverage)](https://sonarcloud.io/project/overview?id=rsworld_superduper)
+[![Maven Central](https://img.shields.io/maven-central/v/net.rsworld/superduper-starter-autoselect?style=for-the-badge&logo=sonatype)](https://central.sonatype.com/search?namespace=net.rsworld)
 
 ---
 
@@ -24,6 +31,7 @@ When multiple containers consume messages concurrently and persist them for late
 - **Resilience**: Crashing containers leave **no** stuck work; **orphaned** `PROCESSING` rows are recovered.
 - **Observability**: Heartbeats detect dead containers; status fields show lifecycle progress.
 - **Flexibility**: Use **Spring Kafka + JDBC** or **Spring Kafka + R2DBC (reactive processing chain)** with the same algorithm and schema on PostgreSQL or MariaDB.
+- **Composability**: Run Kafka consumers and application-side transactional outbox writes through the same worker loop, with either shared or dedicated tables.
 
 ### Why a transactional inbox and not …
 
@@ -41,6 +49,7 @@ When multiple containers consume messages concurrently and persist them for late
 - **Per-key blocking in the claim query** — the `LEFT JOIN … WHERE status='PROCESSING'` elegantly prevents claiming a key that already has work in flight. This is the hardest part and the SQL handles it in one database round-trip.
 - **Database as queryable state** — failures are rows you can `SELECT`, inspect, and redrive. Far more ergonomic than opaque Kafka DLQ topics.
 - **Decoupled ingest from processing** — the consumer acks Kafka quickly; the worker processes at its own pace.
+- **Outbox reuse** — the same READY/PROCESSING/FAILED/STOPPED lifecycle can drain application-produced outbox rows, not just Kafka-ingested rows.
 - **Portable** — works on PostgreSQL and MariaDB, blocking or reactive, with no vendor lock-in.
 
 ### Known tradeoffs
@@ -58,7 +67,9 @@ When multiple containers consume messages concurrently and persist them for late
 sequenceDiagram
   autonumber
   participant K as Kafka Topic
+  participant A as App Transaction
   participant C as Consumer
+  participant X as OutboxService
   participant M as messages table
   participant L as shedlock
   participant W as Worker
@@ -68,6 +79,8 @@ sequenceDiagram
 
   K->>C: Consume record
   C->>M: INSERT status=READY
+  A->>X: send(outboxName, messageKey, content)
+  X->>M: INSERT status=READY
 
   loop claim loop
     W->>L: Acquire claim lock
@@ -243,18 +256,50 @@ shedlock(name PRIMARY KEY, lock_until TIMESTAMP(3), locked_at TIMESTAMP(3), lock
 
 ---
 
+## Transactional Outbox Usage
+
+SUPERDUPER can process application-produced outbox rows with the same worker loop it uses for Kafka-ingested rows. Configure an outbox handler under `superduper.outbox`, then write messages through `OutboxService` inside your business transaction:
+
+```yaml
+superduper:
+  outbox:
+    notifications:
+      handler: notificationsMessageHandler
+      # optional: table: outbox_notifications
+```
+
+```java
+@Service
+class NotificationPublisher {
+    private final OutboxService outboxService;
+
+    NotificationPublisher(OutboxService outboxService) {
+        this.outboxService = outboxService;
+    }
+
+    @Transactional
+    public void publishOrderCreated(String orderId, String payload) {
+        outboxService.send("notifications", orderId, payload);
+    }
+}
+```
+
+If `table` is omitted, the outbox shares the default `messages` table. If `table` is set, the worker uses a dedicated message table for that outbox while keeping the same ordering, retry, reclaim, and redrive behavior.
+
+---
+
 ## Examples
 
 Four runnable apps are included:
 
 - `examples/app-blocking` — classic, blocking JDBC + Spring Kafka.
-- `examples/app-multitopic-shared` — multi-topic example with a shared `messages` table (blocking).
-- `examples/app-multitopic-dedicated` — multi-topic example with per-topic tables (blocking).
+- `examples/app-multitopic-shared` — multi-topic example with a shared `messages` table plus a shared-table `notifications` outbox (blocking).
+- `examples/app-multitopic-dedicated` — multi-topic example with per-topic tables plus a dedicated `outbox_notifications` table (blocking).
 - `examples/app-reactive` — reactive processing with Spring Kafka + R2DBC.
 
 See [docs/EXAMPLES.md](docs/EXAMPLES.md) for local setup, multi-container runs, and reproducible SQL assertions.
 Use `./examples/run-multitopic-modes.sh` for the shared and dedicated multi-topic container flows.
-See [docs/EXAMPLES.md#multi-topic-examples](docs/EXAMPLES.md#multi-topic-examples) for the shared-vs-dedicated multitopic walkthrough.
+See [docs/EXAMPLES.md#multi-topic-examples](docs/EXAMPLES.md#multi-topic-examples) for the shared-vs-dedicated multitopic walkthrough, including the outbox-enabled demos.
 
 ---
 

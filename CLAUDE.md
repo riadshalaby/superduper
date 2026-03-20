@@ -12,6 +12,8 @@
 - Commit behavior by role:
   - `plan` and `review` roles never commit.
   - `implement` role must stage all changes and create a Conventional Commit after validations pass.
+  - Conventional Commit subjects must be release-note ready: describe the user-visible change or outcome, not just the implementation mechanism.
+  - Prefer subjects in the form `<type>(<scope>): <user-facing change>`; if the subject alone would be too vague in release notes, add a short body summarizing the key changes.
 - Prefer targeted validation while iterating; run broader validation before finishing:
   - Fast compile: `mvn -q -DskipTests test-compile`
   - Full tests: `mvn -T 1C -q test`

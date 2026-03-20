@@ -145,15 +145,16 @@ class KafkaConsumerServiceTest {
     }
 
     @Test
-    void onMessage_withTopicRegistry_routesBatchesToCorrectRepositoryWithTopicValue() {
+    void onMessage_withTopicRegistry_routesBatchesToCorrectRepositoryWithTopicColumnValue() {
         MessageIngestRepository repoA = mock(MessageIngestRepository.class);
         MessageIngestRepository repoB = mock(MessageIngestRepository.class);
         TopicRepositoryFactory factory = mock(TopicRepositoryFactory.class);
 
         when(factory.createIngestRepository("orders_messages")).thenReturn(repoB);
 
-        TopicConfigView topicA = topicConfig("topic-a", "kafka-topic-a", "handlerA", "");
-        TopicConfigView topicB = topicConfig("topic-b", "kafka-topic-b", "handlerB", "orders_messages");
+        TopicConfigView topicA = topicConfig("topic-a", "kafka-topic-a", "handlerA", "", "topic-column-a");
+        TopicConfigView topicB =
+                topicConfig("topic-b", "kafka-topic-b", "handlerB", "orders_messages", "topic-column-b");
         TopicRegistryView topicRegistry = topicRegistry(topicA, topicB);
 
         KafkaConsumerService svc =
@@ -168,11 +169,11 @@ class KafkaConsumerServiceTest {
 
         ArgumentCaptor<List<MessageIngestData>> batchA = ArgumentCaptor.forClass(List.class);
         verify(repoA).batchUpsertReadyMessages(batchA.capture());
-        assertThat(batchA.getValue()).extracting(MessageIngestData::topic).containsOnly("kafka-topic-a");
+        assertThat(batchA.getValue()).extracting(MessageIngestData::topic).containsOnly("topic-column-a");
 
         ArgumentCaptor<List<MessageIngestData>> batchB = ArgumentCaptor.forClass(List.class);
         verify(repoB).batchUpsertReadyMessages(batchB.capture());
-        assertThat(batchB.getValue()).extracting(MessageIngestData::topic).containsOnly("kafka-topic-b");
+        assertThat(batchB.getValue()).extracting(MessageIngestData::topic).containsOnly("topic-column-b");
         verify(ack).acknowledge();
     }
 
@@ -189,6 +190,11 @@ class KafkaConsumerServiceTest {
     }
 
     private static TopicConfigView topicConfig(String name, String kafkaTopic, String handlerBeanName, String table) {
+        return topicConfig(name, kafkaTopic, handlerBeanName, table, null);
+    }
+
+    private static TopicConfigView topicConfig(
+            String name, String kafkaTopic, String handlerBeanName, String table, String topicColumnValue) {
         return new TopicConfigView() {
             @Override
             public String name() {
@@ -223,6 +229,11 @@ class KafkaConsumerServiceTest {
             @Override
             public String claimLockName() {
                 return "superduper-claim-" + name;
+            }
+
+            @Override
+            public String topicColumnValue() {
+                return topicColumnValue == null ? kafkaTopic : topicColumnValue;
             }
         };
     }
