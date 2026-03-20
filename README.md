@@ -6,7 +6,12 @@
 >
 > Group: `net.rsworld` · Modules: `superduper-*`
 
-**Release status:** the next release-please cut is pinned to **`1.0.0`**, establishing SUPERDUPER as the stable release line for ordered Kafka consumption, transactional outbox delivery, and MariaDB-safe large payload storage.
+[![Release line](https://img.shields.io/badge/release-1.0.0-1f6feb?style=for-the-badge)](release-please-config.json)
+[![Status](https://img.shields.io/badge/status-stable-2ea043?style=for-the-badge)](docs/USAGE.md)
+[![Release Please](https://img.shields.io/badge/release--please-managed-8250df?style=for-the-badge&logo=githubactions&logoColor=white)](docs/RELEASE.md)
+[![Sonar Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=rsworld_superduper&metric=alert_status)](https://sonarcloud.io/project/overview?id=rsworld_superduper)
+[![Sonar Coverage](https://sonarcloud.io/api/project_badges/measure?project=rsworld_superduper&metric=coverage)](https://sonarcloud.io/project/overview?id=rsworld_superduper)
+[![Maven Central](https://img.shields.io/maven-central/v/net.rsworld/superduper-starter-autoselect?style=for-the-badge&logo=sonatype)](https://central.sonatype.com/search?namespace=net.rsworld)
 
 ---
 

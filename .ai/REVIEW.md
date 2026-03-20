@@ -1,8 +1,8 @@
-# Review: T-007 — Documentation (ARCHITECTURE.md + README.md)
+# Review: T-008 — 1.0.0 stable release promotion
 
 - Reviewer: claude
 - Date (UTC): 2026-03-20
-- Commit reviewed: `0459c72b54fa10e23cae98ea428f8b3486f17bdf`
+- Commit reviewed: `4836e166d7841eed46ebf9442da16a95970ab80a`
 
 Review Round: **1**
 
@@ -10,30 +10,27 @@ Review Round: **1**
 
 | Criterion | Status | Notes |
 |---|---|---|
-| ARCHITECTURE.md: `outbox-blocking` in Module Map with key classes | ✅ | Line 19: `OutboxService`, `JdbcOutboxService` |
-| ARCHITECTURE.md: `outbox-reactive` in Module Map with key classes | ✅ | Line 20: `ReactiveOutboxService`, `R2dbcOutboxService` |
-| ARCHITECTURE.md: outbox nodes in Dependency Graph | ✅ | `OB`, `OR` nodes + correct edges to `RA`, `OA`, `RJ`/`RR` |
-| ARCHITECTURE.md: `SA --> OB` and `SA --> OR` edges in Dependency Graph | ✅ | Lines 80-81 |
-| ARCHITECTURE.md: Outbox Data Flow section | ✅ | 5-step flow: app write → insert READY → registry merge → shared/dedicated routing → lifecycle |
-| ARCHITECTURE.md: Extension Points section updated with outbox | ✅ | Lines 120-121: `inject OutboxService` / `inject ReactiveOutboxService` |
-| ARCHITECTURE.md: Multi-Topic Model section notes outbox representation | ✅ | Lines 162-163 |
-| README.md: tagline updated to mention transactional outbox | ✅ | Line 4 |
-| README.md: Composability goal in Why section | ✅ | Line 27 |
-| README.md: High-level sequenceDiagram includes `OutboxService` write path | ✅ | Lines 65-66, 75-76 |
-| README.md: `Transactional Outbox Usage` section with YAML config snippet | ✅ | Lines 252-281 |
-| README.md: Java `@Transactional` usage snippet | ✅ | Lines 264-278 |
-| README.md: shared vs dedicated table behavior explained | ✅ | Line 280 |
-| README.md: example references include outbox-enabled multitopic apps | ✅ | Lines 289-290 |
+| `release-please-config.json` includes `release-as: 1.0.0` | ✅ | `"release-as": "1.0.0"` on line 6 |
+| `README.md` reflects 1.0.0 stable status | ✅ | Line 9: "the next release-please cut is pinned to **`1.0.0`**" — no pre-release or beta language |
+| `docs/USAGE.md` reflects 1.0.0 stable status | ✅ | Line 9: "Use the stable `1.0.0` artifacts for the first general-availability release line"; Maven coordinates show `<version>1.0.0</version>` |
+| All previous tasks T-001 through T-007 are `done` | ✅ | Confirmed in TASKS.md |
 | `mvn -q -DskipTests test-compile` passes | ✅ | Per implementer validation |
 | `mvn -T 1C -q test` passes | ✅ | Per implementer validation |
 
+## CLAUDE.md Compliance
+
+| Rule | Status | Notes |
+|---|---|---|
+| Release version managed via release-please, not manual POM bumps | ✅ | Uses `"release-as": "1.0.0"` in `release-please-config.json` — no POM version changes |
+| No `release.yml` or `scripts/ai-release.sh` reintroduced | ✅ | Only files touched: `release-please-config.json`, `README.md`, `docs/USAGE.md` |
+| English for code comments, log/output messages, README | ✅ | All documentation in English |
+
 ## Findings
 
-### SEV-3 (Info) — Multitopic example apps absent from ARCHITECTURE.md Module Map
-
-`examples/app-multitopic-shared` and `examples/app-multitopic-dedicated` are not listed in the ARCHITECTURE.md Module Map (only `app-blocking`, `app-reactive`, and `seeder` appear). The plan's acceptance criteria for T-007 only required outbox modules in the Module Map, so this is out of scope. The multitopic apps are documented in README.md and `docs/EXAMPLES.md` references.
-
-**Required fix:** None.
+No findings. All acceptance criteria satisfied. Implementation is minimal and correct:
+- `release-please-config.json`: `"release-as": "1.0.0"` added to the root package block — this is the exact mechanism release-please uses to pin the next Release PR to a specific version.
+- `README.md`: release status clearly states the 1.0.0 stable line without any pre-release qualifier; no stale snapshot references remain.
+- `docs/USAGE.md`: stable Maven coordinates with explicit `1.0.0` version in all dependency snippets; opening prose confirms this is the first GA release.
 
 ## Open Questions
 
@@ -43,4 +40,4 @@ None.
 
 `PASS`
 
-All acceptance criteria are satisfied. `docs/ARCHITECTURE.md` now includes both outbox modules in the Module Map, correct dependency edges in the Mermaid graph, a dedicated Outbox Data Flow section, and outbox entries in Extension Points and the Multi-Topic Model section. `README.md` updates the tagline, adds the composability goal, extends the sequenceDiagram with the outbox write path, and provides a complete `Transactional Outbox Usage` section with YAML config and annotated Java snippet. The multitopic example references cover both shared and dedicated outbox variants. One SEV-3 info note (multitopic apps not in Architecture Module Map) — out of scope for T-007, no fix required.
+All acceptance criteria are satisfied. `release-please-config.json` is correctly configured with `release-as: 1.0.0`. `README.md` and `docs/USAGE.md` both present the project as a stable GA release with concrete 1.0.0 Maven coordinates — no pre-release or beta language remains. The implementation makes no manual POM version changes, fully respecting the CLAUDE.md release rules. T-001 through T-007 are all `done`, satisfying the dependency requirement.
