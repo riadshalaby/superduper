@@ -1,8 +1,8 @@
-# Review: T-005 — Outbox configuration + TopicRegistry merge + starter wiring
+# Review: T-006 — Outbox examples in multitopic apps (shared + dedicated)
 
 - Reviewer: claude
 - Date (UTC): 2026-03-20
-- Commit reviewed: `6c84d23cbb414959b91468c5fb0190f3568f158b`
+- Commit reviewed: `087aa18c204260e740cbcdc069e07bb16b652206`
 
 Review Round: **1**
 
@@ -10,30 +10,32 @@ Review Round: **1**
 
 | Criterion | Status | Notes |
 |---|---|---|
-| `OutboxProperties` parses `superduper.outbox.<name>` with `handler`, `batchSize`, `maxRetries`, `table` | ✅ | `@ConfigurationProperties(prefix = "superduper")`; null-safe setters |
-| `handler` required — missing handler throws `IllegalArgumentException` at registry build | ✅ | `resolveConfiguredOutboxes()` line 210-212; test `topicRegistryRequiresOutboxHandler` |
-| Outbox entries in `TopicRegistry` with `kafkaTopic = ""` and `claimLockName = "superduper-claim-<name>"` | ✅ | `resolveConfiguredOutboxes()` lines 215, 220 |
-| `batchSize`/`maxRetries` fall back to `WorkerProperties` when zero | ✅ | Consistent with Kafka topic resolution pattern |
-| Workers pick up outbox topics automatically | ✅ | All topics iterate via `TopicRegistry.topics()` in coordinators |
-| `@KafkaListener` does NOT subscribe to outbox topic names | ✅ | `kafkaTopics()` filters blank entries (T-002); test asserts only `orders.events` |
-| Outbox-only configuration allowed (no Kafka topics) | ✅ | Test `topicRegistryAllowsOutboxOnlyConfiguration` |
-| Error message updated to include outbox hint | ✅ | Line 163: "…or configure superduper.outbox." |
-| `OutboxProperties` enabled in `@EnableConfigurationProperties` | ✅ | Line 70 |
-| `OutboxService` bean created for `consumer.type=spring`, conditional on outboxes present | ✅ | `jdbcOutboxService()` with `@Conditional(OutboxConfiguredCondition.class)` |
-| `ReactiveOutboxService` bean created for `consumer.type=reactor`, conditional on outboxes present | ✅ | `reactiveOutboxService()` with `@Conditional(OutboxConfiguredCondition.class)` |
-| Shared-table outbox uses default repository | ✅ | `table.isBlank()` → shared repo in `resolveOutboxRepositories()` |
-| Dedicated-table outbox uses `RepositoryFactory.createIngestRepository(table)` | ✅ | Non-blank table → factory |
-| No `OutboxService`/`ReactiveOutboxService` bean when no outboxes configured | ✅ | `OutboxConfiguredCondition.matches()` returns false; both service tests verify absence |
-| `outbox-blocking` and `outbox-reactive` added to `starter-autoselect/pom.xml` | ✅ | Lines 47-54 |
-| `outbox-blocking` and `outbox-reactive` added to `coverage-report/pom.xml` | ✅ | Lines 63-72 |
+| `app-multitopic-shared` has 2 Kafka topics + notifications outbox sharing the default table | ✅ | YAML: no `table` on notifications outbox → shared `messages` table |
+| `app-multitopic-dedicated` has 2 Kafka topics + notifications outbox with dedicated `outbox_notifications` table | ✅ | YAML: `table: outbox_notifications`; Liquibase changeset creates table |
+| `superduper-outbox-blocking` dependency in both example POMs | ✅ | Lines 70-73 in each POM |
+| `NotificationsMessageHandler` implements `MessageHandler`; registered as `notificationsMessageHandler` | ✅ | `@Component("notificationsMessageHandler")` in both apps |
+| Handlers log processing for observability | ✅ | `[Notifications] id=... key=... attempt=... -> SUCCESS/FAILURE` logs |
+| `OutboxSeedService.seedNotifications()` annotated `@Transactional` | ✅ | Demonstrates transactional outbox pattern |
+| `MultitopicSeeder` calls `outboxSeedService.seedNotifications()` and includes outbox in expected count | ✅ | `expected = configuredTopics.size() * count` (3 topics × count) |
+| Kafka producer loop skips outbox topics (blank kafkaTopic) | ✅ | Line 155: `if (topic.kafkaTopic().isBlank()) continue` |
+| `application.yml` in each app has `superduper.outbox.notifications.*` | ✅ | Both YAMLs have handler; dedicated adds `table: outbox_notifications` |
+| Liquibase changeset creates `outbox_notifications` (postgres + mariadb) | ✅ | `outbox-notifications.yaml` uses shared templates; both DBMS variants |
+| `db.changelog-dedicated.yaml` includes new changeset | ✅ | Line 11-12 |
+| `DedicatedMultitopicLiquibaseIntegrationTest` asserts `outbox_notifications` exists, `messages` absent | ✅ | Line 49-50 |
 | `mvn -q -DskipTests test-compile` passes | ✅ | Per implementer validation |
 | `mvn -T 1C -q test` passes | ✅ | Per implementer validation |
 
 ## Findings
 
-### SEV-3 (Info) — Outbox modules are mandatory transitive dependencies of the starter
+### SEV-3 (Info) — `keyFor("notifications", ...)` case in `MultitopicSeeder` is unreachable in the Kafka producer path
 
-`outbox-blocking` and `outbox-reactive` are added as regular compile-scope dependencies (not `optional`) in `starter-autoselect/pom.xml`. This mirrors the existing pattern where both `worker-blocking` and `worker-reactive` are always on the classpath regardless of which stack the app uses. Beans are guarded by `@ConditionalOnProperty` + `OutboxConfiguredCondition`, so no outbox beans are created unless configured. No functional impact; acceptable given the project's existing all-in-one starter design.
+`MultitopicSeeder.keyFor()` has a `case "notifications"` branch, but `publishKafkaSeedMessages()` skips all topics with a blank `kafkaTopic`, which includes the outbox. The `keyFor()` method is only called inside that loop, so the `notifications` case is never invoked. It is harmless and may serve as documentation intent.
+
+**Required fix:** None.
+
+### SEV-3 (Info) — `NotificationsMessageHandler` is identical in both apps (no shared abstraction)
+
+Both `app-multitopic-shared` and `app-multitopic-dedicated` have identical `NotificationsMessageHandler` implementations. Duplication is expected in example apps (they are intentionally self-contained), and the plan specifies this pattern. No production code is affected.
 
 **Required fix:** None.
 
@@ -45,4 +47,4 @@ None.
 
 `PASS`
 
-All acceptance criteria are satisfied. `OutboxProperties` is correctly bound, null-safe, and wired. Outbox entries are merged into `TopicRegistry` with blank `kafkaTopic` and correctly scoped `claimLockName`. `OutboxConfiguredCondition` correctly reads the environment at condition-evaluation time (before beans are created). Both blocking and reactive outbox service beans are conditional and are absent when no outboxes are configured. Tests are comprehensive: they cover outbox-only mode, mixed Kafka+outbox mode, handler validation, shared vs. dedicated repository routing, and bean absence. Coverage aggregation is correctly updated.
+All acceptance criteria are satisfied. Both apps demonstrate the transactional outbox pattern correctly: `@Transactional` seeder, dedicated handler, shared vs. dedicated table configuration, Liquibase schema provisioning, and integration test coverage. The Kafka producer loop correctly skips outbox topics. The expected count formula correctly includes all three topic slots. Two SEV-3 info notes — neither requires a fix.
