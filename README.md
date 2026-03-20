@@ -6,6 +6,8 @@
 >
 > Group: `net.rsworld` · Modules: `superduper-*`
 
+**Release status:** the next release-please cut is pinned to **`1.0.0`**, establishing SUPERDUPER as the stable release line for ordered Kafka consumption, transactional outbox delivery, and MariaDB-safe large payload storage.
+
 ---
 
 ## Why SUPERDUPER? (Problem & Goals)
