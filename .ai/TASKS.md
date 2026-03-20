@@ -15,8 +15,8 @@ Status values:
 
 | Task ID | Scope | Planner Agent | Implementer Agent | Reviewer Agent | Status | Acceptance Criteria | Evidence | Next Role |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-001 | MariaDB content column TEXT to LONGTEXT | claude | codex | claude | ready_for_review | Template uses LONGTEXT; migration changeset alters existing table; compile and tests pass | `mvn -q -DskipTests test-compile` ✅, `mvn -T 1C -q test` ✅ | review |
-| T-002 | TopicConfigView evolution + worker/consumer alignment | claude | codex | claude | ready_for_implement | topicColumnValue() default method; kafkaTopics() filters blanks; workers and consumers use topicColumnValue(); all existing tests pass unchanged | n/a | implement |
+| T-001 | MariaDB content column TEXT to LONGTEXT | claude | codex | claude | done | Template uses LONGTEXT; migration changeset alters existing table; compile and tests pass | `mvn -q -DskipTests test-compile` ✅, `mvn -T 1C -q test` ✅ | — |
+| T-002 | TopicConfigView evolution + worker/consumer alignment | claude | codex | claude | ready_for_review | topicColumnValue() default method; kafkaTopics() filters blanks; workers and consumers use topicColumnValue(); all existing tests pass unchanged | `mvn -q -DskipTests test-compile` ✅, `mvn -T 1C -q test` ✅ | review |
 | T-003 | outbox-blocking module (OutboxService + JdbcOutboxService) | claude | codex | claude | ready_for_implement | New module in parent POM; OutboxService interface; JdbcOutboxService impl; unit tests for routing, UUID gen, validation; compile and tests pass | n/a | implement |
 | T-004 | outbox-reactive module (ReactiveOutboxService + R2dbcOutboxService) | claude | codex | claude | ready_for_implement | New module in parent POM; ReactiveOutboxService interface; R2dbcOutboxService impl; unit tests with StepVerifier; compile and tests pass | n/a | implement |
 | T-005 | Outbox configuration + TopicRegistry merge + starter wiring | claude | codex | claude | ready_for_implement | OutboxProperties config; outbox entries in TopicRegistry; OutboxService/ReactiveOutboxService beans wired; coverage aggregation; compile and tests pass | n/a | implement |

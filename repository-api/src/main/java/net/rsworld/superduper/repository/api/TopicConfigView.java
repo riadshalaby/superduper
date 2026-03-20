@@ -22,6 +22,19 @@ public interface TopicConfigView {
     String kafkaTopic();
 
     /**
+     * Returns the value stored in the message {@code topic} column.
+     *
+     * <p>Kafka-backed topics keep using their Kafka topic name. Configurations without a Kafka source fall back to
+     * their logical name so workers can still claim rows consistently.
+     *
+     * @return the topic column value to persist and query
+     */
+    default String topicColumnValue() {
+        String kafka = kafkaTopic();
+        return kafka != null && !kafka.isBlank() ? kafka : name();
+    }
+
+    /**
      * Returns the Spring bean name of the handler responsible for this topic.
      *
      * @return the message handler bean name

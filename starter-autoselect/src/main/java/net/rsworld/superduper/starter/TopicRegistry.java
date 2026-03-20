@@ -14,9 +14,13 @@ public class TopicRegistry implements TopicRegistryView {
         this.topics = List.copyOf(topics);
         this.topicsByKafkaTopic = new LinkedHashMap<>();
         for (ResolvedTopicConfig topic : topics) {
-            ResolvedTopicConfig existing = topicsByKafkaTopic.put(topic.kafkaTopic(), topic);
+            String kafkaTopic = topic.kafkaTopic();
+            if (kafkaTopic == null || kafkaTopic.isBlank()) {
+                continue;
+            }
+            ResolvedTopicConfig existing = topicsByKafkaTopic.put(kafkaTopic, topic);
             if (existing != null) {
-                throw new IllegalArgumentException("Duplicate Kafka topic configured: " + topic.kafkaTopic());
+                throw new IllegalArgumentException("Duplicate Kafka topic configured: " + kafkaTopic);
             }
         }
     }
@@ -28,7 +32,10 @@ public class TopicRegistry implements TopicRegistryView {
 
     @Override
     public List<String> kafkaTopics() {
-        return topics.stream().map(ResolvedTopicConfig::kafkaTopic).toList();
+        return topics.stream()
+                .map(ResolvedTopicConfig::kafkaTopic)
+                .filter(kafkaTopic -> kafkaTopic != null && !kafkaTopic.isBlank())
+                .toList();
     }
 
     @Override

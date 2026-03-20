@@ -138,7 +138,7 @@ class KafkaReactiveR2dbcConsumerService {
                 kafkaTopic,
                 repositoriesByTopic.get(kafkaTopic),
                 new MessageIngestData(
-                        topicRegistry.getByKafkaTopic(kafkaTopic).kafkaTopic(),
+                        topicRegistry.getByKafkaTopic(kafkaTopic).topicColumnValue(),
                         messageId,
                         messageKey,
                         consumerRecord.value(),
@@ -190,8 +190,12 @@ class KafkaReactiveR2dbcConsumerService {
             TopicRepositoryFactory repositoryFactory) {
         Map<String, ReactiveMessageIngestRepository> repositories = new HashMap<>();
         for (var topic : topicRegistry.topics()) {
+            String kafkaTopic = topic.kafkaTopic();
+            if (kafkaTopic == null || kafkaTopic.isBlank()) {
+                continue;
+            }
             repositories.put(
-                    topic.kafkaTopic(),
+                    kafkaTopic,
                     topic.table().isBlank()
                             ? sharedRepository
                             : repositoryFactory.createReactiveIngestRepository(topic.table()));

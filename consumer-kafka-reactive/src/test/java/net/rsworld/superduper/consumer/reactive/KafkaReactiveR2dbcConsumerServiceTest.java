@@ -148,7 +148,7 @@ class KafkaReactiveR2dbcConsumerServiceTest {
     }
 
     @Test
-    void onMessage_withTopicRegistry_routesBatchesToCorrectRepositoryWithTopicValue() {
+    void onMessage_withTopicRegistry_routesBatchesToCorrectRepositoryWithTopicColumnValue() {
         ReactiveMessageIngestRepository repoA = mock(ReactiveMessageIngestRepository.class);
         ReactiveMessageIngestRepository repoB = mock(ReactiveMessageIngestRepository.class);
         TopicRepositoryFactory factory = mock(TopicRepositoryFactory.class);
@@ -157,8 +157,9 @@ class KafkaReactiveR2dbcConsumerServiceTest {
         when(repoA.batchUpsertReadyMessages(any())).thenReturn(Mono.empty());
         when(repoB.batchUpsertReadyMessages(any())).thenReturn(Mono.empty());
 
-        TopicConfigView topicA = topicConfig("topic-a", "kafka-topic-a", "handlerA", "");
-        TopicConfigView topicB = topicConfig("topic-b", "kafka-topic-b", "handlerB", "orders_messages");
+        TopicConfigView topicA = topicConfig("topic-a", "kafka-topic-a", "handlerA", "", "topic-column-a");
+        TopicConfigView topicB =
+                topicConfig("topic-b", "kafka-topic-b", "handlerB", "orders_messages", "topic-column-b");
         TopicRegistryView topicRegistry = topicRegistry(topicA, topicB);
 
         KafkaReactiveR2dbcConsumerService svc = new KafkaReactiveR2dbcConsumerService(
@@ -173,11 +174,11 @@ class KafkaReactiveR2dbcConsumerServiceTest {
 
         ArgumentCaptor<List<MessageIngestData>> batchA = ArgumentCaptor.forClass(List.class);
         verify(repoA).batchUpsertReadyMessages(batchA.capture());
-        assertThat(batchA.getValue()).extracting(MessageIngestData::topic).containsOnly("kafka-topic-a");
+        assertThat(batchA.getValue()).extracting(MessageIngestData::topic).containsOnly("topic-column-a");
 
         ArgumentCaptor<List<MessageIngestData>> batchB = ArgumentCaptor.forClass(List.class);
         verify(repoB).batchUpsertReadyMessages(batchB.capture());
-        assertThat(batchB.getValue()).extracting(MessageIngestData::topic).containsOnly("kafka-topic-b");
+        assertThat(batchB.getValue()).extracting(MessageIngestData::topic).containsOnly("topic-column-b");
         verify(ack).acknowledge();
     }
 
@@ -195,6 +196,11 @@ class KafkaReactiveR2dbcConsumerServiceTest {
     }
 
     private static TopicConfigView topicConfig(String name, String kafkaTopic, String handlerBeanName, String table) {
+        return topicConfig(name, kafkaTopic, handlerBeanName, table, null);
+    }
+
+    private static TopicConfigView topicConfig(
+            String name, String kafkaTopic, String handlerBeanName, String table, String topicColumnValue) {
         return new TopicConfigView() {
             @Override
             public String name() {
@@ -229,6 +235,11 @@ class KafkaReactiveR2dbcConsumerServiceTest {
             @Override
             public String claimLockName() {
                 return "superduper-claim-" + name;
+            }
+
+            @Override
+            public String topicColumnValue() {
+                return topicColumnValue == null ? kafkaTopic : topicColumnValue;
             }
         };
     }

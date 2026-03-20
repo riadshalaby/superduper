@@ -137,7 +137,7 @@ class KafkaConsumerService {
                 kafkaTopic,
                 repositoriesByTopic.get(kafkaTopic),
                 new MessageIngestData(
-                        topicConfig.kafkaTopic(),
+                        topicConfig.topicColumnValue(),
                         messageId,
                         messageKey,
                         consumerRecord.value(),
@@ -188,8 +188,12 @@ class KafkaConsumerService {
             TopicRepositoryFactory repositoryFactory) {
         Map<String, MessageIngestRepository> repositories = new HashMap<>();
         for (var topic : topicRegistry.topics()) {
+            String kafkaTopic = topic.kafkaTopic();
+            if (kafkaTopic == null || kafkaTopic.isBlank()) {
+                continue;
+            }
             repositories.put(
-                    topic.kafkaTopic(),
+                    kafkaTopic,
                     topic.table().isBlank()
                             ? sharedRepository
                             : repositoryFactory.createIngestRepository(topic.table()));

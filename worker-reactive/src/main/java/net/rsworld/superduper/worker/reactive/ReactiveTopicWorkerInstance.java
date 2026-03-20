@@ -40,7 +40,7 @@ public class ReactiveTopicWorkerInstance {
                 lockAtMostForMs,
                 lockAtLeastForMs,
                 workerId,
-                topicConfig.kafkaTopic());
+                topicConfig.topicColumnValue());
     }
 
     public void claimAndProcess() {
