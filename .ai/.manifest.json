@@ -1,0 +1,50 @@
+{
+  "version": "v0.10.0",
+  "generated_at": "2026-06-07T08:35:37Z",
+  "files": [
+    {
+      "path": ".ai/prompts/dev.md",
+      "management": "full"
+    },
+    {
+      "path": ".ai/prompts/implementer.md",
+      "management": "full"
+    },
+    {
+      "path": ".ai/prompts/planner.md",
+      "management": "full"
+    },
+    {
+      "path": ".ai/prompts/po.md",
+      "management": "full"
+    },
+    {
+      "path": ".ai/prompts/reviewer.md",
+      "management": "full"
+    },
+    {
+      "path": ".claude/settings.json",
+      "management": "full"
+    },
+    {
+      "path": ".claude/settings.local.json",
+      "management": "full"
+    },
+    {
+      "path": ".gitattributes",
+      "management": "full"
+    },
+    {
+      "path": ".gitignore",
+      "management": "full"
+    },
+    {
+      "path": "AGENTS.md",
+      "management": "marker"
+    },
+    {
+      "path": "ROADMAP.template.md",
+      "management": "full"
+    }
+  ]
+}

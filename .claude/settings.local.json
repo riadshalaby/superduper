@@ -1,31 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls:*)",
-      "Bash(pwd:*)",
-      "Bash(cat:*)",
-      "Bash(head:*)",
-      "Bash(tail:*)",
-      "Bash(sed:*)",
-      "Bash(awk:*)",
-      "Bash(cut:*)",
-      "Bash(sort:*)",
-      "Bash(uniq:*)",
-      "Bash(wc:*)",
-      "Bash(find:*)",
+      "Bash(gh:*)",
       "Bash(rg:*)",
-      "Bash(mvn:*)",
-      "Bash(./mvnw:*)",
-      "Bash(grep:*)",
+      "Bash(fd:*)",
+      "Bash(bat:*)",
       "Bash(jq:*)",
+      "Bash(sg:*)",
+      "Bash(fzf:*)",
+      "Bash(tree-sitter:*)",
+      "Bash(mvn:*)",
+      "Bash(gradle:*)",
+      "Bash(javac:*)",
+      "Bash(java:*)",
+      "Bash(mvn -q spotless:apply:*)",
+      "Bash(mvn -q -DskipTests test-compile:*)",
+      "Bash(mvn -T 1C -q test:*)",
       "Bash(git:*)",
-      "Bash(bash scripts/*:*)",
-      "WebSearch",
-      "WebFetch(domain:github.com)",
-      "Bash(python3:*)",
-      "Bash(python3 -c \":*)",
-      "Bash(pip install:*)",
-      "Bash(ruby:*)"
+      "mcp__aide__*"
     ]
   }
 }
