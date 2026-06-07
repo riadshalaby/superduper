@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.rsworld</groupId>
     <artifactId>superduper-parent</artifactId>
-    <version>0.6.5-SNAPSHOT</version>
+    <version>1.0.0</version>
   </parent>
   <artifactId>superduper-observability-api</artifactId>
   <name>SUPERDUPER Observability API</name>
